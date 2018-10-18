@@ -58,17 +58,19 @@
       (case (:f op)
         :read  (try+
                  (let [document (.get conn opkey JsonLongDocument)
+                       cas      (if document (.cas document) nil)
                        value    (if document (.content document) nil)
                        kvpair   (independent/tuple rawkey value)]
-                   (assoc op :type :ok :value kvpair))
+                   (assoc op :type :ok :value kvpair :cas cas))
                  (catch java.lang.RuntimeException _
                    (assoc op :type :fail)))
 
         :write (let [value         (long opval)
                      document      (JsonLongDocument/create opkey value)
-                     replicate-to  (replicate-to (:replicate-to test))]
-                 (.upsert conn document replicate-to)
-                 (assoc op :type :ok)))))
+                     replicate-to  (replicate-to (:replicate-to test))
+                     cas           (->> (.upsert conn document replicate-to)
+                                        (.cas))]
+                 (assoc op :type :ok :cas cas)))))
 
   (teardown! [this test])
 
@@ -76,8 +78,16 @@
     (if (= 0 (swap! (:active-clients test) dec))
       (do
         (info "I am last client, close global connection")
-        (util/close-connection @(:connection test))
-        (reset! (:connection test) nil)))))
+        (try+
+          (util/close-connection @(:connection test))
+          (catch java.lang.RuntimeException _
+              (info "Error closing connection, ignoring")))
+        (reset! (:connection test) nil)
+        (try+
+          (Thread/sleep 1000)
+          (catch java.lang.InterruptedException _
+            (info "Ignoring interrupt exception")))
+        (info "Connection torn down")))))
 
 (defn cb-test
   "Run the test"
@@ -90,7 +100,7 @@
           :connection (atom nil)
           :active-clients (atom 0)
           :model (model/register)
-          :nemesis ((opts :nemesis) opts)
+          :nemesis ((opts :nemesis))
           :checker (checker/compose
                      {:perf  (checker/perf)
                       :indep (independent/checker
@@ -103,17 +113,8 @@
                             (fn [k]
                               (->> (gen/mix     [r w])
                                    (gen/stagger (/ (:rate opts)))
-                                   (gen/limit   1000))))
-                          (gen/nemesis
-                            (if (= (opts :nemesis) nemesis/partition-then-failover)
-                              (gen/seq  [(gen/sleep 15)
-                                         {:type :info :f :start-stage1}
-                                         (gen/sleep 5)
-                                         {:type :info :f :start-stage2}])
-                              (gen/seq  (cycle [(gen/sleep 15)
-                                                {:type :info :f :start}
-                                                (gen/sleep 30)
-                                                {:type :info :f :stop}]))))
+                                   (gen/limit   10000))))
+                          (gen/nemesis (nemesis/get-generator (:nemesis opts)))
                           (gen/time-limit (:time-limit opts)))}))
 
 (def extra-cli-options
@@ -136,7 +137,11 @@
     "Rate of requests to cluster"
     :parse-fn read-string
     :default  1
-    :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]])
+    :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]
+   [nil "--custom-vbucket-count NUM_VBUCKETS"
+     "Set the number of vbuckets (default 1024)"
+    :parse-fn #(Integer/parseInt %)
+    :default false]])
 
 (defn -main
   "Handle command line arguments"
