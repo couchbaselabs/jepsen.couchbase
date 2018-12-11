@@ -5,10 +5,11 @@
             [jepsen [control :as c]]
             [slingshot.slingshot :refer [try+ throw+]])
   (:import com.couchbase.client.java.CouchbaseCluster
-           com.couchbase.client.java.auth.ClassicAuthenticator))
+           com.couchbase.client.java.auth.ClassicAuthenticator
+           com.couchbase.client.java.auth.PasswordAuthenticator))
 
 (defn rest-call
-  "Perform a rest api call to the active jepsen control node"
+  "Perform a rest api call"
   ([endpoint params] (rest-call c/*host* endpoint params))
   ([target endpoint params]
    (let [uri  (str "http://" target ":8091" endpoint)
@@ -16,7 +17,11 @@
                 (shell/sh "curl" "-s" "-u" "Administrator:abc123" uri "-d" params)
                 (shell/sh "curl" "-s" "-u" "Administrator:abc123" uri))]
      (if (not= (call :exit) 0)
-       (throw+ {:type :rest-fail :error call})
+       (throw+ {:type :rest-fail
+                :target target
+                :endpoint endpoint
+                :params params
+                :error call})
        (:out call)))))
 
 (defn initialise
@@ -54,7 +59,11 @@
       (if (not= status "{\"status\":\"none\"}")
         (do
           (info "Rebalance status" status)
-          (Thread/sleep 1000)
+          (try+
+           (Thread/sleep 1000)
+           (catch InterruptedException e
+             (warn "Interrupted during rebalance")
+             (->> (Thread/currentThread) (.interrupt))))
           (recur (get-status)))
         (info "Rebalance complete")))))
 
@@ -62,7 +71,7 @@
   "Create the default bucket"
   [replicas]
   (let [params (str "flushEnabled=1&replicaNumber=" replicas
-                    "&evictionPolicy=valueOnly&ramQuotaMB=256"
+                    "&evictionPolicy=fullEviction&ramQuotaMB=100"
                     "&bucketType=couchbase&name=default"
                     "&authType=sasl&saslPassword=")]
     (rest-call "/pools/default/buckets" params)))
@@ -82,10 +91,22 @@
            (format "ns_config:set(couchbase_num_vbuckets_default, %s).")
            (rest-call "/diag/eval")))
     (rebalance nodes)
-    (println (create-bucket num-replicas))
+    (create-bucket num-replicas)
     (rebalance nodes))
-  (rest-call "/settings/autoFailover" "enabled=true&timeout=6&maxCount=2")
-  (Thread/sleep 3000)
+  (rest-call "/settings/autoFailover"
+             (->> (test :autofailover)
+                  (boolean)
+                  (format "enabled=%s&timeout=6&maxCount=2")))
+  (when-let [[lower_mark upper_mark] (test :custom-cursor-drop-marks)]
+    (doseq [node (test :nodes)]
+      (let [config (format "cursor_dropping_lower_mark=%d;cursor_dropping_upper_mark=%d"
+                           lower_mark
+			   upper_mark)
+	    props  (format "[{extra_config_string, \"%s\"}]" config)
+            params (format "ns_bucket:update_bucket_props(\"default\", %s)." props)]
+	(rest-call node "/diag/eval" params)))
+    (c/with-test-nodes test (c/su (c/exec :pkill :memcached)))
+    (Thread/sleep 20000))
   (info "Setup complete"))
 
 (defn setup-node
@@ -94,42 +115,41 @@
   (info "Setting up couchbase")
   (c/su (c/exec :mkdir "/opt/couchbase/var/lib/couchbase"))
   (c/su (c/exec :chown :couchbase:couchbase "/opt/couchbase/var/lib/couchbase"))
-  (c/su (c/exec :systemctl :start :couchbase-server))
-
+  (c/su (c/exec :service :couchbase-server :start))
+  (info "Waiting for couchbase to start")
   (while
     (= :not-ready
       (try+
         (rest-call "/pools/default" nil)
         (catch [:type :rest-fail] e
           :not-ready)))
-    (info "Waiting for couchbase to start")
     (Thread/sleep 2000)))
 
 (defn teardown
   "Stop the couchbase server instances and delete the data files"
   []
   (info "Tearing down couchbase node")
-  (c/su (c/exec :systemctl :stop :couchbase-server))
+  (c/su (c/exec :service :couchbase-server :stop))
   (c/su (c/exec :rm :-rf "/opt/couchbase/var/lib/couchbase")))
+  
+(defn get-version
+  "Get the couchbase version running on the cluster"
+  [node]
+  (->> (rest-call node "/pools/" nil)
+       (re-find #"(?<=\"implementationVersion\":\")([0-9])\.([0-9])\.([0-9])")
+       (rest)
+       (map #(Integer/parseInt %))))
 
 (defn get-connection
   "Use the couchbase java sdk to create a CouchbaseCluster instance, then open
   the default bucket."
   [test]
   (let [nodes   (test :nodes)
-        cluster (CouchbaseCluster/create nodes)
-        auth    (-> (new ClassicAuthenticator)
-                    (.cluster "Administrator" "abc123")
-                    (.bucket "default" ""))
-        cluster (.authenticate cluster auth)
-;        cluster (.authenticate cluster "Administrator" "abc123")
-        bucket  (.openBucket cluster "default")]
-    {:cluster cluster :bucket bucket}))
-
-(defn close-connection
-  "Close the bucket and disconnect from the cluster"
-  [conn]
-  (let [cluster (conn :cluster)
-        bucket  (conn :bucket)]
-    (.close bucket)
-    (.disconnect cluster)))
+        auth    (if (>= (first (get-version (first nodes))) 5)
+                  (new PasswordAuthenticator "Administrator" "abc123")
+                  (-> (new ClassicAuthenticator)
+                      (.cluster "Administrator" "abc123")
+                      (.bucket "default" "")))
+        cluster (-> (CouchbaseCluster/create nodes)
+                    (.authenticate auth))]
+    cluster))

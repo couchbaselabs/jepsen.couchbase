@@ -1,21 +1,16 @@
 (ns couchbase.core
-  (:require [clojure.tools.logging :refer :all]
-            [clojure.string :as str]
-            [couchbase [nemesis :as nemesis]
-                       [util    :as util]]
-            [jepsen [checker     :as checker]
-                    [cli         :as cli]
-                    [client      :as client]
-                    [control     :as c]
-                    [db          :as db]
-                    [generator   :as gen]
-                    [independent :as independent]
-                    [tests       :as tests]]
-            [jepsen.checker.timeline :as timeline]
-            [knossos.model :as model]
-            [slingshot.slingshot :refer [try+]])
-  (:import com.couchbase.client.java.document.JsonLongDocument
-           com.couchbase.client.java.ReplicateTo))
+  (:require [clojure.string :as str]
+            [clojure.tools.logging :refer :all]
+            [couchbase [nemesis  :as nemesis]
+                       [util     :as util]
+                       [workload :as workload]]
+            [jepsen [cli     :as cli]
+                    [control :as c]
+                    [db      :as db]
+                    [os      :as os]
+                    [tests   :as tests]]
+            [jepsen.os.centos :as centos]
+            [slingshot.slingshot :refer [try+]]))
 
 (defn couchbase
   "Initialise couchbase"
@@ -27,126 +22,125 @@
 
     db/Primary
     (setup-primary! [_ test node]
-      (util/setup-cluster test node)
-      (reset! (test :connection) (util/get-connection test)))
+      (util/setup-cluster test node))
 
     db/LogFiles
     (log-files [_ test node]
-      (c/su (c/exec :tar :-C  "/opt/couchbase/var/lib/couchbase/logs"
-                         :-cf "/opt/couchbase/var/lib/couchbase/logs.tar" "."))
-      ["/opt/couchbase/var/lib/couchbase/logs.tar"])))
+      (when (test :get-cbcollect)
+        (info "Generating cbcollect...")
+        (c/su (c/exec (keyword "/opt/couchbase/bin/cbcollect_info")
+                      "/opt/couchbase/var/lib/couchbase/logs/cbcollect.zip")))
+      (c/su (c/exec :chmod :-R :a+rx "/opt/couchbase"))
+      (->> (c/exec :ls "/opt/couchbase/var/lib/couchbase/logs")
+           (str/split-lines)
+           (map #(str "/opt/couchbase/var/lib/couchbase/logs/" %))))))
 
-(defn r   [_ _] {:type :invoke, :f :read, :value nil})
-(defn w   [_ _] {:type :invoke, :f :write, :value (rand-int 50)})
 
-(def replicate-to [ReplicateTo/NONE ReplicateTo/ONE
-                   ReplicateTo/TWO ReplicateTo/THREE])
+;; Jepsen has a predefine os module for centos, but it does a bunch of stuff that
+;; we don't need, and has a tendency to break our vagrants; so we define our own
+(def centos
+  (reify os/OS
+    (setup! [_ test node]
+      (c/su (centos/install [:ntpdate])))
+    (teardown! [_ test node])))
 
-(defrecord Client [conn]
-  client/Client
-  (open! [this test node]
-    (swap! (:active-clients test) inc)
-    (let [globalconn     @(:connection test)
-          bucket         (:bucket globalconn)]
-      (assoc this :conn bucket)))
 
-  (setup! [this test])
-
-  (invoke! [_ test op]
-    (let [[rawkey opval] (:value op)
-          opkey          (format "testdoc%03d" rawkey)]
-      (case (:f op)
-        :read  (try+
-                 (let [document (.get conn opkey JsonLongDocument)
-                       cas      (if document (.cas document) nil)
-                       value    (if document (.content document) nil)
-                       kvpair   (independent/tuple rawkey value)]
-                   (assoc op :type :ok :value kvpair :cas cas))
-                 (catch java.lang.RuntimeException _
-                   (assoc op :type :fail)))
-
-        :write (let [value         (long opval)
-                     document      (JsonLongDocument/create opkey value)
-                     replicate-to  (replicate-to (:replicate-to test))
-                     cas           (->> (.upsert conn document replicate-to)
-                                        (.cas))]
-                 (assoc op :type :ok :cas cas)))))
-
-  (teardown! [this test])
-
-  (close! [_ test]
-    (if (= 0 (swap! (:active-clients test) dec))
-      (do
-        (info "I am last client, close global connection")
-        (try+
-          (util/close-connection @(:connection test))
-          (catch java.lang.RuntimeException _
-              (info "Error closing connection, ignoring")))
-        (reset! (:connection test) nil)
-        (try+
-          (Thread/sleep 1000)
-          (catch java.lang.InterruptedException _
-            (info "Ignoring interrupt exception")))
-        (info "Connection torn down")))))
-
-(defn cb-test
+(defn cbtest
   "Run the test"
   [opts]
   (merge tests/noop-test
          opts
          {:name "Couchbase"
           :db (couchbase)
-          :client (Client. nil)
-          :connection (atom nil)
-          :active-clients (atom 0)
-          :model (model/register)
-          :nemesis ((opts :nemesis))
-          :checker (checker/compose
-                     {:perf  (checker/perf)
-                      :indep (independent/checker
-                               (checker/compose
-                                 {:timeline (timeline/html)
-                                  :linear   (checker/linearizable)}))})
-          :generator (->> (independent/concurrent-generator
-                            3
-                            (range)
-                            (fn [k]
-                              (->> (gen/mix     [r w])
-                                   (gen/stagger (/ (:rate opts)))
-                                   (gen/limit   10000))))
-                          (gen/nemesis (nemesis/get-generator (:nemesis opts)))
-                          (gen/time-limit (:time-limit opts)))}))
+          :os centos
+          :replicas 1
+          :replicate-to 0}
+         (as-> (opts :workload) %
+               (workload/workloads %)
+               (% opts))))
+
+(defn parse-int [x] (Integer/parseInt x))
 
 (def extra-cli-options
-  [[nil "--replicas NUMBER"
-    "Number of replicas for the bucket"
-    :parse-fn #({"0" 0 "1" 1 "2" 2 "3" 3} %)
-    :default  1
-    :validate [some? "Must be an integer between 0 and 3"]]
-   [nil "--replicate-to NUMBER"
-    "Number of replicas to ensure before confirming write"
-    :parse-fn #({"0" 0 "1" 1 "2" 2 "3" 3} %)
-    :default  0
-    :validate [some? "Must be an integer between 0 and 3"]]
-   [nil "--nemesis NEMESIS"
-    "The nemesis to apply"
-    :parse-fn nemesis/nemesies
-    :default  (nemesis/nemesies "none")
-    :validate [some? (cli/one-of nemesis/nemesies)]]
-   [nil "--rate RATE"
-    "Rate of requests to cluster"
-    :parse-fn read-string
-    :default  1
-    :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]
-   [nil "--custom-vbucket-count NUM_VBUCKETS"
-     "Set the number of vbuckets (default 1024)"
-    :parse-fn #(Integer/parseInt %)
-    :default false]])
+  [[nil "--workload WORKLOAD"
+    "The workload to run"
+    :default  nil
+    :validate [#(workload/workloads %) (cli/one-of workload/workloads)]]
+   [nil "--oplimit LIMIT"
+    "Limit the total number of operations"
+    :default nil
+    :parse-fn parse-int
+    :validate [#(and (number? %) (pos? %)) "Must be a number"]]
+   [nil "--get-cbcollect BOOL"
+    "Generate a cbcollect at the end of the run?"
+    :parse-fn #{"true"}
+    :default false
+    :validate [#{"true" "false"} "Must be true or false"]]])
 
 (defn -main
-  "Handle command line arguments"
+  "Run the test specified by the cli arguments"
   [& args]
-  (cli/run! (merge (cli/single-test-cmd {:test-fn  cb-test
-                                         :opt-spec extra-cli-options})
-                   (cli/serve-cmd))
-            args))
+
+  ;; The following are a bunch of hacks that lets us modify aspects of Jepsen's
+  ;; behaviour while depending on the released jepsen jar
+
+  ;; Jepsen's fressian writer crashes the entire process if it encounters something
+  ;; it doesn't know how to log, preventing the results from being analysed. We
+  ;; don't care about fressian output, so just disable it
+  (intern 'jepsen.store 'write-fressian! (fn [& args] (info "Not writing fressian")))
+
+  ;; When running vagrant on top of virtualbox, the guest additions by default
+  ;; frequently auto-syncs the nodes clocks, breaking the time skew nemesies.
+  ;; We modify the guest additions configuration to disable time syncing and
+  ;; reload the module
+  (alter-var-root
+    (var jepsen.nemesis.time/install!)
+    (fn [real_install!]
+      (fn []
+        (if (= (c/exec* "if [ -f /etc/rc.d/init.d/vboxadd-service ]; then echo true; fi")
+               "true")
+          (if (= 0 (count (c/exec :grep :-e "--disable-timesync"
+                                  "/etc/rc.d/init.d/vboxadd-service" "||" :true)))
+            (do
+              (info "Detected virtualbox timesync, trying to disable...")
+              (c/su (c/exec :sed :-i
+                            "s/daemon $binary >/daemon $binary --disable-timesync >/"
+                            "/etc/rc.d/init.d/vboxadd-service"))
+              (if-not (= 0 (count (c/exec :grep :-e "--disable-timesync"
+                                          "/etc/rc.d/init.d/vboxadd-service"
+                                          "||" :true)))
+                (do
+                  (info "Modified vbox guest additions config to disable timesync")
+                  (c/su (c/exec :service :vboxadd-service :restart))
+                  (info "Restarted guest additions"))
+                (do
+                  (error "Failed to modify vbox additions config, can't disable timesync!")
+                  (throw (RuntimeException. "Failed to disable virtualbox timesync")))))
+            (info "Virtualbox timesync already disabled"))
+          (info "Virtualbox guest additions dont seem to be installed"))
+        (real_install!))))
+
+  ;; Jepsen 0.1.10 has a bug in the clock nemesis causing error handling to fail
+  ;; when ntp isnt installed. This will be fixed Jepsen 0.1.11, but that isn't
+  ;; released yet, so add an override to jepsen.control/exec that prevents
+  ;; throwing the error
+  (alter-var-root
+   (var jepsen.control/exec)
+   (fn [real_exec]
+     (fn [& commands]
+       (if (= commands [:service :ntpd :stop])
+         (try
+           (real_exec :service :ntpd :stop)
+           (catch RuntimeException e
+             (warn "Discarding ssh error to circumvent jepsen bug")))
+         (apply real_exec commands)))))
+
+  
+  ;; Now parse args and run the test
+  (let [test  (cli/single-test-cmd {:test-fn  cbtest
+                                    :opt-spec extra-cli-options})
+        serve (cli/serve-cmd)]
+    (-> (merge test serve)
+        (cli/run! args))))
+    
+ 

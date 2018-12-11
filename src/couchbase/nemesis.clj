@@ -2,8 +2,11 @@
   (:require [clojure.string :as str]
             [clojure.tools.logging :refer :all]
             [couchbase [util      :as util]]
-            [jepsen    [generator :as gen]
-                       [nemesis   :as nemesis]]))
+            [jepsen    [control   :as c]
+                       [generator :as gen]
+                       [nemesis   :as nemesis]]
+            [jepsen.nemesis.time  :as nt]
+            [jepsen.os.centos     :as centos]))
 
 (defn disconnect-two
   "Introduce a partition that prevents two nodes from communicating"
@@ -12,8 +15,7 @@
     (nemesis/partitioner targeter)))
 
 (defn failover
-  "Actively failover the node returned by targeter through a rest-api call to
-  node healthy"
+  "Actively failover a node through the rest-api"
   ([] (failover rand-nth))
   ([targeter]
    (nemesis/node-start-stopper
@@ -24,20 +26,12 @@
          (util/rest-call endpoint params)
          [:failed-over node]))
 
-     (fn stop [test node]
-       (let [nodes    (test :nodes)
-             endpoint "/controller/setRecoveryType"
-             params   (->> node
-                           (str "ns_1@")
-                           (format "otpNode=%s&recoveryType=delta"))]
-         (util/rest-call endpoint params)
-         (util/rebalance nodes))))))
+     (fn stop [test node]))))
 
 (defn partition-then-failover
   "Introduce a partition such that two nodes cannot communicate, then failover
-  one of those nodes. This Nemesis is really just a constructor, during setup
-  we create and return a new jepsen.nemesis/compose, but since we need the test
-  parameters to do so we can't do this in advance."
+  one of those nodes. This Nemesis is only used as a constructor, during setup
+  it replaces itself with a new nemesis constructed by jepsen.nemesis/compose"
   []
   (reify nemesis/Nemesis
     (setup! [this test]
@@ -53,7 +47,7 @@
               "then failover" first)
         (nemesis/setup-compat! combined-nemesis test nil)))
 
-    ; These are never called, since we replace this nemesis with jepsen.nemesis/compose
+    ; These are never called, since we replace this nemesis during setup
     (invoke! [this test op])
     (teardown! [this test] this)))
 
@@ -127,35 +121,27 @@
         (info (util/rest-call endpoint params))
         (util/rebalance nodes)))))
 
-(defn noop [] nemesis/noop)
+(defn slow-dcp [DcpClient]
+  (reify nemesis/Nemesis
+    (setup! [this test] this)
+    (invoke! [this test op]
+      (case (:f op)
+        :start (do
+                 (reset! (:slow DcpClient) true)
+                 (assoc op :type :info))
+        :stop  (do
+                 (reset! (:slow DcpClient) false)
+                 (assoc op :type :info))))
+    (teardown! [this test]
+      (reset! (:slow DcpClient) false))))
 
-(def nemesies
-  {"none"                    noop
-   "failover-single"         failover
-   "partition-single"        nemesis/partition-random-node
-   "partition-then-failover" partition-then-failover
-   "graceful-failover"       graceful-failover
-   "rebalance-in-out"        rebalance-in-out})
-
-(defn get-generator
-  "Get a suitable generator for the given nemesis"
-  [nemesis]
-  (info "Nemesis is" nemesis)
-  (info "Compare to" partition-then-failover)
-  (condp = nemesis
-    partition-then-failover
-    (gen/seq [(gen/sleep 15)
-              {:type :info :f :start-partition}
-              (gen/sleep 5)
-              {:type :info :f :start-failover}])
-
-    noop
-    (gen/seq [])
-
-    (gen/seq (cycle [(gen/sleep 15)
-                     {:type :info :f :start}
-                     (gen/sleep 20)
-                     {:type :info :f :stop}
-                     (gen/sleep 4000)]))))
-
-    
+(defn trigger-compaction []
+  (reify nemesis/Nemesis
+    (setup! [this test] this)
+    (invoke! [this test op]
+      (assert (= (:f op) :compact))
+      (util/rest-call (rand-nth (test :nodes))
+                      "/pools/default/buckets/default/controller/compactBucket"
+                      "")
+      op)
+    (teardown! [this test])))
