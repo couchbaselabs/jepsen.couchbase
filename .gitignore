@@ -1,5 +1,6 @@
 /nodes*
 /store
+/resources/.vagrant
 
 /target
 /classes
