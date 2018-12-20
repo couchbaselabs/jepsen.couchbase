@@ -7,73 +7,87 @@ Jepsen testing for Couchbase.
 ### Requirements
 
 A JVM and the [Leiningen](https://leiningen.org/) build tool need to be
-installed. Gnuplot is required to plot performance graphs. Other dependencies
-will be auto-fetched on first run.
+installed. Gnuplot is required for the plot performance graphs option.
+Other dependencies will be auto-fetched on first run. You need either a list
+of IP addresses of nodes ready to ssh into, or have vagrant installed to
+provision vms.
 
 ### Setup
 
-Jepsen requires a cluster of nodes to run couchbase on, vagrant simplifies the
-setup. I assume this file is in `~/dev/jepsen.couchbase`, and vagrant files are in
-`~/dev/vagrants`, replace paths as appropriate. Using centos7 based vagrants
-provides the most reliable setup. Assigning multiple cpus to each vm makes
-replicating race conditions more likely.
+Jepsen requires a cluster of nodes to run couchbase on. If you already have
+nodes available you can invoke jepsen directly. Otherwise you can use the
+script run.sh to automatically start suitable vagrants.
 
-```
-cd ~/dev/vagrants/5.5.1/centos7
-export VAGRANT_NODES=5
-export VAGRANT_CPUS=2
-vagrant up
-```
+### Running a single test
 
-Vagrant sets up an ssh key pair per node, but Jepsen doesn't support different
-credentials per node. We don't care about the security of vagrants, so just set
-a simple password for root ssh.
+The helper script run.sh can automatically start ubuntu 16.04 vagrants, you need
+to supply a .deb couchbase package to install.
 ```
-for i in $(seq 1 $VAGRANT_NODES); do vagrant ssh node$i -c "echo root | sudo passwd --root"; done
+wget http://packages.couchbase.com/releases/6.0.0/couchbase-server-enterprise_6.0.0-ubuntu16.04_amd64.deb
+./run.sh test --workload Register --package ./couchbase-server-enterprise_6.0.0-ubuntu16.04_amd64.deb
 ```
 
-We need to pass the node IPs to Jepsen, we store them in a file to make this
-easier.
+To use other nodes invoke lein directly, providing a file with one node IP per line
+and ssh credentials (`--username` and either `--ssh-private-key` or `--password`).
+The supplied user must have sudo access.
 ```
-vagrant status | grep -E -o "[0-9]+(\.[0-9]+){3}" > ~/dev/jepsen.couchbase/nodes
-```
-
-We run a basic test that should pass to ensure everything is working.
-```
-cd ~/dev/jepsen.couchbase
-lein trampoline run test --nodes-file ./nodes --workload Register
+lein trampoline run test --workload Register --nodes-file some-file.txt --username node-username --password abc123 --package ./couchbase-server-enterprise_6.0.0-ubuntu16.04_amd64.deb
 ```
 
-### Demonstrate non-linearizability
+The workload argument can specify any single workload to be run, see workload.clj
+for currently defined workloads.
+
+### Running multiple tests
+
+With the multitest subcommand we can sequentially run multiple tests, aborting if
+any of the tests fail. To run all the workloads are expected to pass on a recent
+couchbase version we can run
+```
+./run.sh multitest --workload Register,Set,WhiteRabbit,MB29369,MB29480 --package ./couchbase-server-enterprise_6.0.0-ubuntu16.04_amd64.deb
+```
+
+### Demonstrating non-linearizability
+The following workloads demonstrate non-linearizability caused by node failovers
+due to limitations of the current observe based durability.
+
 1 replica and replicate-to = 0
 ```
-lein trampoline run test --nodes-file ./nodes --workload Failover
+./run.sh test --workload Failover --package ./couchbase-server-enterprise_6.0.0-ubuntu16.04_amd64.deb
 ```
 1 replica and replicate-to = 1
 ```
-lein trampoline run test --nodes-file ./nodes --workload MB30048
+./run.sh test --workload MB30048 --package ./couchbase-server-enterprise_6.0.0-ubuntu16.04_amd64.deb
 ```
 2 replicas and replicate-to = 1
 ```
-lein trampoline run test --nodes-file ./nodes --workload MB28525
+./run.sh test --workload MB28525 --package ./couchbase-server-enterprise_6.0.0-ubuntu16.04_amd64.deb
 ```
 
 ### Demonstrating fixed bugs
+Specifying a package for an older couchbase release allows us to demonstrate fixed bugs.
+
 White-Rabbit
 ```
-lein trampoline run test --nodes-file ./nodes --workload WhiteRabbit >> /dev/null
+./run.sh test --workload WhiteRabbit --package ./couchbase-server-enterprise_5.0.1-ubuntu16.04_amd64.deb
 ```
 Lost DCP Mutations when cursor dropping
 ```
-lein trampoline run test --nodes-file ./nodes --workload MB29369 >> /dev/null
+./run.sh test --workload MB29369 --package ./couchbase-server-enterprise_5.0.1-ubuntu16.04_amd64.deb
 ```
 Lost DCP deletions when cursor dropping
 ```
-lein trampoline run test --nodes-file ./nodes --workload MB29480 >> /dev/null
+./run.sh test --workload MB29480 --package ./couchbase-server-enterprise_5.0.1-ubuntu16.04_amd64.deb
+```
+
+### Running against a build
+If the host has a directory containing a build suitable for running the nodes,
+you can supply the install directory to jepsen instead of a deb/rpm package
+```
+./run.sh test --workload Register --package ~/dev/source/install
 ```
 
 ### Displaying results
-Start a server on localhost:8080 to show the results with a pretty interface.
+Start a server on `http://localhost:8080` to show the results with a simple interface.
 ```
-lein run serve
+lein trampoline run serve
 ```
