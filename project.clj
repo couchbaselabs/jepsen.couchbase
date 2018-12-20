@@ -5,4 +5,10 @@
                  [jepsen "0.1.10"]
                  [com.couchbase.client/java-client "2.6.2"]
                  [com.couchbase.client/dcp-client "0.20.0"]]
-  :jvm-opts ["--add-modules" "java.xml.bind"])
+  :jvm-opts ~(if (-> (System/getProperty "java.version")
+                     (clojure.string/split #"\.")
+                     (first)
+                     (Integer/parseInt)
+                     (>= 9))
+               ["--add-modules" "java.xml.bind"]
+               []))
