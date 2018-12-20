@@ -17,8 +17,8 @@
   []
   (reify
     db/DB
-    (setup!    [_ test node] (util/setup-node))
-    (teardown! [_ test node] (util/teardown))
+    (setup!    [_ test node] (util/setup-node test))
+    (teardown! [_ test node] (util/teardown test))
 
     db/Primary
     (setup-primary! [_ test node]
@@ -26,22 +26,27 @@
 
     db/LogFiles
     (log-files [_ test node]
-      (when (test :get-cbcollect)
-        (info "Generating cbcollect...")
-        (c/su (c/exec (keyword "/opt/couchbase/bin/cbcollect_info")
-                      "/opt/couchbase/var/lib/couchbase/logs/cbcollect.zip")))
-      (c/su (c/exec :chmod :-R :a+rx "/opt/couchbase"))
-      (->> (c/exec :ls "/opt/couchbase/var/lib/couchbase/logs")
-           (str/split-lines)
-           (map #(str "/opt/couchbase/var/lib/couchbase/logs/" %))))))
+      (let [install-dir (or (:path (test :package))
+                            "/opt/couchbase")]
+        (when (test :get-cbcollect)
+          (info "Generating cbcollect...")
+          (c/su (c/exec (str install-dir "/bin/cbcollect_info")
+                        (str install-dir "/var/lib/couchbase/logs/cbcollect.zip"))))
+        (c/su (c/exec :chmod :-R :a+rx "/opt/couchbase"))
+        (try
+          (->> (c/exec :ls (str install-dir "/var/lib/couchbase/logs"))
+               (str/split-lines)
+               (map #(str install-dir "/var/lib/couchbase/logs/" %)))
+          (catch RuntimeException e
+            (warn "Error getting logfiles")
+            []))))))
 
-
-;; Jepsen has a predefine os module for centos, but it does a bunch of stuff that
-;; we don't need, and has a tendency to break our vagrants; so we define our own
-(def centos
+;; The only utility we actually need to install on our vagrants seems to be
+;; ntpdate, so detect which pacakge manager to use and install it
+(def os
   (reify os/OS
     (setup! [_ test node]
-      (c/su (centos/install [:ntpdate])))
+      (c/su (c/exec (util/get-package-manager) :install :-y :ntpdate)))
     (teardown! [_ test node])))
 
 
@@ -52,7 +57,7 @@
          opts
          {:name "Couchbase"
           :db (couchbase)
-          :os centos
+          :os os
           :replicas 1
           :replicate-to 0}
          (as-> (opts :workload) %
@@ -62,7 +67,11 @@
 (defn parse-int [x] (Integer/parseInt x))
 
 (def extra-cli-options
-  [[nil "--workload WORKLOAD"
+  [[nil "--package URL-OR-FILENAME"
+    "Install this couchbase package, use preinstalled version if not given"
+    :default nil
+    :parse-fn util/get-package]
+   [nil "--workload WORKLOAD"
     "The workload to run"
     :default  nil
     :validate [#(workload/workloads %) (cli/one-of workload/workloads)]]
@@ -95,33 +104,13 @@
 
   ;; When running vagrant on top of virtualbox, the guest additions by default
   ;; frequently auto-syncs the nodes clocks, breaking the time skew nemesies.
-  ;; We modify the guest additions configuration to disable time syncing and
-  ;; reload the module
+  ;; We disable the virtualbox guest additions to prevent this.
   (alter-var-root
     (var jepsen.nemesis.time/install!)
     (fn [real_install!]
       (fn []
-        (if (= (c/exec* "if [ -f /etc/rc.d/init.d/vboxadd-service ]; then echo true; fi")
-               "true")
-          (if (= 0 (count (c/exec :grep :-e "--disable-timesync"
-                                  "/etc/rc.d/init.d/vboxadd-service" "||" :true)))
-            (do
-              (info "Detected virtualbox timesync, trying to disable...")
-              (c/su (c/exec :sed :-i
-                            "s/daemon $binary >/daemon $binary --disable-timesync >/"
-                            "/etc/rc.d/init.d/vboxadd-service"))
-              (if-not (= 0 (count (c/exec :grep :-e "--disable-timesync"
-                                          "/etc/rc.d/init.d/vboxadd-service"
-                                          "||" :true)))
-                (do
-                  (info "Modified vbox guest additions config to disable timesync")
-                  (c/su (c/exec :service :vboxadd-service :restart))
-                  (info "Restarted guest additions"))
-                (do
-                  (error "Failed to modify vbox additions config, can't disable timesync!")
-                  (throw (RuntimeException. "Failed to disable virtualbox timesync")))))
-            (info "Virtualbox timesync already disabled"))
-          (info "Virtualbox guest additions dont seem to be installed"))
+        (c/su (c/exec :systemctl :stop :vboxadd-service "|:"))
+        (c/su (c/exec :systemctl :stop :virtualbox-guest-utils "|:"))
         (real_install!))))
 
   ;; Jepsen 0.1.10 has a bug in the clock nemesis causing error handling to fail

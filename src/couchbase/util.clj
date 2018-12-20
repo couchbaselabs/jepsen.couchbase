@@ -1,12 +1,14 @@
 (ns couchbase.util
   (:require [clojure.java.shell :as shell]
+            [clojure.java.io :as io]
             [clojure.tools.logging :refer :all]
             [clojure.string :as str]
             [jepsen [control :as c]]
             [slingshot.slingshot :refer [try+ throw+]])
   (:import com.couchbase.client.java.CouchbaseCluster
            com.couchbase.client.java.auth.ClassicAuthenticator
-           com.couchbase.client.java.auth.PasswordAuthenticator))
+           com.couchbase.client.java.auth.PasswordAuthenticator
+           java.io.File))
 
 (defn rest-call
   "Perform a rest api call"
@@ -23,6 +25,16 @@
                 :params params
                 :error call})
        (:out call)))))
+
+(defn get-package-manager
+  "Get the package manager for the nodes os, only really designed for determining
+  between centos and ubuntu"
+  []
+  (if (= "yum" (c/exec :bash :-c "if [ -e /etc/redhat-release ]; then echo yum; fi"))
+    :yum
+    (if (= "apt" (c/exec :bash :-c "if [ -e /etc/debian_version ]; then echo apt; fi"))
+      :apt
+      (throw (RuntimeException. "Couldn't determine node os")))))
 
 (defn initialise
   "Initialise a new cluster"
@@ -111,11 +123,53 @@
 
 (defn setup-node
   "Start couchbase on a node"
-  []
+  [test]
   (info "Setting up couchbase")
-  (c/su (c/exec :mkdir "/opt/couchbase/var/lib/couchbase"))
-  (c/su (c/exec :chown :couchbase:couchbase "/opt/couchbase/var/lib/couchbase"))
-  (c/su (c/exec :service :couchbase-server :start))
+  (c/su (c/exec :mkdir :-p "/opt/couchbase/var/lib/couchbase"))
+  (c/su (c/exec :chmod :a+rwx "/opt/couchbase/var/lib/couchbase"))
+  (when-let [package (test :package)]
+    (info "Uploading couchbase package to nodes")
+    (c/su (c/upload (:package package) "couchbase-package"))
+    (info "Installing package")
+    (case (:type package)
+      :rpm
+      (do
+        (c/su (c/exec :mv "~/couchbase-package" "~/couchbase.rpm"))
+        (c/su (c/exec :yum :install :-y "~/couchbase.rpm"))
+        (c/su (c/exec :rm "~/couchbase.rpm")))
+      :deb
+      (do
+        (c/su (c/exec :mv "~/couchbase-package" "~/couchbase.deb"))
+        (c/su (c/exec :apt :install :-y "~/couchbase.deb"))
+        (c/su (c/exec :rm "~/couchbase.deb")))
+      :build
+      (do
+        (c/su (c/upload (:package (test :package)) "couchbase-build.tar"))
+        (c/su (c/exec :tar :-Pxf "~/couchbase-package"))
+        (c/su (c/exec :rm "~/couchbase-package"))
+
+        ;; In order for paths in the builds bin directory to be resolveable, all parent
+        ;; directories need to have execute permissions set. This might be a security
+        ;; risk, but with vagrants we dont really care
+        (loop [dir-tree (str/split (:path (test :package)) #"/")]
+          (c/su (c/exec :chmod :a+x (str/join "/" dir-tree)))
+          (if (> (count dir-tree) 2)
+            (recur (drop-last dir-tree))))
+
+        ;; We need to make the data directory writable by couchbase
+        (c/su (c/exec :chmod :-R :a+rwx (str (:path (test :package)) "/var/lib/couchbase")))
+
+        ;; Install systemd file
+        (let [service-file (File/createTempFile "couchbase" ".service")]
+          (.deleteOnExit service-file)
+          (io/copy (io/reader (io/resource "couchbase-server.service")) service-file)
+          (c/su (c/upload service-file "/etc/systemd/system/couchbase-server.service")))
+        (c/su (c/exec :sed :-i (format "s/%%INSTALLPATH%%/%s/"
+                                       (str/escape (:path (test :package)) {\/ "\\/"}))
+                      "/etc/systemd/system/couchbase-server.service")))))
+  (c/su (c/exec :systemctl :daemon-reload))
+  (c/su (c/exec :systemctl :unmask :couchbase-server))
+  (c/su (c/exec :systemctl :restart :couchbase-server))
   (info "Waiting for couchbase to start")
   (while
     (= :not-ready
@@ -127,10 +181,28 @@
 
 (defn teardown
   "Stop the couchbase server instances and delete the data files"
-  []
+  [test]
   (info "Tearing down couchbase node")
-  (c/su (c/exec :service :couchbase-server :stop))
-  (c/su (c/exec :rm :-rf "/opt/couchbase/var/lib/couchbase")))
+  (try
+    (c/su (c/exec :systemctl :stop :couchbase-server))
+    (catch RuntimeException e))
+  (c/su (c/exec :rm :-rf "/opt/couchbase/var/lib/couchbase"))
+  (when (test :package)
+    (case (get-package-manager)
+      :yum (try
+             (c/su (c/exec :yum :remove :-y "couchbase-server"))
+             (c/su (c/exec :rm "~/couchbase.rpm"))
+             (catch RuntimeException e))
+      :apt (try
+             (c/su (c/exec :apt :remove :-y "couchbase-server"))
+             (c/su (c/exec :rm "~/couchbase.deb"))
+             (catch RuntimeException e))))
+  (when (= (:type (test :package)) :build)
+    (try
+      (c/su (c/exec :rm "/lib/systemd/system/couchbase-server.service"))
+      (c/su (c/exec :rm :-r (:path (test :package))))
+      (catch RuntimeException e
+        (warn "Error removing couchbase install" e)))))
   
 (defn get-version
   "Get the couchbase version running on the cluster"
@@ -153,3 +225,37 @@
         cluster (-> (CouchbaseCluster/create nodes)
                     (.authenticate auth))]
     cluster))
+
+;; When pointed at a custom build, we need to place the install on each vagrant
+;; node at the same path as it was built, or absolute paths in the couchbase
+;; install will be broken. We tar the build with absolute paths to ensure we
+;; put everything in the correct place
+(defn tar-build
+  [build]
+  (let [package-file (File/createTempFile "couchbase" ".tar")]
+    (info "TARing build...")
+    (shell/sh "tar"
+              "-Pcf"
+              (.getCanonicalPath package-file)
+              "--owner=root"
+              "--group=root"
+              (.getCanonicalPath build))
+    (info "TAR complete")
+    (.deleteOnExit package-file)
+    package-file))
+
+(defn get-package
+  "Get a file with the package that can be uploaded to the nodes"
+  [package]
+  (cond
+    (and (re-matches #".*\.rpm" package)
+         (.isFile (io/file package)))        {:type :rpm :package (io/file package)}
+    (and (re-matches #".*\.deb" package)
+         (.isFile (io/file package)))        {:type :deb :package (io/file package)}
+    (and (.isDirectory (io/file package))
+         (.isDirectory (io/file package "bin"))
+         (.isDirectory (io/file package "etc"))
+         (.isDirectory (io/file package "lib"))
+         (.isDirectory (io/file package "share"))) {:type :build
+                                                    :package (tar-build (io/file package))
+                                                    :path (.getCanonicalPath (io/file package))}))
