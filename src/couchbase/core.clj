@@ -73,8 +73,7 @@
     :parse-fn util/get-package]
    [nil "--workload WORKLOAD"
     "The workload to run"
-    :default  nil
-    :validate [#(workload/workloads %) (cli/one-of workload/workloads)]]
+    :default  nil]
    [nil "--oplimit LIMIT"
     "Limit the total number of operations"
     :default nil
@@ -89,6 +88,16 @@
     "Output performance graphs? (Requires gnuplot)"
     :parse-fn #{"true"}
     :default false]])
+
+
+;; Sequentially run multiple workloads, exiting on failure
+(defn multi-test [single-test]
+  {"multitest"
+   (assoc single-test :run
+          (fn [{:keys [options]}]
+            (doseq [wl (str/split (options :workload) #",")]
+              (info "***** Running workload:" wl "*****")
+              ((single-test :run) {:options (assoc options :workload wl)}))))})
 
 (defn -main
   "Run the test specified by the cli arguments"
@@ -130,10 +139,9 @@
 
   
   ;; Now parse args and run the test
-  (let [test  (cli/single-test-cmd {:test-fn  cbtest
-                                    :opt-spec extra-cli-options})
-        serve (cli/serve-cmd)]
-    (-> (merge test serve)
+  (let [test        (cli/single-test-cmd {:test-fn  cbtest
+                                          :opt-spec extra-cli-options})
+        multitest   (multi-test (test "test"))
+        serve       (cli/serve-cmd)]
+    (-> (merge test multitest serve)
         (cli/run! args))))
-    
- 
