@@ -15,15 +15,18 @@
             [slingshot.slingshot :refer [try+]]))
 
 ;; Shared parameters across register workloads
-(def register-base
+(defn register-base [opts]
   {:client  (clients/register-client (cbclients/basic-client))
    :model   (model/cas-register)
    :checker (checker/compose
-                     {:perf  (checker/perf)
-                      :indep (independent/checker
-                               (checker/compose
-                                 {:timeline (timeline/html)
-                                  :linear (checker/linearizable)}))})})
+             (merge
+              {:indep (independent/checker
+                       (checker/compose
+                        {:timeline (timeline/html)
+                         :linear (checker/linearizable)}))}
+              (if (opts :perf-graphs)
+                {:perf (checker/perf)})))})
+  
 
 (defn Register-workload
   "Basic register workload"
@@ -39,7 +42,7 @@
                               (gen/stagger (/ rate)))))
                      (gen/limit oplimit)
                      (gen/clients))]
-    (merge register-base
+    (merge (register-base opts)
            {:autofailover true
             :concurrency  60
             :replicas     1
@@ -63,7 +66,7 @@
                      (gen/nemesis (gen/seq [(gen/sleep 5)
                                             {:type :info :f :start}
                                             (gen/sleep 30)])))]
-    (merge register-base
+    (merge (register-base opts)
            {:autofailover true
             :concurrency  120
             :replicas     1
@@ -71,7 +74,6 @@
             :nemesis      nemesis
             :generator    gen})))
 
-                         
 (defn MB30048-workload
   "Trigger non-linearizable behaviour where indeterminate operations are visible
   for some period of time, before disappearing"
@@ -88,7 +90,7 @@
                      (gen/nemesis (gen/seq [(gen/sleep 5)
                                             {:type :info :f :start}
                                             (gen/sleep 30)])))]
-    (merge register-base
+    (merge (register-base opts)
            {:autofailover true
             :concurrency  120
             :replicas     1
@@ -114,7 +116,7 @@
                                             (gen/sleep 5)
                                             {:type :info :f :start-failover}
                                             (gen/sleep 30)])))]
-    (merge register-base
+    (merge (register-base opts)
            {:autofailover false
             :concurrency  120
             :replicas     2
@@ -138,8 +140,10 @@
      :pool-size   4
      :client      client
      :checker     (checker/compose
-                    {:perf     (checker/perf)
-                     :set      (checker/set)})
+                   (merge
+                    {:set (checker/set)}
+                    (if (opts :perf-graphs)
+                      {:perf (checker/perf)})))
      :generator   (gen/phases
                     (->> (range)
                          (map (fn [x] {:type :invoke :f :add :value x}))
@@ -161,8 +165,10 @@
         client   (clients/set-client addclient delclient dcpclient)
         nemesis  (cbnemesis/rebalance-in-out)
         checker  (checker/compose
-                  {:perf (checker/perf)
-                   :set  (checker/set)})
+                  (merge
+                   {:set (checker/set)}
+                   (if (opts :perf-graphs)
+                     {:perf (checker/perf)})))
         gen      (gen/phases
                    (->> (range)
                         (map (fn [x] {:type :invoke :f :add :value x}))
@@ -182,7 +188,6 @@
      :nemesis     nemesis
      :checker     checker
      :generator   gen}))
-                  
 
 (defn MB29369-workload
   "Workload to trigger lost inserts due to cursor dropping bug MB29369"
@@ -197,13 +202,15 @@
         ;; per node
         oplimit   (or (opts :oplimit)
                       (* (count (opts :nodes)) 150000))
-        
 
         client   (clients/set-client addclient delclient dcpclient)
         nemesis  (cbnemesis/slow-dcp (:dcpclient client))
         checker  (checker/compose
-                  {:perf (checker/perf)
-                   :set  (checker/set)})
+                  (merge
+                   {:set (checker/set)}
+                   (if (opts :perf-graphs)
+                     {:perf (checker/perf)})))
+
         gen      (gen/phases
                    ;; Make DCP slow and write 2/3 of the ops; oplimit should be chosen
                    ;; such that this is sufficient to trigger cursor dropping.
@@ -245,7 +252,6 @@
      :checker      checker
      :generator    gen}))
 
-
 (defn MB29480-workload
   "Workload to trigger lost deletes due to cursor dropping bug MB29480"
   [opts]
@@ -264,8 +270,10 @@
                                     #{:bump}          (nt/clock-nemesis)})
         
         checker   (checker/compose
-                    {:perf     (checker/perf)
-                     :set      (cbchecker/extended-set-checker)})
+                   (merge
+                    {:set (cbchecker/extended-set-checker)}
+                    (if (opts :perf-graphs)
+                      {:perf (checker/perf)})))
 
         gen       (gen/phases
                      ;; First create 10000 keys and let the client see them
@@ -310,8 +318,7 @@
      :nemesis      nemesis
      :checker      checker
      :generator    gen}))
-     
-                    
+
 (def workloads
   (array-map
     "Register"     Register-workload

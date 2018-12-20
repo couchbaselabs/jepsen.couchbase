@@ -75,7 +75,11 @@
     "Generate a cbcollect at the end of the run?"
     :parse-fn #{"true"}
     :default false
-    :validate [#{"true" "false"} "Must be true or false"]]])
+    :validate [#{"true" "false"} "Must be true or false"]]
+   [nil "--perf-graphs BOOL"
+    "Output performance graphs? (Requires gnuplot)"
+    :parse-fn #{"true"}
+    :default false]])
 
 (defn -main
   "Run the test specified by the cli arguments"
