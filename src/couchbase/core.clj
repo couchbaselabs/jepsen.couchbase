@@ -122,22 +122,6 @@
         (c/su (c/exec :systemctl :stop :virtualbox-guest-utils "|:"))
         (real_install!))))
 
-  ;; Jepsen 0.1.10 has a bug in the clock nemesis causing error handling to fail
-  ;; when ntp isnt installed. This will be fixed Jepsen 0.1.11, but that isn't
-  ;; released yet, so add an override to jepsen.control/exec that prevents
-  ;; throwing the error
-  (alter-var-root
-   (var jepsen.control/exec)
-   (fn [real_exec]
-     (fn [& commands]
-       (if (= commands [:service :ntpd :stop])
-         (try
-           (real_exec :service :ntpd :stop)
-           (catch RuntimeException e
-             (warn "Discarding ssh error to circumvent jepsen bug")))
-         (apply real_exec commands)))))
-
-  
   ;; Now parse args and run the test
   (let [test        (cli/single-test-cmd {:test-fn  cbtest
                                           :opt-spec extra-cli-options})
