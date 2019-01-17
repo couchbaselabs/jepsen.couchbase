@@ -256,7 +256,8 @@
   the default bucket."
   [test]
   (let [nodes   (test :nodes)
-        auth    (if (>= (first (get-version (first nodes))) 5)
+        auth    (if (or (>= (first (get-version (first nodes))) 5)
+                        (=  (first (get-version (first nodes))) 0))
                   (new PasswordAuthenticator "Administrator" "abc123")
                   (-> (new ClassicAuthenticator)
                       (.cluster "Administrator" "abc123")

@@ -247,7 +247,8 @@
   (maybe-setup [this test]
     (if (compare-and-set! status nil :preparing)
       (let [server-version (util/get-version (first (test :nodes)))
-            new-client     (if (>= (first server-version) 5)
+            new-client     (if (or (>= (first server-version) 5)
+                                   (=  (first server-version) 0))
                                (-> (Client/configure)
                                    (.hostnames (test :nodes))
                                    (.username "Administrator")
