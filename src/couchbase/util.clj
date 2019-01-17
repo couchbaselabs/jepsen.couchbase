@@ -14,10 +14,19 @@
   "Perform a rest api call"
   ([endpoint params] (rest-call c/*host* endpoint params))
   ([target endpoint params]
-   (let [uri  (str "http://" target ":8091" endpoint)
+   (let [;; /diag/eval is only accessible from localhost on newer couchbase
+         ;; versions, so if endpoint is /diag/eval ssh into the node before
+         ;; calling curl
+         uri  (if (= endpoint "/diag/eval")
+                (str "http://localhost:8091"  endpoint)
+                (str "http://" target ":8091" endpoint))
+         cmd  (if (= endpoint "/diag/eval")
+                (fn [& args] {:out  (apply c/exec args)
+                              :exit 0})
+                shell/sh)
          call (if (some? params)
-                (shell/sh "curl" "-s" "-S" "--fail" "-u" "Administrator:abc123" uri "-d" params)
-                (shell/sh "curl" "-s" "-S" "--fail" "-u" "Administrator:abc123" uri))]
+                (cmd "curl" "-s" "-S" "--fail" "-u" "Administrator:abc123" uri "-d" params)
+                (cmd "curl" "-s" "-S" "--fail" "-u" "Administrator:abc123" uri))]
      (if (not= (call :exit) 0)
        (throw+ {:type :rest-fail
                 :target target
@@ -43,8 +52,9 @@
         index-path "%2Fopt%2Fcouchbase%2Fvar%2Flib%2Fcouchbase%2Fdata"
         params     (format "data_path=%s&index_path=%s" data-path index-path)]
     (rest-call "/nodes/self/controller/settings" params)
-    (rest-call "/nodes/controller/setupServices" "services=kv")
-    (rest-call "/settings/web" "username=Administrator&password=abc123&port=SAME")))
+    (rest-call "/node/controller/setupServices" "services=kv")
+    (rest-call "/settings/web" "username=Administrator&password=abc123&port=SAME")
+    (rest-call "/pools/default" "memoryQuota=256")))
 
 (defn add-nodes
   "Add nodes to the cluster"
@@ -88,38 +98,65 @@
                     "&authType=sasl&saslPassword=")]
     (rest-call "/pools/default/buckets" params)))
 
+(defn set-vbucket-count
+  "Set the number of vbuckets for new buckets"
+  [test]
+  (if-let [num-vbucket (test :custom-vbucket-count)]
+    (rest-call "/diag/eval"
+               (format "ns_config:set(couchbase_num_vbuckets_default, %s)."
+                       num-vbucket))))
+
+(defn set-autofailover
+  "Apply autofailover settings to cluster"
+  [test]
+  (let [enabled  (boolean (test :autofailover))
+        timeout  (or (test :autofailover-timeout) 6)
+        maxcount (or (test :autofailover-maxcount) 3)]
+    (rest-call "/settings/autoFailover"
+               (format "enabled=%s&timeout=%s&maxCount=%s"
+                       enabled timeout maxcount))))
+
+(defn set-custom-cursor-drop-marks
+  "Set the cursor dropping marks to a new value on all nodes"
+  [test]
+  (let [lower_mark (nth (test :custom-cursor-drop-marks) 0)
+          upper_mark (nth (test :custom-cursor-drop-marks) 1)
+          config     (format "cursor_dropping_lower_mark=%d;cursor_dropping_upper_mark=%d"
+                             lower_mark
+			     upper_mark)
+	  props      (format "[{extra_config_string, \"%s\"}]" config)
+          params     (format "ns_bucket:update_bucket_props(\"default\", %s)." props)]
+      (doseq [node (test :nodes)]
+        (rest-call "/diag/eval" params)))
+  (c/with-test-nodes test (c/su (c/exec :pkill :memcached)))
+  ;; Before polling to check if we have warmed up again, we need to wait a while
+  ;; for ns_server to detect memcached was killed
+  (Thread/sleep 3000)
+  (info "Waiting for memcached to restart")
+  (while (->> (rest-call "/pools/default/serverGroups" nil)
+              (re-find #"\"status\":\"warmup\""))
+    (Thread/sleep 1000)))
+
 (defn setup-cluster
   "Setup couchbase cluster"
   [test node]
   (info "Creating couchbase cluster from" node)
   (let [nodes        (test :nodes)
         other-nodes  (remove #(= node %) nodes)
-        num-vbuckets (test :custom-vbucket-count)
         num-replicas (test :replicas)]
     (initialise)
     (add-nodes other-nodes)
-    (if num-vbuckets
-      (->> num-vbuckets
-           (format "ns_config:set(couchbase_num_vbuckets_default, %s).")
-           (rest-call "/diag/eval")))
+    (set-vbucket-count test)
     (rebalance nodes)
+    (set-autofailover test)
     (create-bucket num-replicas)
-    (rebalance nodes))
-  (rest-call "/settings/autoFailover"
-             (->> (test :autofailover)
-                  (boolean)
-                  (format "enabled=%s&timeout=6&maxCount=2")))
-  (when-let [[lower_mark upper_mark] (test :custom-cursor-drop-marks)]
-    (doseq [node (test :nodes)]
-      (let [config (format "cursor_dropping_lower_mark=%d;cursor_dropping_upper_mark=%d"
-                           lower_mark
-			   upper_mark)
-	    props  (format "[{extra_config_string, \"%s\"}]" config)
-            params (format "ns_bucket:update_bucket_props(\"default\", %s)." props)]
-	(rest-call node "/diag/eval" params)))
-    (c/with-test-nodes test (c/su (c/exec :pkill :memcached)))
-    (Thread/sleep 20000))
-  (info "Setup complete"))
+    (info "Waiting for bucket warmup to complete...")
+    (while (->> (rest-call "/pools/default/serverGroups" nil)
+                (re-find #"\"status\":\"warmup\""))
+      (Thread/sleep 1000))
+    (if (test :custom-cursor-drop-marks)
+      (set-custom-cursor-drop-marks test))
+    (info "Setup complete")))
 
 (defn setup-node
   "Start couchbase on a node"
