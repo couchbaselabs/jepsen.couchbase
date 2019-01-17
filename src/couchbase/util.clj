@@ -16,8 +16,8 @@
   ([target endpoint params]
    (let [uri  (str "http://" target ":8091" endpoint)
          call (if (some? params)
-                (shell/sh "curl" "-s" "-u" "Administrator:abc123" uri "-d" params)
-                (shell/sh "curl" "-s" "-u" "Administrator:abc123" uri))]
+                (shell/sh "curl" "-s" "-S" "--fail" "-u" "Administrator:abc123" uri "-d" params)
+                (shell/sh "curl" "-s" "-S" "--fail" "-u" "Administrator:abc123" uri))]
      (if (not= (call :exit) 0)
        (throw+ {:type :rest-fail
                 :target target
@@ -176,7 +176,9 @@
       (try+
         (rest-call "/pools/default" nil)
         (catch [:type :rest-fail] e
-          :not-ready)))
+          (if (= (->> e (:error) (:exit)) 7)
+            :not-ready
+            :done))))
     (Thread/sleep 2000)))
 
 (defn teardown
