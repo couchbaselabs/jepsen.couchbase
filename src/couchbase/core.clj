@@ -44,9 +44,15 @@
           :os os
           :replicas 1
           :replicate-to 0}
-         (as-> (opts :workload) %
-               (workload/workloads %)
-               (% opts))))
+         (try
+           (as-> (opts :workload) %
+                 (format "couchbase.workload/%s-workload" %)
+                 (resolve (symbol %))
+                 (% opts))
+           (catch NullPointerException _
+             (let [msg (format "Workload %s does not exist" (opts :workload))]
+               (fatal msg)
+               (throw (RuntimeException. msg)))))))
 
 (defn parse-int [x] (Integer/parseInt x))
 

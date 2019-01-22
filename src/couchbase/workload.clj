@@ -316,14 +316,3 @@
      :nemesis      nemesis
      :checker      checker
      :generator    gen}))
-
-(def workloads
-  (array-map
-    "Register"     Register-workload
-    "Failover"     Failover-workload
-    "MB30048"      MB30048-workload
-    "MB28525"      MB28525-workload
-    "Set"          Set-workload
-    "WhiteRabbit"  WhiteRabbit-workload
-    "MB29369"      MB29369-workload
-    "MB29480"      MB29480-workload))
