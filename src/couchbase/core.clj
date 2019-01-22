@@ -66,14 +66,11 @@
     :default nil
     :parse-fn parse-int
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
-   [nil "--get-cbcollect BOOL"
+   [nil "--get-cbcollect"
     "Generate a cbcollect at the end of the run?"
-    :parse-fn #{"true"}
-    :default false
-    :validate [#{"true" "false"} "Must be true or false"]]
-   [nil "--perf-graphs BOOL"
+    :default false]
+   [nil "--perf-graphs"
     "Output performance graphs? (Requires gnuplot)"
-    :parse-fn #{"true"}
     :default false]
    [nil "--hashdump"
     "Output hashtable dump from all vbuckets"
