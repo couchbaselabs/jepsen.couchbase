@@ -7,7 +7,9 @@
   (:import com.couchbase.client.java.document.JsonDocument
            com.couchbase.client.java.document.JsonLongDocument))
 
-;; Jepsen client for the register workloads
+;; Jepsen client for the register workloads. Convert operations from Jepsen
+;; into an operation that can be performed against a couchbase cluster, then
+;; pass this op to the cbclient.
 (defrecord RegisterClient [cbclient]
   client/Client
   (open! [this test node]
@@ -61,10 +63,20 @@
   (close! [_ test]
     (cbclients/maybe-close cbclient)))
 
+;; Wrapper as records aren't externally visible
 (defn register-client [cbclient]
   (RegisterClient. cbclient))
 
-;; Jepsen client for the set workloads
+;; Jepsen client for the set workloads. We use a bucket to model as set. Add
+;; operations mean inserting a key into the bucket (we don't care about it's
+;; value, only it's existence). Read operations are performed by streaming
+;; all the buckets mutations with dcp. Delete operations are only supported
+;; in a limited set of situations. There is no support for delete
+;; operations in Jepsen's native set checker; we have our own custom checker
+;; in couchbase.checker that supports deletes to some extent, but this has
+;; only been tested for replicating a single specific issue. We take three
+;; clients since the batch-insert client can only perform adds, and we need a
+;; seperate dcp client anyway for reads.
 (defrecord SetClient [addclient delclient dcpclient]
   client/Client
   (open! [this test node]

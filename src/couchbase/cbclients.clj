@@ -108,6 +108,10 @@
       (do
         (reset! cluster (util/get-connection test))
         (reset! bucket  (->> (.openBucket @cluster "default") (.async)))
+        ;; The syncatom is the core datastructure used to synchronise input from
+        ;; all the jepsen clients. This syncatom should always contain a vector
+        ;; whos first element is a promise, and all further elements, if any,
+        ;; are documents to be inserted.
         (reset! syncatom [(promise)])
         (reset! status 0))
       (while (= :preparing @status) (Thread/sleep 100)))
@@ -115,6 +119,9 @@
 
   (invoke [this test optype opval]
     (assert (= optype :insert))
+    ;; We define maybe conj that will append a doc to the end of the vector if
+    ;; it remains smaller than batch-size, else it create a new promise and
+    ;; removes the previous documents.
     (let [maybe-conj                (fn [vals op]
                                         (if (<= (count vals) (test :batch-size))
                                             (conj vals op)
@@ -149,7 +156,8 @@
 ;; Using multiple couchbase java sdk clients is necessary to expose some race
 ;; conditions, so we want an easy way to dispatch operations across a variable
 ;; number of clients. We create a pool of clojure client wrappers and distribute
-;; ops across them randomly
+;; ops across them randomly. This is fine when checking for linearizability, but
+;; for different consistency models this may be invalid
 (defrecord ClientPool [status pool gen-client]
   CouchbaseClient
   (maybe-setup [this test]

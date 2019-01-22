@@ -12,8 +12,9 @@
             [jepsen.nemesis.time :as nt]
             [knossos.model :as model]))
 
-;; Shared parameters across register workloads
-(defn register-base [opts]
+(defn register-base
+  "Return shared parameters used across the register workloads"
+  [opts]
   {:client  (clients/register-client (cbclients/basic-client))
    :model   (model/cas-register :nil)
    :checker (checker/compose

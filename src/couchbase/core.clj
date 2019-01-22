@@ -26,14 +26,15 @@
       (util/get-logs test))))
 
 ;; The only utility we actually need to install on our vagrants seems to be
-;; ntpdate, so detect which pacakge manager to use and install it
+;; ntpdate, so detect which package manager to use and install it
 (def os
   (reify os/OS
     (setup! [_ test node]
       (c/su (c/exec (util/get-package-manager) :install :-y :ntpdate)))
     (teardown! [_ test node])))
 
-
+;; The actual testcase, merge the user options, basic parameters and workload
+;; parameters into something that can be passed into Jepsen to run
 (defn cbtest
   "Run the test"
   [opts]
