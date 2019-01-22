@@ -77,9 +77,6 @@
                 ;; - They are permitted to be present or not present.
                 ;; This is equal to the keys that are neither lost nor unexpected
                 ok (set/difference add-invoke (set/union lost unexpected))
-                ok2 (set/union (set/intersection final-read required-keys)
-                               (set/intersection not-read del-ok)
-                               permitted-keys)
 
                 ;; Keys whos status was unsure, until we found them in the read
                 recovered (set/intersection permitted-keys final-read)

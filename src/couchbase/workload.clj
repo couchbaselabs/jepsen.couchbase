@@ -1,6 +1,5 @@
 (ns couchbase.workload
   (:require [clojure.tools.logging :refer :all]
-            [clojure.string :as str]
             [couchbase [checker   :as cbchecker]
                        [clients   :as clients]
                        [cbclients :as cbclients]
@@ -11,8 +10,7 @@
                     [nemesis     :as nemesis]]
             [jepsen.checker.timeline :as timeline]
             [jepsen.nemesis.time :as nt]
-            [knossos.model :as model]
-            [slingshot.slingshot :refer [try+]]))
+            [knossos.model :as model]))
 
 ;; Shared parameters across register workloads
 (defn register-base [opts]

@@ -1,16 +1,13 @@
 (ns couchbase.core
   (:require [clojure.string :as str]
             [clojure.tools.logging :refer :all]
-            [couchbase [nemesis  :as nemesis]
-                       [util     :as util]
+            [couchbase [util     :as util]
                        [workload :as workload]]
             [jepsen [cli     :as cli]
                     [control :as c]
                     [db      :as db]
                     [os      :as os]
-                    [tests   :as tests]]
-            [jepsen.os.centos :as centos]
-            [slingshot.slingshot :refer [try+]]))
+                    [tests   :as tests]]))
 
 (defn couchbase
   "Initialise couchbase"

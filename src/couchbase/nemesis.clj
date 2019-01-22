@@ -4,9 +4,7 @@
             [couchbase [util      :as util]]
             [jepsen    [control   :as c]
                        [generator :as gen]
-                       [nemesis   :as nemesis]]
-            [jepsen.nemesis.time  :as nt]
-            [jepsen.os.centos     :as centos]))
+                       [nemesis   :as nemesis]]))
 
 (defn disconnect-two
   "Introduce a partition that prevents two nodes from communicating"

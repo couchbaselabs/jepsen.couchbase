@@ -1,6 +1,5 @@
 (ns couchbase.clients
   (:require [clojure.tools.logging :refer :all]
-            [clojure.string :as str]
             [couchbase.cbclients :as cbclients]
             [jepsen.client :as client]
             [jepsen.independent :as independent]

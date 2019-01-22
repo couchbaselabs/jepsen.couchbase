@@ -1,8 +1,6 @@
 (ns couchbase.cbclients
-  (:require [clojure.string :as str]
-            [clojure.tools.logging :refer :all]
-            [couchbase.util :as util]
-            [slingshot.slingshot :refer [try+ throw+]])
+  (:require [clojure.tools.logging :refer :all]
+            [couchbase.util :as util])
   (:import com.couchbase.client.dcp.Client
            com.couchbase.client.dcp.ControlEventHandler
            com.couchbase.client.dcp.DataEventHandler
