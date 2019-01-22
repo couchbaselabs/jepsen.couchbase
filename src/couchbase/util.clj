@@ -299,3 +299,33 @@
          (.isDirectory (io/file package "share"))) {:type :build
                                                     :package (tar-build (io/file package))
                                                     :path (.getCanonicalPath (io/file package))}))
+
+(defn get-logs
+  "Get a vector of log file paths"
+  [test]
+  (let [install-dir (or (:path (test :package))
+                            "/opt/couchbase")]
+    (when (test :get-cbcollect)
+      (info "Generating cbcollect...")
+      (c/su (c/exec (str install-dir "/bin/cbcollect_info")
+                    (str install-dir "/var/lib/couchbase/logs/cbcollect.zip"))))
+    (when (test :hashdump)
+      (info "Getting hashtable dump from all vbuckets")
+      (c/su
+       (c/exec
+        :for :i :in (c/lit "$(seq 0 1023);") :do
+          (str install-dir "/bin/cbstats")
+            :localhost :-u :Administrator :-p :abc123 :-b :default :raw
+            (c/lit "\"_hash-dump $i\"")
+            :>> (str install-dir "/var/lib/couchbase/logs/hashdump.txt") (c/lit ";")
+          :echo :>> (str install-dir "/var/lib/couchbase/logs/hashdump.txt") (c/lit ";")
+        :done)))
+
+    (c/su (c/exec :chmod :-R :a+rx "/opt/couchbase"))
+    (try
+      (->> (c/exec :ls (str install-dir "/var/lib/couchbase/logs"))
+           (str/split-lines)
+           (map #(str install-dir "/var/lib/couchbase/logs/" %)))
+      (catch RuntimeException e
+        (warn "Error getting logfiles")
+        []))))

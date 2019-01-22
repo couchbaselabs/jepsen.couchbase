@@ -26,20 +26,7 @@
 
     db/LogFiles
     (log-files [_ test node]
-      (let [install-dir (or (:path (test :package))
-                            "/opt/couchbase")]
-        (when (test :get-cbcollect)
-          (info "Generating cbcollect...")
-          (c/su (c/exec (str install-dir "/bin/cbcollect_info")
-                        (str install-dir "/var/lib/couchbase/logs/cbcollect.zip"))))
-        (c/su (c/exec :chmod :-R :a+rx "/opt/couchbase"))
-        (try
-          (->> (c/exec :ls (str install-dir "/var/lib/couchbase/logs"))
-               (str/split-lines)
-               (map #(str install-dir "/var/lib/couchbase/logs/" %)))
-          (catch RuntimeException e
-            (warn "Error getting logfiles")
-            []))))))
+      (util/get-logs test))))
 
 ;; The only utility we actually need to install on our vagrants seems to be
 ;; ntpdate, so detect which pacakge manager to use and install it
@@ -87,6 +74,9 @@
    [nil "--perf-graphs BOOL"
     "Output performance graphs? (Requires gnuplot)"
     :parse-fn #{"true"}
+    :default false]
+   [nil "--hashdump"
+    "Output hashtable dump from all vbuckets"
     :default false]])
 
 
