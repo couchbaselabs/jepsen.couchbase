@@ -24,7 +24,7 @@
         :read  (try+
                  (let [document (cbclients/invoke cbclient test :get opkey)
                        cas      (if document (.cas document) nil)
-                       value    (if document (.content document) nil)
+                       value    (if document (.content document) :nil)
                        kvpair   (independent/tuple rawkey value)]
                    (assoc op :type :ok :value kvpair :cas cas))
                  (catch java.lang.RuntimeException _

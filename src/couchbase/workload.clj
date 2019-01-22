@@ -17,7 +17,7 @@
 ;; Shared parameters across register workloads
 (defn register-base [opts]
   {:client  (clients/register-client (cbclients/basic-client))
-   :model   (model/cas-register)
+   :model   (model/cas-register :nil)
    :checker (checker/compose
              (merge
               {:indep (independent/checker
