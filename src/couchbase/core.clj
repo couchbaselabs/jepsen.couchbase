@@ -30,7 +30,14 @@
 (def os
   (reify os/OS
     (setup! [_ test node]
-      (c/su (c/exec (util/get-package-manager) :install :-y :ntpdate)))
+      (case (util/get-package-manager)
+        :yum (c/su (c/exec :yum :install :-y :ntpdate))
+
+        ;; On ubuntu check if ntpdate is installed before attempting to install,
+        ;; this prevents dpkg being locked (which for some reason it often is)
+        ;; from preventing tests when ntpdate is already installed
+        :apt (if-not (re-find #"installed" (c/exec :apt :list :-qq :ntpdate))
+               (c/su (c/exec :apt :install :-y :ntpdate)))))
     (teardown! [_ test node])))
 
 ;; The actual testcase, merge the user options, basic parameters and workload
