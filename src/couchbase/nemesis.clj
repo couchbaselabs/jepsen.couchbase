@@ -83,41 +83,17 @@
   []
   (nemesis/node-start-stopper rand-nth
     (fn start [test target]
-      (let [nodes            (test :nodes)
-            endpoint         "/controller/rebalance"
-            ejected-nodes    (->> target
-                                  (str "ns_1@"))
-            known-nodes      (->> nodes
-                                  (map #(str "ns_1@" %))
-                                  (str/join ","))
-            rebalance-params (str "ejectedNodes=" ejected-nodes
-                                  "&knownNodes="  known-nodes)
+      (util/rebalance (test :nodes) target))
 
-            healthy          (first (remove #(= target %) nodes))
-            status-endpoint  "/pools/default/rebalanceProgress"
-            rebalance-status #(util/rest-call healthy status-endpoint nil)]
-        (info (util/rest-call endpoint rebalance-params))
-
-        (loop [status (rebalance-status)]
-          (if (not= status "{\"status\":\"none\"}")
-            (do
-              (info "Rebalance status" status)
-              (Thread/sleep 1000)
-              (recur (rebalance-status)))
-            (info "Rebalance complete")))))
-
-    (fn stop [test node]
-      (let [endpoint "/node/controller/doJoinCluster"
-            nodes    (test :nodes)
-            healthy  (->> nodes
-                          (remove #(= node %))
-                          (first))
-            params   (str "clusterMemberHostIp=" healthy
-                          "&clusterMemberPort=8091"
-                          "&user=Administrator"
-                          "&password=abc123")]
-        (info (util/rest-call endpoint params))
+    (fn stop [test target]
+      (let [nodes   (test :nodes)
+            cluster (if (not= target (first nodes))
+                      (first nodes)
+                      (second nodes))]
+        (c/on cluster (util/add-nodes [node]))
         (util/rebalance nodes)))))
+
+
 
 (defn slow-dcp [DcpClient]
   (reify nemesis/Nemesis

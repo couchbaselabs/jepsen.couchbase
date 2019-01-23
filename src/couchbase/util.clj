@@ -68,26 +68,30 @@
       (rest-call "/controller/addNode" params))))
 
 (defn rebalance
-  "Rebalance the cluster"
-  [nodes]
-  (let [known-nodes-str (->> nodes
-                             (map #(str "ns_1@" %))
-                             (str/join ",")
-                             (str "knownNodes="))
-        get-status      #(rest-call "/pools/default/rebalanceProgress" nil)]
-    (rest-call "/controller/rebalance" known-nodes-str)
-
-    (loop [status (get-status)]
-      (if (not= status "{\"status\":\"none\"}")
-        (do
-          (info "Rebalance status" status)
-          (try+
-           (Thread/sleep 1000)
-           (catch InterruptedException e
-             (warn "Interrupted during rebalance")
-             (->> (Thread/currentThread) (.interrupt))))
-          (recur (get-status)))
-        (info "Rebalance complete")))))
+  "Inititate a rebalance with the given parameters"
+  ([known-nodes] (rebalance known-nodes nil))
+  ([known-nodes eject-node]
+   (let [known-nodes-str (->> known-nodes
+                              (map #(str "ns_1@" %))
+                              (str/join ","))
+         eject-node-str  (if eject-node (format "ns_1@%s" eject-node) "")
+         params          (format "ejectedNodes=%s&knownNodes=%s"
+                                 eject-node-str
+                                 known-nodes-str)
+         rest-target     (if (not= eject-node (first known-nodes))
+                           (first  known-nodes)
+                           (second known-nodes))]
+     (if eject-node
+       (info "Rebalancing node" eject-node "out from cluster"))
+     (rest-call rest-target "/controller/rebalance" params)
+     (loop [status ""]
+       (when (not= status "{\"status\":\"none\"}")
+         (info "Rebalance status:" status)
+         (if (re-find #"Rebalance failed" status)
+           (throw (RuntimeException. "Rebalance failed")))
+         (Thread/sleep 1000)
+         (recur (rest-call rest-target "/pools/default/rebalanceProgress" nil))))
+     (info "Rebalance complete"))))
 
 (defn create-bucket
   "Create the default bucket"
