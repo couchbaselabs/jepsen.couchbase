@@ -90,10 +90,30 @@
             cluster (if (not= target (first nodes))
                       (first nodes)
                       (second nodes))]
-        (c/on cluster (util/add-nodes [node]))
+        (c/on cluster (util/add-nodes [target]))
         (util/rebalance nodes)))))
 
-
+(defn swap-rebalance
+  "Upon each invocation swap rebalance two nodes. In order to have a free node
+  to rebalance in we rebalance out one node upon nemesis setup"
+  []
+  (let [ejected (atom nil)]
+    (reify nemesis/Nemesis
+      (setup! [this test]
+        (reset! ejected (rand-nth (test :nodes)))
+        (util/rebalance (test :nodes) @ejected)
+        this)
+      (invoke! [this test op]
+        (if-not (= (:f op) :swap)
+          (throw (RuntimeException. "Op for swap-rebalance nemesis must be :swap")))
+        (let [nodes      (test :nodes)
+              in-cluster (remove #(= @ejected %) nodes)
+              to-remove  (rand-nth in-cluster)]
+          (c/on (first in-cluster) (util/add-nodes [@ejected]))
+          (util/rebalance nodes to-remove)
+          (reset! ejected to-remove))
+        (assoc op :type :info :status :done))
+      (teardown! [this test] nil))))
 
 (defn slow-dcp [DcpClient]
   (reify nemesis/Nemesis
