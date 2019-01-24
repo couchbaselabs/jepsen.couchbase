@@ -13,9 +13,11 @@
     (nemesis/partitioner targeter)))
 
 (defn failover
-  "Actively failover a node through the rest-api"
-  ([] (failover rand-nth))
-  ([targeter]
+  "Actively failover a node through the rest-api. Supports :delta, or
+  :full recovery on nemesis stop."
+  ([]         (failover rand-nth :delta))
+  ([targeter] (failover targeter :delta))
+  ([targeter recovery-type]
    (nemesis/node-start-stopper
      targeter
      (fn start [test node]
@@ -24,7 +26,12 @@
          (util/rest-call endpoint params)
          [:failed-over node]))
 
-     (fn stop [test node]))))
+     (fn stop [test node]
+       (util/rest-call "/controller/setRecoveryType"
+                       (format "otpNode=%s&recoveryType=%s"
+                               (str "ns_1@" node)
+                               (name recovery-type)))
+       (util/rebalance (test :nodes))))))
 
 (defn partition-then-failover
   "Introduce a partition such that two nodes cannot communicate, then failover
@@ -50,33 +57,33 @@
     (teardown! [this test] this)))
 
 (defn graceful-failover
-  "Gracefully fail over a random node upon start, perform delta node recovery
-  upon nemesis stop"
-  []
-  (nemesis/node-start-stopper rand-nth
-    (fn start [test target]
-      (let [endpoint   "/controller/startGracefulFailover"
-            params     (str "otpNode=ns_1@" target)
-            get-status #(util/rest-call "/pools/default/rebalanceProgress" nil)]
-        (util/rest-call endpoint params)
+  "Gracefully fail over a random node upon start. Perform :delta or
+  :full node recovery on nemesis stop"
+  ([]         (graceful-failover rand-nth :delta))
+  ([targeter] (graceful-failover targeter :delta))
+  ([targeter recovery-type]
+   (nemesis/node-start-stopper targeter
+     (fn start [test target]
+       (let [endpoint   "/controller/startGracefulFailover"
+             params     (str "otpNode=ns_1@" target)
+             get-status #(util/rest-call "/pools/default/rebalanceProgress" nil)]
+         (util/rest-call endpoint params)
 
-        (loop [status (get-status)]
-          (if (not= status "{\"status\":\"none\"}")
-            (do
-              (info "Graceful failover status" status)
-              (Thread/sleep 1000)
-              (recur (get-status)))
-          (info "Graceful failover complete")))
-        [:gracefully-failed-over target]))
+         (loop [status (get-status)]
+           (if (not= status "{\"status\":\"none\"}")
+             (do
+               (info "Graceful failover status" status)
+               (Thread/sleep 1000)
+               (recur (get-status)))
+           (info "Graceful failover complete")))
+         [:gracefully-failed-over target]))
 
-    (fn stop [test node]
-      (let [nodes    (test :nodes)
-            endpoint "/controller/setRecoveryType"
-            params   (->> node
-                          (str "ns_1@")
-                          (format "otpNode=%s&recoveryType=delta"))]
-        (util/rest-call endpoint params)
-        (util/rebalance nodes)))))
+     (fn stop [test node]
+       (util/rest-call "/controller/setRecoveryType"
+                       (format "otpNode=%s&recoveryType=%s"
+                               (str "ns_1@" node)
+                               (name recovery-type)))
+       (util/rebalance (test :nodes))))))
 
 (defn rebalance-in-out
   "Rebalance a node out of and back into the cluster"
