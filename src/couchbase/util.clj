@@ -162,56 +162,35 @@
       (set-custom-cursor-drop-marks test))
     (info "Setup complete")))
 
+(defn install-package
+  "Install the given package on the nodes"
+  [package]
+  (case (:type package)
+    :rpm (do
+           (c/su (c/upload (:package package) "couchbase.rpm"))
+           (c/su (c/exec :yum :install :-y "~/couchbase.rpm"))
+           (c/su (c/exec :rm "~/couchbase.rpm")))
+    :deb (do
+           (c/su (c/upload (:package package) "couchbase.deb"))
+           (c/su (c/exec :dpkg :-i "~/couchbase.deb"))
+           (c/su (c/exec :apt-get :install :-f :-y))
+           (c/su (c/exec :rm "~/couchbase.deb")))
+    :tar (do
+           (c/su (c/upload (:package package) "couchbase.tar"))
+           (c/su (c/exec :tar :-Pxf "~/couchbase.tar"))
+           (c/su (c/exec :rm "~/couchbase.tar")))))
+
 (defn setup-node
   "Start couchbase on a node"
   [test]
   (info "Setting up couchbase")
-  (c/su (c/exec :mkdir :-p "/opt/couchbase/var/lib/couchbase"))
-  (c/su (c/exec :chmod :a+rwx "/opt/couchbase/var/lib/couchbase"))
-  (when-let [package (test :package)]
-    (info "Uploading couchbase package to nodes")
-    (c/su (c/upload (:package package) "couchbase-package"))
-    (info "Installing package")
-    (case (:type package)
-      :rpm
-      (do
-        (c/su (c/exec :mv "~/couchbase-package" "~/couchbase.rpm"))
-        (c/su (c/exec :yum :install :-y "~/couchbase.rpm"))
-        (c/su (c/exec :rm "~/couchbase.rpm")))
-      :deb
-      (do
-        (c/su (c/exec :mv "~/couchbase-package" "~/couchbase.deb"))
-        (c/su (c/exec :apt :install :-y "~/couchbase.deb"))
-        (c/su (c/exec :rm "~/couchbase.deb")))
-      :build
-      (do
-        (c/su (c/upload (:package (test :package)) "couchbase-build.tar"))
-        (c/su (c/exec :tar :-Pxf "~/couchbase-package"))
-        (c/su (c/exec :rm "~/couchbase-package"))
+  (let [package (:package test)
+        path    (or (:path package) "/opt/couchbase")]
+    (if package
+      (install-package package))
+    ;; Todo: Why does this have to be wrapped in a future, it should just return?
+    (future (c/ssh* {:cmd (str path "/bin/couchbase-server -- -noinput &")})))
 
-        ;; In order for paths in the builds bin directory to be resolveable, all parent
-        ;; directories need to have execute permissions set. This might be a security
-        ;; risk, but with vagrants we dont really care
-        (loop [dir-tree (str/split (:path (test :package)) #"/")]
-          (c/su (c/exec :chmod :a+x (str/join "/" dir-tree)))
-          (if (> (count dir-tree) 2)
-            (recur (drop-last dir-tree))))
-
-        ;; We need to make the data directory writable by couchbase
-        (c/su (c/exec :chmod :-R :a+rwx (str (:path (test :package)) "/var/lib/couchbase")))
-
-        ;; Install systemd file
-        (let [service-file (File/createTempFile "couchbase" ".service")]
-          (.deleteOnExit service-file)
-          (io/copy (io/reader (io/resource "couchbase-server.service")) service-file)
-          (c/su (c/upload service-file "/etc/systemd/system/couchbase-server.service")))
-        (c/su (c/exec :sed :-i (format "s/%%INSTALLPATH%%/%s/"
-                                       (str/escape (:path (test :package)) {\/ "\\/"}))
-                      "/etc/systemd/system/couchbase-server.service")))))
-  (c/su (c/exec :systemctl :daemon-reload))
-  (c/su (c/exec :systemctl :unmask :couchbase-server))
-  (c/su (c/exec :systemctl :restart :couchbase-server))
-  (info "Waiting for couchbase to start")
   (while
     (= :not-ready
       (try+
@@ -229,24 +208,13 @@
   (try
     (c/su (c/exec :systemctl :stop :couchbase-server))
     (catch RuntimeException e))
-  (c/su (c/exec :rm :-rf "/opt/couchbase/var/lib/couchbase"))
-  (when (test :package)
-    (case (get-package-manager)
-      :yum (try
-             (c/su (c/exec :yum :remove :-y "couchbase-server"))
-             (c/su (c/exec :rm "~/couchbase.rpm"))
-             (catch RuntimeException e))
-      :apt (try
-             (c/su (c/exec :apt :remove :-y "couchbase-server"))
-             (c/su (c/exec :rm "~/couchbase.deb"))
-             (catch RuntimeException e))))
-  (when (= (:type (test :package)) :build)
-    (try
-      (c/su (c/exec :rm "/lib/systemd/system/couchbase-server.service"))
-      (c/su (c/exec :rm :-r (:path (test :package))))
-      (catch RuntimeException e
-        (warn "Error removing couchbase install" e)))))
-  
+  (try
+    (let [path (or (:path (:package test))
+                   "/opt/couchbase")]
+      (c/su (c/exec (str path "/bin/couchbase-server") :-k)))
+    (catch RuntimeException e))
+  (c/su (c/exec :rm :-rf "/opt/couchbase/var/lib/couchbase")))
+
 (defn get-version
   "Get the couchbase version running on the cluster"
   [node]
@@ -300,7 +268,7 @@
          (.isDirectory (io/file package "bin"))
          (.isDirectory (io/file package "etc"))
          (.isDirectory (io/file package "lib"))
-         (.isDirectory (io/file package "share"))) {:type :build
+         (.isDirectory (io/file package "share"))) {:type :tar
                                                     :package (tar-build (io/file package))
                                                     :path (.getCanonicalPath (io/file package))}))
 
