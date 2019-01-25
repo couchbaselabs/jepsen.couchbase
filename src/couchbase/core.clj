@@ -7,7 +7,8 @@
                     [control :as c]
                     [db      :as db]
                     [os      :as os]
-                    [tests   :as tests]]))
+                    [tests   :as tests]])
+  (:gen-class))
 
 (defn couchbase
   "Initialise couchbase"
