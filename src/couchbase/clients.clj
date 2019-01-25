@@ -28,14 +28,19 @@
                        value    (if document (.content document) :nil)
                        kvpair   (independent/tuple rawkey value)]
                    (assoc op :type :ok :value kvpair :cas cas))
-                 (catch java.lang.RuntimeException _
-                   (assoc op :type :fail)))
+                 (catch java.lang.RuntimeException e
+                   (assoc op :type :fail :error e)))
 
-        :write (let [value         (long opval)
-                     document      (JsonLongDocument/create opkey value)]
-                 (->> (cbclients/invoke cbclient test :upsert document)
-                      (.cas)
-                      (assoc op :type :ok :newcas)))
+        :write (try+
+                 (let [value         (long opval)
+                       document      (JsonLongDocument/create opkey value)]
+                   (->> (cbclients/invoke cbclient test :upsert document)
+                        (.cas)
+                        (assoc op :type :ok :newcas)))
+                 (catch java.util.concurrent.TimeoutException _
+                   (assoc op :type :info :error :Timeout))
+                 (catch java.lang.RuntimeException e
+                   (assoc op :type :info :error e)))
 
         :cas   (try+
                  (if-let [current-doc (cbclients/invoke cbclient test :get opkey)]
