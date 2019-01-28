@@ -1,24 +1,27 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
 
+count = ENV['NODES'].to_i || 1
+
 Vagrant.configure("2") do |config|
   config.vm.box = "generic/ubuntu1604"
   config.vm.network "private_network", type: "dhcp"
   config.ssh.insert_key = false
+  config.vm.boot_timeout = 300
 
   config.vm.provider :libvirt do |libvirt|
     libvirt.memory = 2048
     libvirt.cpus = 4
     libvirt.random_hostname = true
   end
-  
+
   config.vm.provider :virtualbox do |vb|
     vb.memory = 1024
     vb.cpus = 2
   end
-  
-  config.vm.define "node1"
-  config.vm.define "node2"
-  config.vm.define "node3"
+
+  (1..count).each do |i|
+    config.vm.define "node#{i}"
+  end
 
 end
