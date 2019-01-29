@@ -172,8 +172,7 @@
            (c/su (c/exec :rm "~/couchbase.rpm")))
     :deb (do
            (c/su (c/upload (:package package) "couchbase.deb"))
-           (c/su (c/exec :dpkg :-i "~/couchbase.deb"))
-           (c/su (c/exec :apt-get :install :-f :-y))
+           (c/su (c/exec :apt :install :-y "~/couchbase.deb"))
            (c/su (c/exec :rm "~/couchbase.deb")))
     :tar (do
            (c/su (c/upload (:package package) "couchbase.tar"))
@@ -186,10 +185,19 @@
   (info "Setting up couchbase")
   (let [package (:package test)
         path    (or (:path package) "/opt/couchbase")]
+    (c/su (c/exec :mkdir :-p (str path "/var/lib/couchbase")))
+    (c/su (c/exec :chmod :a+rwx (str path "/var/lib/couchbase")))
     (if package
       (install-package package))
-    ;; Todo: Why does this have to be wrapped in a future, it should just return?
-    (future (c/ssh* {:cmd (str path "/bin/couchbase-server -- -noinput &")})))
+    ;; I'm still not quite sure why this keeps running instead of returning
+    ;; (it returns immediately if run in a shell), but it's quite nice that it
+    ;; does since we can log when/why couchbase quits
+    (info "Starting daemon")
+    (future (try
+              (c/ssh* {:cmd (str path "/bin/couchbase-server -- -noinput &")})
+              (info "Couchbase daemon stopped")
+              (catch Exception e
+                (warn "Error running couchbase daemon:" e)))))
 
   (while
     (= :not-ready
