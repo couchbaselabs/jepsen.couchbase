@@ -96,6 +96,19 @@ case "$TYPE" in
         esac
         ;;
     "docker")
-
+        case "$ACTION" in
+	    "create")
+		(cd ./resources/docker/ && sh docker.sh --start --nodes=$NODES)
+		;;
+	    "halt-all")
+		(cd ./resources/docker/ && sh docker.sh --stop)
+		;;
+	    "resume-all")
+		(cd ./resources/docker/ && sh docker.sh --resume)
+		;;
+	    "destroy-all")
+		(cd ./resources/docker/ && sh docker.sh --destroy)
+		;;
+	esac
         ;;
 esac

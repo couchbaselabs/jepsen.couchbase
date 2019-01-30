@@ -1,6 +1,8 @@
 /nodes*
 /store
 /resources/.vagrant
+/resources/docker/docker-compose.yml
+/resources/docker/control/jepsen
 
 /target
 /classes
