@@ -3,7 +3,8 @@
             [clojure.java.io :as io]
             [clojure.tools.logging :refer :all]
             [clojure.string :as str]
-            [jepsen [control :as c]]
+            [jepsen [control :as c]
+                    [net     :as net]]
             [slingshot.slingshot :refer [try+ throw+]])
   (:import com.couchbase.client.java.CouchbaseCluster
            com.couchbase.client.java.auth.ClassicAuthenticator
@@ -221,7 +222,8 @@
                    "/opt/couchbase")]
       (c/su (c/exec (str path "/bin/couchbase-server") :-k)))
     (catch RuntimeException e))
-  (c/su (c/exec :rm :-rf "/opt/couchbase/var/lib/couchbase")))
+  (c/su (c/exec :rm :-rf "/opt/couchbase/var/lib/couchbase"))
+  (net/heal! (:net test) test))
 
 (defn get-version
   "Get the couchbase version running on the cluster"
