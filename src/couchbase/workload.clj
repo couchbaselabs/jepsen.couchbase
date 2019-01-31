@@ -30,10 +30,18 @@
 (defn Register-workload
   "Basic register workload"
   [opts]
-  (let [oplimit (or (opts :oplimit) 1000)
-        rate    (or (opts :rate)    0.5)
+  (let [oplimit       (or (opts :oplimit) 1000)
+        rate          (or (opts :rate)    0.5)
+        doc-count     (or (opts :doc-count) 3)
+        doc-threads   (or (opts :doc-threads) 40)
+        replicas      (or (opts :replicas) 1)
+        replicate-to  (or (opts :replicate-to) 0)
+        autofailover  (if (nil? (opts :autofailover)) true (opts :autofailover))
+        autofailover-timeout (or (opts :autofailover-timeout) 6)
+        autofailover-maxcount (or (opts :autofailover-maxcount) 3)
+        concurrency (* doc-count doc-threads)
         nemesis nemesis/noop
-        gen     (->> (independent/concurrent-generator 3 (range)
+        gen     (->> (independent/concurrent-generator doc-threads (range)
                        (fn [k]
                          (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
                                         (fn [_ _] {:type :invoke :f :write :value (rand-int 5)})
@@ -42,10 +50,14 @@
                      (gen/limit oplimit)
                      (gen/clients))]
     (merge (register-base opts)
-           {:autofailover true
-            :concurrency  60
-            :replicas     1
-            :replicate-to 0
+           {:oplimit oplimit
+            :replicas replicas
+            :replicate-to replicate-to
+            :autofailover autofailover
+            :autofailover-timeout autofailover-timeout
+            :autofailover-maxcount autofailover-maxcount
+            :rate rate
+            :concurrency  concurrency
             :nemesis      nemesis
             :generator    gen})))
 
@@ -55,8 +67,16 @@
   [opts]
   (let [oplimit (or (opts :oplimit) 1000)
         rate    (or (opts :rate)    1/3)
+        doc-count (or (opts :doc-count) 3)
+        doc-threads (or (opts :doc-threads) 40)
+        replicas      (or (opts :replicas) 1)
+        replicate-to  (or (opts :replicate-to) 0)
+        autofailover  (if (nil? (opts :autofailover)) true (opts :autofailover))
+        autofailover-timeout (or (opts :autofailover-timeout) 6)
+        autofailover-maxcount (or (opts :autofailover-maxcount) 3)
+        concurrency (* doc-count doc-threads)
         nemesis (nemesis/partition-random-node)
-        gen     (->> (independent/concurrent-generator 3 (range)
+        gen     (->> (independent/concurrent-generator doc-threads (range)
                        (fn [k]
                          (->> (gen/mix [(fn [_ _] {:type :invoke, :f :read, :value nil})
                                         (fn [_ _] {:type :invoke, :f :write :value (rand-int 50)})])
@@ -66,10 +86,14 @@
                                             {:type :info :f :start}
                                             (gen/sleep 30)])))]
     (merge (register-base opts)
-           {:autofailover true
-            :concurrency  120
-            :replicas     1
-            :replicate-to 0
+           {:rate rate
+            :oplimit oplimit
+            :replicas replicas
+            :replicate-to replicate-to
+            :autofailover autofailover
+            :autofailover-timeout autofailover-timeout
+            :autofailover-maxcount autofailover-maxcount
+            :concurrency  concurrency
             :nemesis      nemesis
             :generator    gen})))
 
@@ -79,8 +103,16 @@
   [opts]
   (let [oplimit (or (opts :oplimit) 1000)
         rate    (or (opts :rate)    1/3)
+        doc-count (or (opts :doc-count) 3)
+        doc-threads (or (opts :doc-threads) 40)
+        replicas      (or (opts :replicas) 1)
+        replicate-to  (or (opts :replicate-to) 1)
+        autofailover  (if (nil? (opts :autofailover)) true (opts :autofailover))
+        autofailover-timeout (or (opts :autofailover-timeout) 6)
+        autofailover-maxcount (or (opts :autofailover-maxcount) 3)
+        concurrency (* doc-count doc-threads)
         nemesis (nemesis/partition-random-node)
-        gen     (->> (independent/concurrent-generator 3 (range)
+        gen     (->> (independent/concurrent-generator doc-threads (range)
                        (fn [k]
                          (->> (gen/mix [(fn [_ _] {:type :invoke, :f :read, :value nil})
                                         (fn [_ _] {:type :invoke, :f :write :value (rand-int 50)})])
@@ -90,10 +122,14 @@
                                             {:type :info :f :start}
                                             (gen/sleep 30)])))]
     (merge (register-base opts)
-           {:autofailover true
-            :concurrency  120
-            :replicas     1
-            :replicate-to 1
+           {:oplimit oplimit
+            :rate rate
+            :concurrency concurrency
+            :replicas replicas
+            :replicate-to replicate-to
+            :autofailover autofailover
+            :autofailover-timeout autofailover-timeout
+            :autofailover-maxcount autofailover-maxcount
             :nemesis      nemesis
             :generator    gen})))
 
@@ -103,8 +139,16 @@
   [opts]
   (let [oplimit (or (opts :oplimit) 1200)
         rate    (or (opts :rate)    1/3)
+        doc-count (or (opts :doc-count) 3)
+        doc-threads (or (opts :doc-threads) 40)
+        replicas      (or (opts :replicas) 2)
+        replicate-to  (or (opts :replicate-to) 1)
+        autofailover  (if (nil? (opts :autofailover)) false (opts :autofailover))
+        autofailover-timeout (or (opts :autofailover-timeout) 6)
+        autofailover-maxcount (or (opts :autofailover-maxcount) 3)
+        concurrency (* doc-count doc-threads)
         nemesis (cbnemesis/partition-then-failover)
-        gen     (->> (independent/concurrent-generator 3 (range)
+        gen     (->> (independent/concurrent-generator doc-threads (range)
                        (fn [k]
                          (->> (gen/mix [(fn [_ _] {:type :invoke, :f :read, :value nil})
                                         (fn [_ _] {:type :invoke, :f :write :value (rand-int 50)})])
@@ -116,10 +160,14 @@
                                             {:type :info :f :start-failover}
                                             (gen/sleep 30)])))]
     (merge (register-base opts)
-           {:autofailover false
-            :concurrency  120
-            :replicas     2
-            :replicate-to 1
+           {:oplimit oplimit
+            :rate rate
+            :concurrency concurrency
+            :replicas replicas
+            :replicate-to replicate-to
+            :autofailover autofailover
+            :autofailover-timeout autofailover-timeout
+            :autofailover-maxcount autofailover-maxcount
             :nemesis      nemesis
             :generator    gen})))
 
@@ -133,24 +181,40 @@
         dcpclient (cbclients/simple-dcp-client)
 
         oplimit   (or (opts :oplimit) 50000)
-        client    (clients/set-client addclient delclient dcpclient)]
-    {:concurrency 250
-     :batch-size  50
-     :pool-size   4
+        client    (clients/set-client addclient delclient dcpclient)
+        concurrency 250
+        batch-size  50
+        pool-size   4
+        replicas      (or (opts :replicas) 0)
+        replicate-to  (or (opts :replicate-to) 0)
+        autofailover  (if (nil? (opts :autofailover)) true (opts :autofailover))
+        autofailover-timeout (or (opts :autofailover-timeout) 6)
+        autofailover-maxcount (or (opts :autofailover-maxcount) 3)
+        checker   (checker/compose
+                    (merge
+                      {:set (checker/set)}
+                      (if (opts :perf-graphs)
+                        {:perf (checker/perf)})))
+        gen        (gen/phases
+                     (->> (range)
+                          (map (fn [x] {:type :invoke :f :add :value x}))
+                          (gen/seq)
+                          (gen/clients)
+                          (gen/limit oplimit))
+                     (gen/sleep 3)
+                     (gen/clients (gen/once {:type :invoke :f :read :value nil})))]
+    {:oplimit oplimit
+     :replicas replicas
+     :replicate-to replicate-to
+     :autofailover autofailover
+     :autofailover-timeout autofailover-timeout
+     :autofailover-maxcount autofailover-maxcount
+     :concurrency concurrency
+     :batch-size  batch-size
+     :pool-size   pool-size
      :client      client
-     :checker     (checker/compose
-                   (merge
-                    {:set (checker/set)}
-                    (if (opts :perf-graphs)
-                      {:perf (checker/perf)})))
-     :generator   (gen/phases
-                    (->> (range)
-                         (map (fn [x] {:type :invoke :f :add :value x}))
-                         (gen/seq)
-                         (gen/clients)
-                         (gen/limit oplimit))
-                    (gen/sleep 3)
-                    (gen/clients (gen/once {:type :invoke :f :read :value nil})))}))
+     :checker     checker
+     :generator   gen}))
 
 (defn WhiteRabbit-workload
   "Trigger lost inserts due to one of several white-rabbit variants"
@@ -158,9 +222,16 @@
   (let [addclient (cbclients/batch-insert-pool)
         delclient nil
         dcpclient (cbclients/simple-dcp-client)
-        
-
         oplimit  (or (opts :oplimit) 2500000)
+        concurrency 500
+        batch-size  50
+        pool-size 6
+        custom-vbucket-count 64
+        replicas      (or (opts :replicas) 0)
+        replicate-to  (or (opts :replicate-to) 0)
+        autofailover  (if (nil? (opts :autofailover)) true (opts :autofailover))
+        autofailover-timeout (or (opts :autofailover-timeout) 6)
+        autofailover-maxcount (or (opts :autofailover-maxcount) 3)
         client   (clients/set-client addclient delclient dcpclient)
         nemesis  (cbnemesis/rebalance-in-out)
         checker  (checker/compose
@@ -179,10 +250,16 @@
                         (gen/limit oplimit))
                    (gen/nemesis (gen/once {:type :info :f :stop}))
                    (gen/clients (gen/once {:type :invoke :f :read :value nil})))]
-    {:custom-vbucket-count 64
-     :concurrency 500
-     :batch-size  50
-     :pool-size   6
+    {:custom-vbucket-count custom-vbucket-count
+     :concurrency concurrency
+     :batch-size  batch-size
+     :pool-size   pool-size
+     :replicas replicas
+     :replicate-to replicate-to
+     :autofailover autofailover
+     :autofailover-timeout autofailover-timeout
+     :autofailover-maxcount autofailover-maxcount
+     :oplimit oplimit
      :client      client
      :nemesis     nemesis
      :checker     checker
@@ -201,7 +278,15 @@
         ;; per node
         oplimit   (or (opts :oplimit)
                       (* (count (opts :nodes)) 150000))
-
+        custom-cursor-drop-marks   [20 30]
+        concurrency 250
+        batch-size   20
+        pool-size    8
+        replicas      (or (opts :replicas) 0)
+        replicate-to  (or (opts :replicate-to) 0)
+        autofailover  (if (nil? (opts :autofailover)) true (opts :autofailover))
+        autofailover-timeout (or (opts :autofailover-timeout) 6)
+        autofailover-maxcount (or (opts :autofailover-maxcount) 3)
         client   (clients/set-client addclient delclient dcpclient)
         nemesis  (cbnemesis/slow-dcp (:dcpclient client))
         checker  (checker/compose
@@ -240,12 +325,16 @@
                    ;; Wait for the cluster to settle before issuing final read
                    (gen/sleep 3)
                    (gen/clients (gen/once {:type :invoke :f :read :value :nil})))]
-    {:custom-cursor-drop-marks [20 30]
-     :replicas     0
-     :replicate-to 0
-     :concurrency  250
-     :batch-size   20
-     :pool-size    8
+    {:custom-cursor-drop-marks custom-cursor-drop-marks
+     :concurrency  concurrency
+     :batch-size   batch-size
+     :pool-size    pool-size
+     :oplimit oplimit
+     :replicas replicas
+     :replicate-to replicate-to
+     :autofailover autofailover
+     :autofailover-timeout autofailover-timeout
+     :autofailover-maxcount autofailover-maxcount
      :client       client
      :nemesis      nemesis
      :checker      checker
@@ -262,6 +351,15 @@
         ;; 100 MB per node bucket quota and ep_cursor_dropping_upper_mark reduced to 30%.
         oplimit   (or (opts :oplimit)
                       (+ (* (count (opts :nodes)) 100000) 50000))
+        custom-cursor-drop-marks [20 30]
+        concurrency 250
+        batch-size   50
+        pool-size    4
+        replicas      (or (opts :replicas) 0)
+        replicate-to  (or (opts :replicate-to) 0)
+        autofailover  (if (nil? (opts :autofailover)) true (opts :autofailover))
+        autofailover-timeout (or (opts :autofailover-timeout) 6)
+        autofailover-maxcount (or (opts :autofailover-maxcount) 3)
         client    (clients/set-client addclient delclient dcpclient)
         nemesis   (nemesis/compose {{:slow-dcp :start
                                      :fast-dcp :stop} (cbnemesis/slow-dcp dcpclient)
@@ -307,12 +405,13 @@
                      ;; Final read
                      (gen/sleep 3)
                      (gen/clients (gen/once {:type :invoke :f :read :value nil})))]
-    {:custom-cursor-drop-marks [20 30]
-     :replicas     0
-     :replicate-to 0
-     :concurrency  250
-     :batch-size   50
-     :pool-size    4
+    {:custom-cursor-drop-marks custom-cursor-drop-marks
+     :replicas replicas
+     :replicate-to replicate-to
+     :concurrency  concurrency
+     :batch-size   batch-size
+     :pool-size    pool-size
+     :oplimit oplimit
      :client       client
      :nemesis      nemesis
      :checker      checker

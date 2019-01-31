@@ -46,13 +46,24 @@
 (defn cbtest
   "Run the test"
   [opts]
+  ;; opts passed to this function come straight from cli parsing
+  ;; these ops are then passed to workload
   (merge tests/noop-test
-         opts
+         ;; generic cli parameters
          {:name "Couchbase"
           :db (couchbase)
           :os os
-          :replicas 1
-          :replicate-to 0}
+          :hashdump (opts :hashdump)
+          :ssh-private-key (opts :ssh-private-key)
+          :package (opts :package)
+          :ssh (opts :ssh)
+          :nodes (opts :nodes)
+          :test-count (opts :test-count)
+          :get-cbcollect (opts :get-cbcollect)
+          :time-limit (opts :time-limit)
+          :perf-graphs (opts :perf-graphs)
+          }
+         ;; workload specific parameter
          (try
            (as-> (opts :workload) %
                  (format "couchbase.workload/%s-workload" %)
@@ -61,7 +72,8 @@
            (catch NullPointerException _
              (let [msg (format "Workload %s does not exist" (opts :workload))]
                (fatal msg)
-               (throw (RuntimeException. msg)))))))
+               (throw (RuntimeException. msg)))))
+         ))
 
 (defn parse-int [x] (Integer/parseInt x))
 
@@ -86,7 +98,45 @@
     :default false]
    [nil "--hashdump"
     "Output hashtable dump from all vbuckets"
-    :default false]])
+    :default false]
+   [nil "--replicas REPLICAS"
+    "Number of replicas"
+    :default nil
+    :parse-fn parse-int ]
+   [nil "--replicate-to REPLICATE-TO"
+    "Replicate-to value"
+    :default nil
+    :parse-fn parse-int]
+   [nil "--rate RATE"
+    "Rate of operations"
+    :default nil
+    :parse-fn read-string
+    :validate [#(and (number? %) (pos? %)) "Must be a number"]]
+   [nil "--autofailover AUTOFAILOVER"
+    "Enable autofailover"
+    :default nil
+    :parse-fn read-string
+    :validate [#(boolean? %) "Must be boolean"]]
+   [nil "--autofailover-timeout AUTOFAILOVER-TIMEOUT"
+    "Autofailover timeout if autofailover is enabled"
+    :default nil
+    :parse-fn parse-int
+    :validate [#(> % 5) "Must be greater than 5 seconds"]]
+   [nil "--autofailover-maxcount AUTOFAILOVER-MAXCOUNT"
+    "Autofailover max count if autofailover is enabled"
+    :default nil
+    :parse-fn parse-int
+    :validate [#(and (number? %) (pos? %)) "Must be a number"]]
+   [nil "--doc-count DOC-COUNT"
+    "Number of documents"
+    :default nil
+    :parse-fn parse-int
+    :validate [#(and (number? %) (pos? %)) "Must be a number"]]
+   [nil "--doc-threads DOC-THREADS"
+    "Number of threads per document"
+    :default nil
+    :parse-fn parse-int
+    :validate [#(and (number? %) (pos? %)) "Must be a number"]]])
 
 
 ;; Sequentially run multiple workloads, exiting on failure
@@ -96,7 +146,8 @@
           (fn [{:keys [options]}]
             (doseq [wl (str/split (options :workload) #",")]
               (info "***** Running workload:" wl "*****")
-              ((single-test :run) {:options (assoc options :workload wl)}))))})
+              ((single-test :run) {:options (assoc options :workload wl)}))))}
+  )
 
 (defn -main
   "Run the test specified by the cli arguments"
@@ -125,6 +176,6 @@
   (let [test        (cli/single-test-cmd {:test-fn  cbtest
                                           :opt-spec extra-cli-options})
         multitest   (multi-test (test "test"))
-        serve       (cli/serve-cmd)]
-    (-> (merge test multitest serve)
-        (cli/run! args))))
+        serve       (cli/serve-cmd)
+        merged      (merge test multitest serve)]
+        (cli/run! merged args)))
