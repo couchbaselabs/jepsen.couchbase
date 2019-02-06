@@ -70,33 +70,13 @@
                        (gen/limit oplimit)
                        (gen/clients))))
 
-(defn Failover-workload
-  "Trigger non-linearizable (but expected) behaviour where mutations are lost if
-  the active is failed over and they have not yet been replicated"
+(defn Partition-workload
+  "Trigger non-linearizable behaviour where mutations are lost if the
+  active is failed over and they have not yet been replicated"
   [opts]
   (with-register-base opts
     replicas      (or (opts :replicas) 1)
     replicate-to  (or (opts :replicate-to) 0)
-    autofailover  (if (nil? (opts :autofailover)) true (opts :autofailover))
-    nemesis       (nemesis/partition-random-node)
-    generator     (->> (independent/concurrent-generator doc-threads (range)
-                         (fn [k]
-                           (->> (gen/mix [(fn [_ _] {:type :invoke, :f :read, :value nil})
-                                          (fn [_ _] {:type :invoke, :f :write :value (rand-int 50)})])
-                                (gen/stagger (/ rate)))))
-                       (gen/limit oplimit)
-                       (gen/nemesis (gen/seq [(gen/sleep 5)
-                                              {:type :info :f :start}
-                                              (gen/sleep 30)])))))
-
-
-(defn MB30048-workload
-  "Trigger non-linearizable behaviour where indeterminate operations are visible
-  for some period of time, before disappearing"
-  [opts]
-  (with-register-base opts
-    replicas      (or (opts :replicas) 1)
-    replicate-to  (or (opts :replicate-to) 1)
     autofailover  (if (nil? (opts :autofailover)) true (opts :autofailover))
     nemesis       (nemesis/partition-random-node)
     generator     (->> (independent/concurrent-generator doc-threads (range)
