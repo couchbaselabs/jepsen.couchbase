@@ -138,17 +138,6 @@
     :parse-fn parse-int
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]])
 
-
-;; Sequentially run multiple workloads, exiting on failure
-(defn multi-test [single-test]
-  {"multitest"
-   (assoc single-test :run
-          (fn [{:keys [options]}]
-            (doseq [wl (str/split (options :workload) #",")]
-              (info "***** Running workload:" wl "*****")
-              ((single-test :run) {:options (assoc options :workload wl)}))))}
-  )
-
 (defn -main
   "Run the test specified by the cli arguments"
   [& args]
@@ -175,7 +164,6 @@
   ;; Now parse args and run the test
   (let [test        (cli/single-test-cmd {:test-fn  cbtest
                                           :opt-spec extra-cli-options})
-        multitest   (multi-test (test "test"))
-        serve       (cli/serve-cmd)
-        merged      (merge test multitest serve)]
-        (cli/run! merged args)))
+        serve       (cli/serve-cmd)]
+    (-> (merge test serve)
+        (cli/run! args))))
