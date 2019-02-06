@@ -53,6 +53,7 @@
          {:name "Couchbase"
           :db (couchbase)
           :os os
+          :workload (opts :workload)
           :hashdump (opts :hashdump)
           :ssh-private-key (opts :ssh-private-key)
           :package (opts :package)
