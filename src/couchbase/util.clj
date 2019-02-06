@@ -280,7 +280,8 @@
          (.isDirectory (io/file package "lib"))
          (.isDirectory (io/file package "share"))) {:type :tar
                                                     :package (tar-build (io/file package))
-                                                    :path (.getCanonicalPath (io/file package))}))
+                                                    :path (.getCanonicalPath (io/file package))}
+    :else    (throw (RuntimeException. (str "Couldn't load package " package)))))
 
 (defn get-logs
   "Get a vector of log file paths"
