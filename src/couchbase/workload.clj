@@ -110,6 +110,44 @@
                                             {:type :info :f :start-failover}
                                             (gen/sleep 30)])))))
 
+(defn Rebalance-workload
+  "Rebalance a random node out and back into the cluster"
+  [opts]
+  (with-register-base opts
+    replicas     (or (opts :replicas)     1)
+    replicate-to (or (opts :replicate-to) 0)
+    autofailover (if (nil? (opts :autofailover)) false (opts :autofailover))
+    nemesis      (cbnemesis/rebalance-in-out)
+    generator    (->> (independent/concurrent-generator doc-threads (range)
+                        (fn [k]
+                          (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
+                                         (fn [_ _] {:type :invoke :f :write :value (rand-int 50)})])
+                               (gen/stagger (/ rate)))))
+                      (gen/nemesis (gen/seq (cycle [(gen/sleep 5)
+                                                    {:type :info :f :start}
+                                                    (gen/sleep 10)
+                                                    {:type :info :f :stop}
+                                                    (gen/sleep 5)])))
+                      (gen/limit oplimit))))
+
+(defn Swap-Rebalance-workload
+  "Swap rebalance nodes within a cluster"
+  [opts]
+  (with-register-base opts
+    replicas     (or (opts :replicas)     1)
+    replicate-to (or (opts :replicate-to) 0)
+    autofailover (if (nil? (opts :autofailover)) false (opts :autofailover))
+    nemesis      (cbnemesis/swap-rebalance)
+    generator    (->> (independent/concurrent-generator doc-threads (range)
+                        (fn [k]
+                          (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
+                                         (fn [_ _] {:type :invoke :f :write :value (rand-int 50)})])
+                               (gen/stagger (/ rate)))))
+                      (gen/nemesis (gen/seq (cycle [(gen/sleep 5)
+                                                    {:type :info :f :swap}
+                                                    (gen/sleep 5)])))
+                      (gen/limit oplimit))))
+
 ;; =============
 ;; Set Workloads
 ;; =============
