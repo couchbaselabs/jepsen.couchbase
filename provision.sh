@@ -64,6 +64,7 @@ case "$TYPE" in
                     do
                         NODES=${i} vagrant destroy node${i} --force && rm -rf ./resources/.vagrant/machines/node${i}
                     done
+		    NODES=$NODES vagrant up
                 fi
                 for (( i=1; i<=$(ls -1U ./resources/.vagrant/machines/ | wc -l); i++ ))
                 do
