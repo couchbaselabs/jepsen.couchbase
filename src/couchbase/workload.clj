@@ -148,6 +148,48 @@
                                                     (gen/sleep 5)])))
                       (gen/limit oplimit))))
 
+(defn Failover-workload
+  "Hard failover and recover random nodes"
+  [opts]
+  (with-register-base opts
+    replicas     (or (opts :replicas)     1)
+    replicate-to (or (opts :replicate-to) 0)
+    autofailover (if (nil? (opts :autofailover)) false (opts :autofailover))
+    recovery     (or (opts :recovery) :delta)
+    nemesis      (cbnemesis/failover rand-nth recovery)
+    generator    (->> (independent/concurrent-generator doc-threads (range)
+                        (fn [k]
+                          (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
+                                         (fn [_ _] {:type :invoke :f :write :value (rand-int 50)})])
+                               (gen/stagger (/ rate)))))
+                      (gen/nemesis (gen/seq (cycle [(gen/sleep 5)
+                                                    {:type :info :f :start}
+                                                    (gen/sleep 10)
+                                                    {:type :info :f :stop}
+                                                    (gen/sleep 5)])))
+                      (gen/limit oplimit))))
+
+(defn Graceful-Failover-workload
+  "Gracefully failover and recover random nodes"
+  [opts]
+  (with-register-base opts
+    replicas     (or (opts :replicas)     1)
+    replicate-to (or (opts :replicate-to) 0)
+    autofailover (if (nil? (opts :autofailover)) false (opts :autofailover))
+    recovery     (or (opts :recovery) :delta)
+    nemesis      (cbnemesis/graceful-failover rand-nth recovery)
+    generator    (->> (independent/concurrent-generator doc-threads (range)
+                        (fn [k]
+                          (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
+                                         (fn [_ _] {:type :invoke :f :write :value (rand-int 50)})])
+                               (gen/stagger (/ rate)))))
+                      (gen/nemesis (gen/seq (cycle [(gen/sleep 5)
+                                                    {:type :info :f :start}
+                                                    (gen/sleep 10)
+                                                    {:type :info :f :stop}
+                                                    (gen/sleep 5)])))
+                      (gen/limit oplimit))))
+
 ;; =============
 ;; Set Workloads
 ;; =============

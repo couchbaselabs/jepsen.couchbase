@@ -137,7 +137,11 @@
     "Number of threads per document"
     :default nil
     :parse-fn parse-int
-    :validate [#(and (number? %) (pos? %)) "Must be a number"]]])
+    :validate [#(and (number? %) (pos? %)) "Must be a number"]]
+   [nil "--recovery RECOVERY-TYPE"
+    :parse-fn #(cond % "delta" :delta "full" :full :invalid)
+    :validate [#(not= :invalid %) "Must be delta or full"]]])
+
 
 (defn -main
   "Run the test specified by the cli arguments"
