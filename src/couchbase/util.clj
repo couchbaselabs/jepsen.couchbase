@@ -190,15 +190,8 @@
     (c/su (c/exec :chmod :a+rwx (str path "/var/lib/couchbase")))
     (if package
       (install-package package))
-    ;; I'm still not quite sure why this keeps running instead of returning
-    ;; (it returns immediately if run in a shell), but it's quite nice that it
-    ;; does since we can log when/why couchbase quits
     (info "Starting daemon")
-    (future (try
-              (c/ssh* {:cmd (str path "/bin/couchbase-server -- -noinput &")})
-              (info "Couchbase daemon stopped")
-              (catch Exception e
-                (warn "Error running couchbase daemon:" e)))))
+    (c/ssh* {:cmd (str "nohup " path "/bin/couchbase-server -- -noinput >> /dev/null 2>&1 &")}))
 
   (while
     (= :not-ready
