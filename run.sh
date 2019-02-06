@@ -56,7 +56,7 @@ vagrantBaseCommand="lein trampoline run test"
 vagrantParams="--nodes-file ./nodes --username vagrant --ssh-private-key ./resources/vagrantkey"
 dockerBaseCommand="docker exec -it -w '/jepsen' jepsen-control lein trampoline run test"
 dockerParams="--nodes-file ./nodes"
-packageParam="--package=$PACKAGE"
+packageParam="--package $PACKAGE"
 pass=0
 fail=0
 crash=0
