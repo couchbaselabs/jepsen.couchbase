@@ -122,6 +122,32 @@
         (assoc op :type :info :status :done))
       (teardown! [this test] nil))))
 
+(defn kill-memcached
+  "Upon invocation kill memcached to simulate a crash"
+  []
+  (reify nemesis/Nemesis
+    (setup! [this test] this)
+    (invoke! [this test op]
+      (case (:f op)
+        :kill (do
+                (c/on (->> test :nodes rand-nth) (c/su (c/exec :pkill :-9 :memcached)))
+                (assoc op :value :killed-memcached))))
+    (teardown! [this test] nil)))
+
+(defn kill-ns_server
+  "Upon invocation kill ns_server"
+  []
+  (reify nemesis/Nemesis
+    (setup! [this test] this)
+    (invoke! [this test op]
+      (case (:f op)
+        :kill (do
+                (c/on (->> test :nodes rand-nth)
+                      (c/su (c/exec :bash :-c
+                                    "for i in $(pgrep beam.smp | tail -n +2); do kill -9 $i; done")))
+                (assoc op :value :killed-ns_server))))
+    (teardown! [this test] nil)))
+
 (defn slow-dcp [DcpClient]
   (reify nemesis/Nemesis
     (setup! [this test] this)
