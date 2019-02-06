@@ -229,6 +229,78 @@
                        (gen/sleep 3)
                        (gen/clients (gen/once {:type :invoke :f :read :value nil})))))
 
+(defn Set-kill-memcached-workload
+  "Set workload that repeatedly kills memcached while hammering inserts against
+  the cluster"
+  [opts]
+  (let-and-merge
+      addclient             (cbclients/batch-insert-pool)
+      delclient             nil
+      dcpclient             (cbclients/simple-dcp-client)
+      oplimit               (or (opts :oplimit) 250000)
+      concurrency           500
+      batch-size            50
+      pool-size             6
+      custom-vbucket-count  64
+      replicas              (or (opts :replicas) 1)
+      replicate-to          (or (opts :replicate-to) 0)
+      autofailover          (if (nil? (opts :autofailover)) false (opts :autofailover))
+      autofailover-timeout  (or (opts :autofailover-timeout)  6)
+      autofailover-maxcount (or (opts :autofailover-maxcount) 3)
+      client                (clients/set-client addclient delclient dcpclient)
+
+      nemesis               (cbnemesis/kill-memcached)
+      checker               (checker/compose
+                             (merge
+                              {:set (checker/set)}
+                              (if (opts :perf-graphs)
+                                {:perf (checker/perf)})))
+      generator             (gen/phases
+                             (->> (range)
+                                  (map (fn [x] {:type :invoke :f :add :value x}))
+                                  (gen/seq)
+                                  (gen/nemesis (gen/seq (cycle [(gen/sleep 10)
+                                                                {:type :info :f :kill}
+                                                                (gen/sleep 20)])))
+                                  (gen/limit oplimit))
+                             (gen/clients (gen/once {:type :invoke :f :read :value nil})))))
+
+(defn Set-kill-ns_server-workload
+  "Set workload that repeatedly kills ns_server while hammering inserts against
+  the cluster"
+  [opts]
+  (let-and-merge
+      addclient             (cbclients/batch-insert-pool)
+      delclient             nil
+      dcpclient             (cbclients/simple-dcp-client)
+      oplimit               (or (opts :oplimit) 250000)
+      concurrency           500
+      batch-size            50
+      pool-size             6
+      custom-vbucket-count  64
+      replicas              (or (opts :replicas) 1)
+      replicate-to          (or (opts :replicate-to) 0)
+      autofailover          (if (nil? (opts :autofailover)) false (opts :autofailover))
+      autofailover-timeout  (or (opts :autofailover-timeout)  6)
+      autofailover-maxcount (or (opts :autofailover-maxcount) 3)
+      client                (clients/set-client addclient delclient dcpclient)
+
+      nemesis               (cbnemesis/kill-ns_server)
+      checker               (checker/compose
+                             (merge
+                              {:set (checker/set)}
+                              (if (opts :perf-graphs)
+                                {:perf (checker/perf)})))
+      generator             (gen/phases
+                             (->> (range)
+                                  (map (fn [x] {:type :invoke :f :add :value x}))
+                                  (gen/seq)
+                                  (gen/nemesis (gen/seq (cycle [(gen/sleep 10)
+                                                                {:type :info :f :kill}
+                                                                (gen/sleep 20)])))
+                                  (gen/limit oplimit))
+                             (gen/clients (gen/once {:type :invoke :f :read :value nil})))))
+
 (defn WhiteRabbit-workload
   "Trigger lost inserts due to one of several white-rabbit variants"
   [opts]
