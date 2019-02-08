@@ -110,43 +110,70 @@
                                             {:type :info :f :start-failover}
                                             (gen/sleep 30)])))))
 
-(defn Rebalance-workload
-  "Rebalance a random node out and back into the cluster"
+(defn Sequential-rebalance-workload
+  "Rebalance a nodes out and back into the cluster sequentially"
   [opts]
   (with-register-base opts
-    replicas     (or (opts :replicas)     1)
-    replicate-to (or (opts :replicate-to) 0)
-    autofailover (if (nil? (opts :autofailover)) false (opts :autofailover))
-    nemesis      (cbnemesis/rebalance-in-out)
-    generator    (->> (independent/concurrent-generator doc-threads (range)
-                        (fn [k]
-                          (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
-                                         (fn [_ _] {:type :invoke :f :write :value (rand-int 50)})])
-                               (gen/stagger (/ rate)))))
-                      (gen/nemesis (gen/seq (cycle [(gen/sleep 5)
-                                                    {:type :info :f :start}
-                                                    (gen/sleep 10)
-                                                    {:type :info :f :stop}
-                                                    (gen/sleep 5)])))
-                      (gen/limit oplimit))))
+    replicas      (or (opts :replicas)      1)
+    replicate-to  (or (opts :replicate-to)  0)
+    disrupt-count (or (opts :disrupt-count) 1)
+    autofailover  (if (nil? (opts :autofailover)) false (opts :autofailover))
+    nemesis       (cbnemesis/rebalance-out-in)
+    generator     (->> (independent/concurrent-generator doc-threads (range)
+                         (fn [k]
+                           (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
+                                          (fn [_ _] {:type :invoke :f :write :value (rand-int 50)})])
+                                (gen/stagger (/ rate)))))
+                       (gen/nemesis (gen/seq (cycle (flatten [(repeatedly disrupt-count
+                                                                          #(do [(gen/sleep 5)
+                                                                                {:type :info :f :rebalance-out}]))
+                                                              (gen/sleep 10)
+                                                              (repeatedly disrupt-count
+                                                                          #(do [(gen/sleep 5)
+                                                                                {:type :info :f :rebalance-in}]))
+                                                              (gen/sleep 10)]))))
+                       (gen/limit oplimit))))
+
+(defn Bulk-rebalance-workload
+  "Rebalance multiple nodes out and back into the cluster simultaneously"
+  [opts]
+  (with-register-base opts
+    replicas      (or (opts :replicas)      1)
+    replicate-to  (or (opts :replicate-to)  0)
+    disrupt-count (or (opts :disrupt-count) 1)
+    autofailover  (if (nil? (opts :autofailover)) false (opts :autofailover))
+    nemesis       (cbnemesis/rebalance-out-in)
+    generator     (->> (independent/concurrent-generator doc-threads (range)
+                         (fn [k]
+                           (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
+                                          (fn [_ _] {:type :invoke :f :write :value (rand-int 50)})])
+                                (gen/stagger (/ rate)))))
+                       (gen/nemesis (gen/seq (cycle [(gen/sleep 5)
+                                                     {:type :info :f :rebalance-out :count disrupt-count}
+                                                     (gen/sleep 15)
+                                                     {:type :info :f :rebalance-in  :count disrupt-count}
+                                                     (gen/sleep 10)])))
+                       (gen/limit oplimit))))
+
 
 (defn Swap-Rebalance-workload
   "Swap rebalance nodes within a cluster"
   [opts]
   (with-register-base opts
-    replicas     (or (opts :replicas)     1)
-    replicate-to (or (opts :replicate-to) 0)
-    autofailover (if (nil? (opts :autofailover)) false (opts :autofailover))
-    nemesis      (cbnemesis/swap-rebalance)
-    generator    (->> (independent/concurrent-generator doc-threads (range)
-                        (fn [k]
-                          (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
-                                         (fn [_ _] {:type :invoke :f :write :value (rand-int 50)})])
-                               (gen/stagger (/ rate)))))
-                      (gen/nemesis (gen/seq (cycle [(gen/sleep 5)
-                                                    {:type :info :f :swap}
-                                                    (gen/sleep 5)])))
-                      (gen/limit oplimit))))
+    replicas      (or (opts :replicas)      1)
+    replicate-to  (or (opts :replicate-to)  0)
+    disrupt-count (or (opts :disrupt-count) 1)
+    autofailover  (if (nil? (opts :autofailover)) false (opts :autofailover))
+    nemesis       (cbnemesis/swap-rebalance disrupt-count)
+    generator     (->> (independent/concurrent-generator doc-threads (range)
+                         (fn [k]
+                           (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
+                                          (fn [_ _] {:type :invoke :f :write :value (rand-int 50)})])
+                                (gen/stagger (/ rate)))))
+                       (gen/nemesis (gen/seq (cycle [(gen/sleep 5)
+                                                     {:type :info :f :swap}
+                                                     (gen/sleep 5)])))
+                       (gen/limit oplimit))))
 
 (defn Failover-workload
   "Hard failover and recover random nodes"
@@ -320,7 +347,7 @@
       autofailover-maxcount (or (opts :autofailover-maxcount) 3)
       client                (clients/set-client addclient delclient dcpclient)
 
-      nemesis               (cbnemesis/rebalance-in-out)
+      nemesis               (cbnemesis/rebalance-out-in)
       checker               (checker/compose
                              (merge
                               {:set (checker/set)}
@@ -331,9 +358,9 @@
                                   (map (fn [x] {:type :invoke :f :add :value x}))
                                   (gen/seq)
                                   (gen/nemesis (gen/seq (cycle [(gen/sleep 10)
-                                                                {:type :info :f :start}
+                                                                {:type :info :f :rebalance-out}
                                                                 (gen/sleep 10)
-                                                               {:type :info :f :stop}])))
+                                                                {:type :info :f :rebalance-in}])))
                                   (gen/limit oplimit))
                              (gen/nemesis (gen/once {:type :info :f :stop}))
                              (gen/clients (gen/once {:type :invoke :f :read :value nil})))))

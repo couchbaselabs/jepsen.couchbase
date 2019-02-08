@@ -1,5 +1,6 @@
 (ns couchbase.nemesis
-  (:require [clojure.string :as str]
+  (:require [clojure [set    :as set]
+                     [string :as string]]
             [clojure.tools.logging :refer :all]
             [couchbase [util      :as util]]
             [jepsen    [control   :as c]
@@ -85,38 +86,62 @@
                                (name recovery-type)))
        (util/rebalance (test :nodes))))))
 
-(defn rebalance-in-out
-  "Rebalance a node out of and back into the cluster"
-  []
-  (nemesis/node-start-stopper rand-nth
-    (fn start [test target]
-      (util/rebalance (test :nodes) target))
-
-    (fn stop [test target]
-      (let [nodes   (test :nodes)
-            cluster (if (not= target (first nodes))
-                      (first nodes)
-                      (second nodes))]
-        (c/on cluster (util/add-nodes [target]))
-        (util/rebalance nodes)))))
-
-(defn swap-rebalance
-  "Upon each invocation swap rebalance two nodes. In order to have a free node
-  to rebalance in we rebalance out one node upon nemesis setup"
+(defn rebalance-out-in
+  "Rebalance nodes of out of and back into the cluster"
   []
   (let [ejected (atom nil)]
     (reify nemesis/Nemesis
       (setup! [this test]
-        (reset! ejected (rand-nth (test :nodes)))
+        (reset! ejected #{})
+        this)
+      (invoke! [this test op]
+        (case (:f op)
+          :rebalance-out   (let [amount    (or (:count op) 1)
+                                 all-nodes (set (test :nodes))
+                                 remaining (set/difference all-nodes @ejected)
+                                 eject     (->> (seq remaining)
+                                                (shuffle)
+                                                (take amount)
+                                                (set))]
+                             (swap! ejected set/union eject)
+                             (util/rebalance remaining eject)
+                             (assoc op :value (str "Removed: " eject)))
+          :rebalance-in    (let [amount     (or (:count op) 1)
+                                 all-nodes  (set (test :nodes))
+                                 in-cluster (set/difference all-nodes @ejected)
+                                 add        (->> (seq @ejected)
+                                                 (shuffle)
+                                                 (take amount)
+                                                 (set))]
+                             (swap! ejected set/difference add)
+                             (c/on (first in-cluster) (util/add-nodes add))
+                             (util/rebalance (set/union in-cluster add))
+                             (assoc op :value (str "Added: " add)))))
+      (teardown! [this test]))))
+
+(defn swap-rebalance
+  "Upon each invocation swap rebalance $count nodes. In order to have free nodes
+  to rebalance in, we rebalance out $count nodes upon nemesis setup"
+  [count]
+  (let [ejected (atom #{})]
+    (reify nemesis/Nemesis
+      (setup! [this test]
+        (reset! ejected (->> (test :nodes)
+                             (shuffle)
+                             (take count)
+                             (set)))
         (util/rebalance (test :nodes) @ejected)
         this)
       (invoke! [this test op]
         (if-not (= (:f op) :swap)
           (throw (RuntimeException. "Op for swap-rebalance nemesis must be :swap")))
-        (let [nodes      (test :nodes)
-              in-cluster (remove #(= @ejected %) nodes)
-              to-remove  (rand-nth in-cluster)]
-          (c/on (first in-cluster) (util/add-nodes [@ejected]))
+        (let [nodes      (set (test :nodes))
+              in-cluster (set/difference nodes @ejected)
+              to-remove  (->> in-cluster
+                              (shuffle)
+                              (take count)
+                              (set))]
+          (c/on (first in-cluster) (util/add-nodes @ejected))
           (util/rebalance nodes to-remove)
           (reset! ejected to-remove))
         (assoc op :type :info :status :done))

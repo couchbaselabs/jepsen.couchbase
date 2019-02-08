@@ -140,7 +140,11 @@
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
    [nil "--recovery RECOVERY-TYPE"
     :parse-fn #(cond % "delta" :delta "full" :full :invalid)
-    :validate [#(not= :invalid %) "Must be delta or full"]]])
+    :validate [#(not= :invalid %) "Must be delta or full"]]
+   [nil "--disrupt-count COUNT"
+    "Number of nodes to disrupt"
+    :parse-fn parse-int
+    :validate [#(and (number? %) (pos? %)) "Must be a number"]]])
 
 
 (defn -main

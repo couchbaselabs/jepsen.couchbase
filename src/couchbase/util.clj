@@ -71,19 +71,19 @@
 (defn rebalance
   "Inititate a rebalance with the given parameters"
   ([known-nodes] (rebalance known-nodes nil))
-  ([known-nodes eject-node]
+  ([known-nodes eject-nodes]
    (let [known-nodes-str (->> known-nodes
                               (map #(str "ns_1@" %))
                               (str/join ","))
-         eject-node-str  (if eject-node (format "ns_1@%s" eject-node) "")
+         eject-nodes-str (->> eject-nodes
+                              (map #(str "ns_1@" %))
+                              (str/join ","))
          params          (format "ejectedNodes=%s&knownNodes=%s"
-                                 eject-node-str
+                                 eject-nodes-str
                                  known-nodes-str)
-         rest-target     (if (not= eject-node (first known-nodes))
-                           (first  known-nodes)
-                           (second known-nodes))]
-     (if eject-node
-       (info "Rebalancing node" eject-node "out from cluster"))
+         rest-target     (first (apply disj (set known-nodes) eject-nodes))]
+     (if eject-nodes
+       (info "Rebalancing nodes" eject-nodes "out of cluster"))
      (rest-call rest-target "/controller/rebalance" params)
      (loop [status ""]
        (when (not= status "{\"status\":\"none\"}")
