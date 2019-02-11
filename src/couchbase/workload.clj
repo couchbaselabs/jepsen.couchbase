@@ -110,7 +110,7 @@
                                             {:type :info :f :start-failover}
                                             (gen/sleep 30)])))))
 
-(defn Sequential-rebalance-workload
+(defn Sequential-Rebalance-workload
   "Rebalance a nodes out and back into the cluster sequentially"
   [opts]
   (with-register-base opts
@@ -134,7 +134,7 @@
                                                               (gen/sleep 10)]))))
                        (gen/limit oplimit))))
 
-(defn Bulk-rebalance-workload
+(defn Bulk-Rebalance-workload
   "Rebalance multiple nodes out and back into the cluster simultaneously"
   [opts]
   (with-register-base opts
