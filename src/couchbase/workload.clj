@@ -175,6 +175,25 @@
                                                      (gen/sleep 5)])))
                        (gen/limit oplimit))))
 
+(defn Fail-Rebalance-workload
+  "Kill memcached during a rebalance"
+  [opts]
+  (with-register-base opts
+    replicas      (or (opts :replicas)      1)
+    replicate-to  (or (opts :replicate-to)  0)
+    disrupt-count (or (opts :disrupt-count) 1)
+    autofailover  (if (nil? (opts :autofailover)) false (opts :autofailover))
+    nemesis       (cbnemesis/fail-rebalance)
+    generator     (->> (independent/concurrent-generator doc-threads (range)
+                         (fn [k]
+                           (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
+                                          (fn [_ _] {:type :invoke :f :write :value (rand-int 50)})])
+                                (gen/stagger (/ rate)))))
+                       (gen/nemesis (gen/seq (cycle [(gen/sleep 5)
+                                                     {:type :info :f :start :count disrupt-count}
+                                                     (gen/sleep 5)])))
+                       (gen/limit oplimit))))
+
 (defn Failover-workload
   "Hard failover and recover random nodes"
   [opts]

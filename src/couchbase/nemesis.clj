@@ -147,6 +147,28 @@
         (assoc op :type :info :status :done))
       (teardown! [this test] nil))))
 
+(defn fail-rebalance
+  "Start a rebalance, then cause it to fail by killing memcached on some nodes.
+  Since we ensure the rebalance fails, no nodes should ever actually leave the
+  cluster, so we don't need to keep track of the cluster status."
+  []
+  (reify nemesis/Nemesis
+    (setup! [this test] this)
+    (invoke! [thid test op]
+      (case (:f op)
+        :start (let [count      (or (op :count) 1)
+                     eject      (->> test :nodes shuffle (take count))
+                     rebalance  (future (util/rebalance (:nodes test) eject))]
+                 ;; Sleep between 2 and 4 seconds to allow the rebalance to start
+                 (Thread/sleep (+ (* (rand) 2000) 2000))
+                 ;; Kill memcached on a different random collection of nodes
+                 (c/on-many (->> test :nodes shuffle (take count))
+                            (c/su (c/exec :pkill :-9 :memcached)))
+                 ;; Wait for rebalance to quit, swallowing rebalance failure
+                 (try @rebalance (catch Exception e))
+                 (assoc op :value :ok))))
+    (teardown! [this test])))
+
 (defn kill-memcached
   "Upon invocation kill memcached to simulate a crash"
   []
