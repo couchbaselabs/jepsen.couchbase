@@ -271,6 +271,7 @@
       custom-vbucket-count  64
       replicas              (or (opts :replicas) 1)
       replicate-to          (or (opts :replicate-to) 0)
+      disrupt-count         (or (opts :disrupt-count) 1)
       autofailover          (if (nil? (opts :autofailover)) false (opts :autofailover))
       autofailover-timeout  (or (opts :autofailover-timeout)  6)
       autofailover-maxcount (or (opts :autofailover-maxcount) 3)
@@ -287,7 +288,7 @@
                                   (map (fn [x] {:type :invoke :f :add :value x}))
                                   (gen/seq)
                                   (gen/nemesis (gen/seq (cycle [(gen/sleep 10)
-                                                                {:type :info :f :kill}
+                                                                {:type :info :f :kill :count disrupt-count}
                                                                 (gen/sleep 20)])))
                                   (gen/limit oplimit))
                              (gen/clients (gen/once {:type :invoke :f :read :value nil})))))
@@ -307,6 +308,7 @@
       custom-vbucket-count  64
       replicas              (or (opts :replicas) 1)
       replicate-to          (or (opts :replicate-to) 0)
+      disrupt-count         (or (opts :disrupt-count) 1)
       autofailover          (if (nil? (opts :autofailover)) false (opts :autofailover))
       autofailover-timeout  (or (opts :autofailover-timeout)  6)
       autofailover-maxcount (or (opts :autofailover-maxcount) 3)
@@ -323,7 +325,7 @@
                                   (map (fn [x] {:type :invoke :f :add :value x}))
                                   (gen/seq)
                                   (gen/nemesis (gen/seq (cycle [(gen/sleep 10)
-                                                                {:type :info :f :kill}
+                                                                {:type :info :f :kill :count disrupt-count}
                                                                 (gen/sleep 20)])))
                                   (gen/limit oplimit))
                              (gen/clients (gen/once {:type :invoke :f :read :value nil})))))

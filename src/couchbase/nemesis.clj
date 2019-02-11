@@ -154,9 +154,12 @@
     (setup! [this test] this)
     (invoke! [this test op]
       (case (:f op)
-        :kill (do
-                (c/on (->> test :nodes rand-nth) (c/su (c/exec :pkill :-9 :memcached)))
-                (assoc op :value :killed-memcached))))
+        :kill (let [count   (or (op :count) 1)
+                    targets (->> (test :nodes)
+                                 (shuffle)
+                                 (take count))]
+                (c/on-many targets (c/su (c/exec :pkill :-9 :memcached)))
+                (assoc op :value [:killed :memcached targets]))))
     (teardown! [this test] nil)))
 
 (defn kill-ns_server
@@ -166,11 +169,13 @@
     (setup! [this test] this)
     (invoke! [this test op]
       (case (:f op)
-        :kill (do
-                (c/on (->> test :nodes rand-nth)
-                      (c/su (c/exec :bash :-c
-                                    "for i in $(pgrep beam.smp | tail -n +2); do kill -9 $i; done")))
-                (assoc op :value :killed-ns_server))))
+        :kill (let [count   (or (op :count) 1)
+                    targets (->> (test :nodes)
+                                 (shuffle)
+                                 (take count))]
+                (c/on-many targets
+                           (c/su (c/exec :bash :-c "kill -9 $(pgrep beam.smp | tail -n +2)")))
+                (assoc op :value [:killed :ns_server targets]))))
     (teardown! [this test] nil)))
 
 (defn slow-dcp [DcpClient]
