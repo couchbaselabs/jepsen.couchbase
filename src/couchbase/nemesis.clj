@@ -5,7 +5,9 @@
             [couchbase [util      :as util]]
             [jepsen    [control   :as c]
                        [generator :as gen]
-                       [nemesis   :as nemesis]]))
+                       [nemesis   :as nemesis]
+                       [net :as net]]
+            [cheshire.core :refer :all]))
 
 (defn disconnect-two
   "Introduce a partition that prevents two nodes from communicating"
@@ -13,11 +15,11 @@
   (let [targeter (fn [nodes] {first #{second}, second #{first}})]
     (nemesis/partitioner targeter)))
 
-(defn failover
+(defn failover-basic
   "Actively failover a node through the rest-api. Supports :delta, or
   :full recovery on nemesis stop."
-  ([]         (failover rand-nth :delta))
-  ([targeter] (failover targeter :delta))
+  ([]         (failover-basic rand-nth :delta))
+  ([targeter] (failover-basic targeter :delta))
   ([targeter recovery-type]
    (nemesis/node-start-stopper
      targeter
@@ -45,7 +47,7 @@
                                     (shuffle)
                                     (take 2))
             disconnect-nemesis (disconnect-two first second)
-            failover-nemesis   (failover (constantly first))
+            failover-nemesis   (failover-basic (constantly first))
             combined-nemesis   (nemesis/compose
                                  {{:start-partition :start} disconnect-nemesis
                                   {:start-failover  :start} failover-nemesis})]
@@ -224,3 +226,179 @@
                       "")
       op)
     (teardown! [this test])))
+
+(defn filter-nodes
+  "This function will take in node-state atom and targeter-opts. Target conditions will be extracted from
+  targeter-opts and used to filter nodes represented in node-states. This function allows target conditions to
+  be keyword, vector of keywords, or vector of vectors of keywords. Returns a vector of nodes
+
+  A vector of keywords will grab all nodes that match any condition, [:active :failed] will return all
+  nodes that are either :active or :failed without regard for other state keywords
+
+  A vector of vectors will grab all nodes that match exactly the vectors condition for all vectors,
+  [[:active :connected] [:failed :partitioned]] will return the union of all active connected nodes and
+  failed partitioned nodes"
+  [node-states targeter-opts]
+  (let [node-conditions (:condition targeter-opts)]
+    (cond
+      ;; keyword conditions should not filter nodes based on state, use for special cases
+      (keyword? node-conditions)
+      (case node-conditions
+        :all (vec (keys node-states)))
+
+      (vector? node-conditions)
+      (loop [node-set #{}
+             node-conditions node-conditions]
+        (if (not-empty node-conditions)
+          (let [current-condition (first node-conditions)
+                filtered-node-map  (cond
+                                     (= (type current-condition) clojure.lang.Keyword)
+                                     (select-keys node-states (for [[k v] node-states :when (contains? (set (:state v)) current-condition)] k))
+                                     (= (type current-condition) clojure.lang.PersistentVector)
+                                     (select-keys node-states (for [[k v] node-states :when (= (set (:state v)) (set current-condition))] k)))
+                filtered-nodes (set (keys filtered-node-map))
+                new-node-set (set/union filtered-nodes node-set)
+                remaining-conditions (remove #(= current-condition %) node-conditions)]
+            (recur new-node-set remaining-conditions))
+          (vec node-set))))))
+
+(defn apply-targeter
+  "This function takes in a list of nodes and a targeter-opts map that specifies how to select a subset of the nodes.
+  The function will apply a function to the list of nodes based on a keyword (:type) in the target-opts map."
+  [filtered-nodes targeter-opts]
+  (let [targeter-type (:type targeter-opts)
+        target-seq
+        (case targeter-type
+          :first (take 1 filtered-nodes)
+          :random (take 1 (shuffle filtered-nodes))
+          :random-subset (take (:count targeter-opts) (shuffle filtered-nodes))
+          :all filtered-nodes)]
+    (vec target-seq))
+  )
+
+(defn get-targets
+  "This function takes in an atom representing node states and a targeter-opts map. The function will first
+  apply a filter to the list of nodes based on node state, then it will target a subset of the filtered nodes
+  and return the select nodes as a vector"
+  [node-states targeter-opts]
+  (let [filtered-nodes (filter-nodes node-states targeter-opts)
+        target-nodes (apply-targeter filtered-nodes targeter-opts)]
+    target-nodes
+    )
+  )
+
+(defn create-grudge
+  "This function will create a partition grudge to be based to Jepsen. Partitions look like [(n1) (n2 n3) (n4)].
+  Each sequence represents partitions such that only nodes within the same sequence can communicate."
+  [partition-type target-nodes all-nodes]
+  (case partition-type
+    :isolate-completely
+    (let [complement-nodes (seq (set/difference (set all-nodes) (set target-nodes)))
+          partitions (conj (partition 1 target-nodes) complement-nodes)
+          grudge (nemesis/complete-grudge partitions)]
+      grudge)
+    )
+  )
+
+(defn get-new-state
+  "This function takes in a atom of node states, a target node, a state to remove from the target node, and
+  a state to add to the target node."
+  [node-states target old-state new-state]
+  (let [node-state (get-in @node-states [target :state])
+        old-state-removed (set (remove #(= old-state %) node-state))
+        new-state (vec (conj old-state-removed new-state))]
+    new-state))
+
+(defn couchbase
+  "The Couchbase nemesis represents operations that can be taken against a Couchbase cluster. Nodes are
+  represented as a map atom where the keys are node ips and the values are state maps. State maps store node
+  state in vectors of keywords. Each invoke can select a subset of nodes to act upon by filtering nodes
+  based on state.After selecting a set of nodes, the nemesis will take the requested action and update node state
+  accordingly."
+  []
+  (let [nodes (atom [])
+        node-states (atom {})]
+    (reify nemesis/Nemesis
+      (setup! [this test]
+        (net/heal! (:net test) test)
+        (reset! nodes (:nodes test))
+        (reset! node-states (reduce #(assoc %1 %2 {:state [:active :connected]}) {} (:nodes test)))
+        this)
+
+      (invoke! [this test op]
+        (let [f-opts (:f-opts op)
+              targeter-opts (:targeter-opts op)
+              target-nodes (if (nil? targeter-opts) @nodes (get-targets @node-states targeter-opts))]
+          (case (:f op)
+
+            :failover
+            (let [failover-type (:failover-type f-opts)
+                  endpoint (case failover-type
+                             :hard "/controller/failOver"
+                             :graceful "/controller/startGracefulFailover")]
+              (assert (< (count target-nodes) (count (filter-nodes @node-states {:condition [[:active :connected]]}))) "failover count must be less than total active node count")
+              (doseq [target target-nodes]
+                (util/rest-call target endpoint (str "otpNode=ns_1@" target))
+                (if (= failover-type :graceful)
+                  (util/wait-for #(util/rest-call target "/pools/default/rebalanceProgress" nil) "{\"status\":\"none\"}"))
+                (swap! node-states assoc-in [target :state] (get-new-state node-states target :active :failed)))
+              (assoc op :value :failover-complete))
+
+            :recover
+            (let [recovery-type (:recovery-type f-opts)
+                  active-nodes (vec (filter-nodes @node-states {:condition [[:active :connected]]}))
+                  failed-nodes (vec (filter-nodes @node-states {:condition [[:failed :connected]]}))
+                  eject-nodes (vec (set/difference (set failed-nodes) (set target-nodes)))
+                  rebalance-nodes (concat active-nodes failed-nodes)]
+              (assert (<= (count target-nodes) (count failed-nodes)) "recovery count must be less or equal to the total failed node count")
+              (doseq [target target-nodes]
+                (let [params (str (format  "otpNode=%s&recoveryType=%s" (str "ns_1@" target) (name recovery-type)))]
+                  (util/rest-call target "/controller/setRecoveryType" params)))
+              (util/rebalance rebalance-nodes)
+              (doseq [target target-nodes]
+                (swap! node-states assoc-in [target :state] (get-new-state node-states target :failed :active)))
+              (doseq [target eject-nodes]
+                (swap! node-states assoc-in [target :state] (get-new-state node-states target :failed :ejected)))
+              (assoc op :value :recovery-complete))
+
+            :partition-network
+            (let [partition-type (:partition-type f-opts)
+                  grudge (create-grudge partition-type target-nodes @nodes)]
+              (net/drop-all! test grudge)
+              (doseq [target target-nodes]
+                (swap! node-states assoc-in [target :state] (get-new-state node-states target :connected :partitioned)))
+              (assoc op :value [:isolated grudge]))
+
+            :heal-network
+            (do
+              (net/heal! (:net test) test)
+              (doseq [target target-nodes]
+                (swap! node-states assoc-in [target :state] (get-new-state node-states target :partitioned :connected)))
+              (assoc op :value :network-healed))
+
+            :wait-for-autofailover
+            (let [autofailover-count (atom 0)
+                  target (first target-nodes)
+                  node-info-before (util/get-node-info target)]
+              (util/wait-for #(util/get-autofailover-info target :count) 1)
+              (let [node-info-after (util/get-node-info target)]
+                (doseq [node-info node-info-before]
+                  (let [node-key (key node-info)
+                        state-before (get-in node-info-before [node-key :clusterMembership])
+                        state-after (get-in node-info-after [node-key :clusterMembership])
+                        active-before (= state-before "active")
+                        failed-after (= state-after "inactiveFailed")]
+                    (if (and active-before failed-after)
+                      (do
+                        (swap! node-states assoc-in [node-key :state] (get-new-state node-states node-key :active :failed))
+                        (swap! autofailover-count inc)))
+                    )
+                  )
+                )
+              (assert (= @autofailover-count 1) (str "autofailover-count != 1"))
+              (assoc op :value :autofailover-complete))
+            )))
+
+      (teardown! [this test])
+
+      )))

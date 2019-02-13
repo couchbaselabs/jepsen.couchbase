@@ -20,7 +20,8 @@
 
     db/Primary
     (setup-primary! [_ test node]
-      (util/setup-cluster test node))
+      (util/setup-cluster test node)
+      (compare-and-set! (test :db-intialized) false true))
 
     db/LogFiles
     (log-files [_ test node]
@@ -63,6 +64,8 @@
           :get-cbcollect (opts :get-cbcollect)
           :time-limit (opts :time-limit)
           :perf-graphs (opts :perf-graphs)
+          :skip-teardown (opts :skip-teardown)
+          :db-intialized (atom false)
           }
          ;; workload specific parameter
          (try
@@ -138,11 +141,32 @@
     :default nil
     :parse-fn parse-int
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
-   [nil "--recovery RECOVERY-TYPE"
+   [nil "--recovery-type RECOVERY-TYPE"
     :parse-fn #(cond % "delta" :delta "full" :full :invalid)
     :validate [#(not= :invalid %) "Must be delta or full"]]
+   [nil "--failover-type FAILOVER-TYPE"
+    :parse-fn #(cond % "hard" :hard "graceful" :graceful :invalid)
+    :validate [#(not= :invalid %) "Must be hard or graceful"]]
    [nil "--disrupt-count COUNT"
     "Number of nodes to disrupt"
+    :parse-fn parse-int
+    :validate [#(and (number? %) (pos? %)) "Must be a number"]]
+   [nil "--skip-teardown"
+    "Skip teardown of Couchbase server"
+    :default false]
+   [nil "--cycles CYCLES"
+    "Number of nemesis cycles to run"
+    :default nil
+    :parse-fn parse-int
+    :validate [#(and (number? %) (pos? %)) "Must be a number"]]
+   [nil "--disrupt-time DISRUPTION-TIME"
+    "Number of seconds for which the nemesis will act"
+    :default nil
+    :parse-fn parse-int
+    :validate [#(and (number? %) (pos? %)) "Must be a number"]]
+   [nil "--durability-timeout DURABILITY-TIMEOUT"
+    "Durability timeout in seconds"
+    :default nil
     :parse-fn parse-int
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]])
 

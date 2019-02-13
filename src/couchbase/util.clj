@@ -3,6 +3,7 @@
             [clojure.java.io :as io]
             [clojure.tools.logging :refer :all]
             [clojure.string :as str]
+            [cheshire.core :refer :all]
             [jepsen [control :as c]
                     [net     :as net]]
             [slingshot.slingshot :refer [try+ throw+]])
@@ -206,17 +207,24 @@
 (defn teardown
   "Stop the couchbase server instances and delete the data files"
   [test]
-  (info "Tearing down couchbase node")
-  (try
-    (c/su (c/exec :systemctl :stop :couchbase-server))
-    (catch RuntimeException e))
-  (try
-    (let [path (or (:path (:package test))
-                   "/opt/couchbase")]
-      (c/su (c/exec (str path "/bin/couchbase-server") :-k)))
-    (catch RuntimeException e))
-  (c/su (c/exec :rm :-rf "/opt/couchbase/var/lib/couchbase"))
-  (net/heal! (:net test) test))
+  (if (and (test :skip-teardown) (deref (test :db-intialized)))
+    (info "Skipping teardown of couchbase node")
+    (do
+      (info "Tearing down couchbase node")
+      (try
+        (c/su (c/exec :systemctl :stop :couchbase-server))
+        (catch RuntimeException e))
+      (try
+        (let [path (or (:path (:package test))
+                       "/opt/couchbase")]
+          (c/su (c/exec (str path "/bin/couchbase-server") :-k)))
+        (catch RuntimeException e))
+      (c/su (c/exec :rm :-rf "/opt/couchbase/var/lib/couchbase"))
+      (net/heal! (:net test) test)
+      )
+    )
+  (info "Teardown Complete")
+  )
 
 (defn get-version
   "Get the couchbase version running on the cluster"
@@ -305,3 +313,50 @@
       (catch RuntimeException e
         (warn "Error getting logfiles")
         []))))
+
+(defn wait-for
+  [call-function desired-state]
+  (loop [state (call-function)]
+    (if (not= state desired-state)
+      (do
+        (Thread/sleep 1000)
+        (recur (call-function)))
+      )
+    )
+  )
+
+(defn get-autofailover-info
+  [target field]
+  (let [autofailover-info (rest-call target "/settings/autoFailover" nil)
+        json-val (parse-string autofailover-info true)
+        field-val (json-val (keyword field))]
+    field-val
+    )
+  )
+
+(defn get-cluster-info
+  [target]
+  (let [rest-call (rest-call target "/pools/default" nil)
+        json-val (parse-string rest-call true)]
+    json-val
+    )
+  )
+
+(defn get-node-info
+  [target]
+  (let [cluster-info (get-cluster-info target)
+        nodes-vec (:nodes cluster-info)]
+
+    (loop [node-info-map {}
+           nodes-info nodes-vec]
+      (if (not-empty nodes-info)
+        (let [node-info (first nodes-info)
+              otp-node (:otpNode node-info)
+              node-name (str/replace otp-node #"ns_1@" "")
+              updated-node-info-map (assoc node-info-map node-name node-info)
+              updated-nodes-info (remove #(= node-info %) nodes-info)]
+          (recur updated-node-info-map updated-nodes-info))
+        node-info-map)
+      )
+    )
+  )

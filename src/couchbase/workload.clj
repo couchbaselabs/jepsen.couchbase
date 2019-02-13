@@ -59,7 +59,6 @@
   (with-register-base opts
     replicas      (or (opts :replicas) 1)
     replicate-to  (or (opts :replicate-to) 0)
-    autofailover  (if (nil? (opts :autofailover)) true (opts :autofailover))
     nemesis       nemesis/noop
     generator     (->> (independent/concurrent-generator doc-threads (range)
                          (fn [k]
@@ -71,23 +70,62 @@
                        (gen/clients))))
 
 (defn Partition-workload
-  "Trigger non-linearizable behaviour where mutations are lost if the
-  active is failed over and they have not yet been replicated"
+  "Paritions the network by isolating nodes from each other, then will recover if autofailover happens"
   [opts]
   (with-register-base opts
-    replicas      (or (opts :replicas) 1)
-    replicate-to  (or (opts :replicate-to) 0)
-    autofailover  (if (nil? (opts :autofailover)) true (opts :autofailover))
-    nemesis       (nemesis/partition-random-node)
-    generator     (->> (independent/concurrent-generator doc-threads (range)
-                         (fn [k]
-                           (->> (gen/mix [(fn [_ _] {:type :invoke, :f :read, :value nil})
-                                          (fn [_ _] {:type :invoke, :f :write :value (rand-int 50)})])
-                                (gen/stagger (/ rate)))))
-                       (gen/limit oplimit)
-                       (gen/nemesis (gen/seq [(gen/sleep 5)
-                                              {:type :info :f :start}
-                                              (gen/sleep 30)])))))
+    cycles         (or (opts :cycles) 1)
+    replicas       (or (opts :replicas) 1)
+    replicate-to   (or (opts :replicate-to) 0)
+    autofailover   (if (nil? (opts :autofailover)) false (opts :autofailover))
+    disrupt-time   (or (opts :disrupt-time) 20)
+    recovery-type  (or (keyword (opts :recovery-type)) :delta)
+    disrupt-count  (or (opts :disrupt-count) 1)
+    should-autofailover (and autofailover (= disrupt-count 1) (> disrupt-time autofailover-timeout) (>= (count (:nodes opts)) 3))
+    nemesis        (cbnemesis/couchbase)
+    generator      (->> (independent/concurrent-generator doc-threads (range)
+                                                          (fn [k]
+                                                            (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
+                                                                           (fn [_ _] {:type :invoke :f :write :value (rand-int 50)})])
+                                                                 (gen/stagger (/ rate)))))
+                        (gen/nemesis (gen/seq
+                                       (reduce into [] (repeat cycles (if should-autofailover
+                                                                        [(gen/sleep 5)
+                                                                         {:type :info :f :partition-network
+                                                                          :f-opts
+                                                                                {:partition-type :isolate-completely}
+                                                                          :targeter-opts
+                                                                                {:type :random-subset
+                                                                                 :count disrupt-count
+                                                                                 :condition [[:active :connected]]}}
+                                                                         {:type :info :f :wait-for-autofailover
+                                                                          :targeter-opts
+                                                                                {:type :random
+                                                                                 :condition [[:active :connected]]}}
+                                                                         (gen/sleep (- disrupt-time autofailover-timeout))
+                                                                         {:type :info :f :heal-network}
+                                                                         (gen/sleep 5)
+                                                                         {:type :info :f :recover
+                                                                          :f-opts
+                                                                                {:recovery-type recovery-type}
+                                                                          :targeter-opts
+                                                                                {:type :all
+                                                                                 :condition [[:failed :connected]]}}
+                                                                         (gen/sleep 5)]
+
+                                                                        [(gen/sleep 5)
+                                                                         {:type :info :f :partition-network
+                                                                          :f-opts
+                                                                                {:partition-type :isolate-completely}
+                                                                          :targeter-opts
+                                                                                {:type :random-subset
+                                                                                 :count disrupt-count
+                                                                                 :condition [[:active :connected]]}}
+                                                                         (gen/sleep disrupt-time)
+                                                                         {:type :info :f :heal-network}
+                                                                         (gen/sleep 5)]
+                                                                        )
+                                                               ))))
+                        (gen/limit oplimit))))
 
 (defn MB28525-workload
   "Trigger non-linearizable behaviour where successful mutations with replicate-to=1
@@ -195,24 +233,39 @@
                        (gen/limit oplimit))))
 
 (defn Failover-workload
-  "Hard failover and recover random nodes"
+  "Failover and recover"
   [opts]
   (with-register-base opts
+    cycles         (or (opts :cycles) 1)
     replicas     (or (opts :replicas)     1)
     replicate-to (or (opts :replicate-to) 0)
-    autofailover (if (nil? (opts :autofailover)) false (opts :autofailover))
-    recovery     (or (opts :recovery) :delta)
-    nemesis      (cbnemesis/failover rand-nth recovery)
+    recovery-type (or (keyword (opts :recovery-type)) :delta)
+    failover-type (or (keyword (opts :failover-type)) :hard)
+    disrupt-count (or (opts :disrupt-count) 1)
+    nemesis      (cbnemesis/couchbase)
     generator    (->> (independent/concurrent-generator doc-threads (range)
                         (fn [k]
                           (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
                                          (fn [_ _] {:type :invoke :f :write :value (rand-int 50)})])
                                (gen/stagger (/ rate)))))
-                      (gen/nemesis (gen/seq (cycle [(gen/sleep 5)
-                                                    {:type :info :f :start}
-                                                    (gen/sleep 10)
-                                                    {:type :info :f :stop}
-                                                    (gen/sleep 5)])))
+                      (gen/nemesis (gen/seq
+                                     (reduce into []
+                                             (repeat cycles [(gen/sleep 5)
+                                                             {:type :info :f :failover
+                                                              :f-opts
+                                                                    {:failover-type failover-type}
+                                                              :targeter-opts
+                                                                    {:type :random-subset
+                                                                     :count disrupt-count
+                                                                     :condition [[:active :connected]]}}
+                                                             (gen/sleep 10)
+                                                             {:type :info :f :recover
+                                                              :f-opts
+                                                                    {:recovery-type recovery-type}
+                                                              :targeter-opts
+                                                                    {:type :all
+                                                                     :condition [[:failed :connected]]}}
+                                                             (gen/sleep 5)]))))
                       (gen/limit oplimit))))
 
 (defn Graceful-Failover-workload
@@ -222,7 +275,7 @@
     replicas     (or (opts :replicas)     1)
     replicate-to (or (opts :replicate-to) 0)
     autofailover (if (nil? (opts :autofailover)) false (opts :autofailover))
-    recovery     (or (opts :recovery) :delta)
+    recovery     (or (opts :recovery-type) :delta)
     nemesis      (cbnemesis/graceful-failover rand-nth recovery)
     generator    (->> (independent/concurrent-generator doc-threads (range)
                         (fn [k]
