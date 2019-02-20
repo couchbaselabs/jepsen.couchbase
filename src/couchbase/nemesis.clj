@@ -9,12 +9,6 @@
                        [net :as net]]
             [cheshire.core :refer :all]))
 
-(defn disconnect-two
-  "Introduce a partition that prevents two nodes from communicating"
-  [first second]
-  (let [targeter (fn [nodes] {first #{second}, second #{first}})]
-    (nemesis/partitioner targeter)))
-
 (defn failover-basic
   "Actively failover a node through the rest-api. Supports :delta, or
   :full recovery on nemesis stop."
@@ -30,11 +24,14 @@
          [:failed-over node]))
 
      (fn stop [test node]
-       (util/rest-call "/controller/setRecoveryType"
-                       (format "otpNode=%s&recoveryType=%s"
-                               (str "ns_1@" node)
-                               (name recovery-type)))
-       (util/rebalance (test :nodes))))))
+       (try
+         (util/rest-call "/controller/setRecoveryType"
+                         (format "otpNode=%s&recoveryType=%s"
+                                 (str "ns_1@" node)
+                                 (name recovery-type)))
+         (util/rebalance (test :nodes))
+         (catch Exception e
+           (warn "Recovery failed")))))))
 
 (defn partition-then-failover
   "Introduce a partition such that two nodes cannot communicate, then failover
@@ -43,16 +40,22 @@
   []
   (reify nemesis/Nemesis
     (setup! [this test]
-      (let [[first, second]    (->> (:nodes test)
-                                    (shuffle)
-                                    (take 2))
-            disconnect-nemesis (disconnect-two first second)
-            failover-nemesis   (failover-basic (constantly first))
+      (let [state-atom         (atom nil)
+            targeter           (fn [nodes]
+                                 (as-> nodes %
+                                   (shuffle %)
+                                   (take 2 %)
+                                   (reset! state-atom %)
+                                   {(first %) #{(second %)}, (second %) #{(first %)}}))
+
+            disconnect-nemesis (nemesis/partitioner targeter)
+            failover-nemesis   (failover-basic (fn [& a] (rand-nth @state-atom)))
+
             combined-nemesis   (nemesis/compose
-                                 {{:start-partition :start} disconnect-nemesis
-                                  {:start-failover  :start} failover-nemesis})]
-        (info "Nemesis is going to partition" first "and" second
-              "then failover" first)
+                                {{:start-partition :start
+                                  :stop-partition  :stop} disconnect-nemesis
+                                 {:start-failover  :start
+                                  :recover         :stop} failover-nemesis})]
         (nemesis/setup-compat! combined-nemesis test nil)))
 
     ; These are never called, since we replace this nemesis during setup

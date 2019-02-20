@@ -127,7 +127,7 @@
                                                                ))))
                         (gen/limit oplimit))))
 
-(defn MB28525-workload
+(defn Partition-Failover-workload
   "Trigger non-linearizable behaviour where successful mutations with replicate-to=1
   are lost due to promotion of the 'wrong' replica upon failover of the active"
   [opts]
@@ -140,13 +140,18 @@
                        (fn [k]
                          (->> (gen/mix [(fn [_ _] {:type :invoke, :f :read, :value nil})
                                         (fn [_ _] {:type :invoke, :f :write :value (rand-int 50)})])
+                              (gen/limit (* 50 (+ 0.5 (rand))))
                               (gen/stagger (/ rate)))))
-                     (gen/limit oplimit)
-                     (gen/nemesis (gen/seq [(gen/sleep 10)
-                                            {:type :info :f :start-partition}
-                                            (gen/sleep 5)
-                                            {:type :info :f :start-failover}
-                                            (gen/sleep 30)])))))
+                     (gen/nemesis (gen/seq (cycle [(gen/sleep 10)
+                                                   {:type :info :f :start-partition}
+                                                   (gen/sleep 5)
+                                                   {:type :info :f :start-failover}
+                                                   (gen/sleep 10)
+                                                   {:type :info :f :stop-partition}
+                                                   (gen/sleep 5)
+                                                   {:type :info :f :recover}
+                                                   (gen/sleep 5)])))
+                     (gen/limit oplimit))))
 
 (defn Sequential-Rebalance-workload
   "Rebalance a nodes out and back into the cluster sequentially"
