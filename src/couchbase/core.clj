@@ -168,7 +168,10 @@
     "Durability timeout in seconds"
     :default nil
     :parse-fn parse-int
-    :validate [#(and (number? %) (pos? %)) "Must be a number"]]])
+    :validate [#(and (number? %) (pos? %)) "Must be a number"]]
+   [nil "--scenario SCENARIO"
+    :default nil
+    :parse-fn #(keyword %)]])
 
 
 (defn -main

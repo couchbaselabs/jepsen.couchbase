@@ -69,6 +69,22 @@
       (info "Adding node" node "to cluster")
       (rest-call "/controller/addNode" params))))
 
+(defn wait-for
+  [call-function desired-state]
+  (loop [state (call-function)]
+    (if (not= state desired-state)
+      (do
+        (Thread/sleep 1000)
+        (recur (call-function))))))
+
+(defn get-rebalance-status
+  [target]
+  (let [rebalance-info (rest-call target "/pools/default/rebalanceProgress" nil)
+        rebalance-info-map (parse-string rebalance-info true)
+        rebalance-status (:status rebalance-info-map)]
+    rebalance-status))
+
+
 (defn rebalance
   "Inititate a rebalance with the given parameters"
   ([known-nodes] (rebalance known-nodes nil))
@@ -86,13 +102,8 @@
      (if eject-nodes
        (info "Rebalancing nodes" eject-nodes "out of cluster"))
      (rest-call rest-target "/controller/rebalance" params)
-     (loop [status ""]
-       (when (not= status "{\"status\":\"none\"}")
-         (info "Rebalance status:" status)
-         (if (re-find #"Rebalance failed" status)
-           (throw (RuntimeException. "Rebalance failed")))
-         (Thread/sleep 1000)
-         (recur (rest-call rest-target "/pools/default/rebalanceProgress" nil))))
+     (wait-for #(get-rebalance-status rest-target) "running")
+     (wait-for #(get-rebalance-status rest-target) "none")
      (info "Rebalance complete"))))
 
 (defn create-bucket
@@ -321,33 +332,18 @@
         (warn "Error getting logfiles")
         []))))
 
-(defn wait-for
-  [call-function desired-state]
-  (loop [state (call-function)]
-    (if (not= state desired-state)
-      (do
-        (Thread/sleep 1000)
-        (recur (call-function)))
-      )
-    )
-  )
-
 (defn get-autofailover-info
   [target field]
   (let [autofailover-info (rest-call target "/settings/autoFailover" nil)
         json-val (parse-string autofailover-info true)
         field-val (json-val (keyword field))]
-    field-val
-    )
-  )
+    field-val))
 
 (defn get-cluster-info
   [target]
   (let [rest-call (rest-call target "/pools/default" nil)
         json-val (parse-string rest-call true)]
-    json-val
-    )
-  )
+    json-val))
 
 (defn get-node-info
   [target]
@@ -363,7 +359,4 @@
               updated-node-info-map (assoc node-info-map node-name node-info)
               updated-nodes-info (remove #(= node-info %) nodes-info)]
           (recur updated-node-info-map updated-nodes-info))
-        node-info-map)
-      )
-    )
-  )
+          node-info-map))))
