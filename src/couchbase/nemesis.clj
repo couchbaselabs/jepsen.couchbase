@@ -202,6 +202,48 @@
                 (assoc op :value [:killed :ns_server targets]))))
     (teardown! [this test] nil)))
 
+(defn kill-babysitter
+  "Upon each :kill invocation kill the babysitter on a random node, restart
+  all killed nodes upon :restart, and recovery any autofailovered nodes on
+  :recover"
+  []
+  (let [killed (atom #{})]
+    (reify nemesis/Nemesis
+      (setup! [this test] this)
+      (invoke! [this test op]
+        (case (:f op)
+          :kill    (let [count   (or (op :count) 1)
+                         targets (->> (set/difference (test :nodes) @killed)
+                                      (seq)
+                                      (shuffle)
+                                      (take count)
+                                      (set))]
+                     (swap! killed set/union targets)
+                     (c/on-many targets
+                                (c/su (c/exec :bash :-c "kill -9 $(pgrep beam.smp | head -n 1)")))
+                     (assoc op :value [:killed :babysitter targets]))
+          :restart (let [path (or (:path (:package test)) "/opt/couchbase")]
+                     (c/on-many @killed
+                       (c/ssh* {:cmd (str "nohup " path "/bin/couchbase-server -- -noinput >> /dev/null 2>&1 &")})
+                       (util/wait-for-daemon))
+                     (assoc op :value [:restarted :babysitter @killed]))
+          :recover (let [healthy        (-> test :nodes set (set/difference @killed) seq rand-nth)
+                         cluster-status (util/get-cluster-info healthy)
+                         recovered      (atom [])]
+                     (doseq [node (:nodes cluster-status)]
+                       (when (and (-> (:otpNode node) (subs 5) (@killed))
+                                  (= (:clusterMembership node) "inactiveFailed"))
+                         (swap! recovered conj (-> (:otpNode node) (subs 5)))
+                         (util/rest-call healthy
+                                         "/controller/setRecoveryType"
+                                         (format "otpNode=%s&recoveryType=%s"
+                                                 (:otpNode node)
+                                                 (->> test :recovery-type name)))))
+                     (util/rebalance (test :nodes))
+                     (reset! killed #{})
+                     (assoc op :value [:recovered @recovered]))))
+      (teardown! [this test] nil))))
+
 (defn slow-dcp [DcpClient]
   (reify nemesis/Nemesis
     (setup! [this test] this)

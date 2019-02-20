@@ -422,6 +422,49 @@
                                   (gen/limit oplimit))
                              (gen/clients (gen/once {:type :invoke :f :read :value nil})))))
 
+(defn Set-kill-babysitter-workload
+  "Set workload that repeatedly kills ns_server while hammering inserts against
+  the cluster"
+  [opts]
+  (let-and-merge
+      addclient             (cbclients/batch-insert-pool)
+      delclient             nil
+      dcpclient             (cbclients/simple-dcp-client)
+      oplimit               (or (opts :oplimit) 250000)
+      concurrency           1000
+      batch-size            50
+      pool-size             16
+      replicas              (or (opts :replicas)      1)
+      replicate-to          (or (opts :replicate-to)  0)
+      recovery-type         (or (opts :recovery-type) :delta)
+      disrupt-count         (or (opts :disrupt-count) 1)
+      disrupt-time          (or (opts :disrupt-time)  30)
+      autofailover          (if (nil? (opts :autofailover)) false (opts :autofailover))
+      autofailover-timeout  (or (opts :autofailover-timeout)  6)
+      autofailover-maxcount (or (opts :autofailover-maxcount) 3)
+      client                (clients/set-client addclient delclient dcpclient)
+
+      nemesis               (cbnemesis/kill-babysitter)
+      checker               (checker/compose
+                             (merge
+                              {:set (checker/set)}
+                              (if (opts :perf-graphs)
+                                {:perf (checker/perf)})))
+      generator             (gen/phases
+                             (->> (range)
+                                  (map (fn [x] {:type :invoke :f :add :value x}))
+                                  (gen/seq)
+                                  (gen/nemesis
+                                  (gen/seq (cycle [(gen/sleep 10)
+                                                   {:type :info :f :kill :count disrupt-count}
+                                                   (gen/sleep disrupt-time)
+                                                   {:type :info :f :restart}
+                                                   (gen/sleep 15)
+                                                   {:type :info :f :recover}
+                                                   (gen/sleep 10)])))
+                                  (gen/limit oplimit))
+                             (gen/clients (gen/once {:type :invoke :f :read :value nil})))))
+
 (defn WhiteRabbit-workload
   "Trigger lost inserts due to one of several white-rabbit variants"
   [opts]
