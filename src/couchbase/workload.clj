@@ -289,6 +289,26 @@
                                                     (gen/sleep 5)])))
                       (gen/limit oplimit))))
 
+(defn Disk-Failure-workload
+  "Simulate a disk failure. This workload will not function correctly with docker containers."
+  [opts]
+  (with-register-base opts
+    replicas      (or (opts :replicas)      2)
+    replicate-to  (or (opts :replicate-to)  0)
+    disrupt-count (or (opts :disrupt-count) 1)
+    autofailover  (if (nil? (opts :autofailover)) false (opts :autofailover))
+    recovery      (or (opts :recovery) :delta)
+    nemesis       (cbnemesis/disk-failure)
+    generator     (->> (independent/concurrent-generator doc-threads (range)
+                         (fn [k]
+                           (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
+                                          (fn [_ _] {:type :invoke :f :write :value (rand-int 50)})])
+                                (gen/limit 20)
+                                (gen/stagger (/ rate)))))
+                       (gen/nemesis (gen/seq [(gen/sleep 15)
+                                              {:type :info :f :start :count disrupt-count}]))
+                       (gen/limit oplimit))))
+
 ;; =============
 ;; Set Workloads
 ;; =============

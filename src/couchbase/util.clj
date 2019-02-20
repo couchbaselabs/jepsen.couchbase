@@ -122,6 +122,13 @@
                (format "enabled=%s&timeout=%s&maxCount=%s"
                        enabled timeout maxcount))))
 
+(defn wait-for-warmup
+  "Wait for warmup to complete"
+  []
+  (while (->> (rest-call "/pools/default" nil)
+              (re-find #"\"status\":\"warmup\""))
+    (Thread/sleep 1000)))
+
 (defn set-custom-cursor-drop-marks
   "Set the cursor dropping marks to a new value on all nodes"
   [test]
@@ -139,9 +146,7 @@
   ;; for ns_server to detect memcached was killed
   (Thread/sleep 3000)
   (info "Waiting for memcached to restart")
-  (while (->> (rest-call "/pools/default/serverGroups" nil)
-              (re-find #"\"status\":\"warmup\""))
-    (Thread/sleep 1000)))
+  (wait-for-warmup))
 
 (defn setup-cluster
   "Setup couchbase cluster"
@@ -157,9 +162,7 @@
     (set-autofailover test)
     (create-bucket num-replicas)
     (info "Waiting for bucket warmup to complete...")
-    (while (->> (rest-call "/pools/default/serverGroups" nil)
-                (re-find #"\"status\":\"warmup\""))
-      (Thread/sleep 1000))
+    (wait-for-warmup)
     (if (test :custom-cursor-drop-marks)
       (set-custom-cursor-drop-marks test))
     (info "Setup complete")))
@@ -181,6 +184,19 @@
            (c/su (c/exec :tar :-Pxf "~/couchbase.tar"))
            (c/su (c/exec :rm "~/couchbase.tar")))))
 
+(defn wait-for-daemon
+  "Wait until couchbase server daemon has started"
+  []
+  (while
+    (= :not-ready
+       (try+
+        (rest-call "/pools/default" nil)
+        (catch [:type :rest-fail] e
+          (if (= (->> e (:error) (:exit)) 7)
+            :not-ready
+            :done))))
+    (Thread/sleep 2000)))
+
 (defn setup-node
   "Start couchbase on a node"
   [test]
@@ -193,16 +209,7 @@
       (install-package package))
     (info "Starting daemon")
     (c/ssh* {:cmd (str "nohup " path "/bin/couchbase-server -- -noinput >> /dev/null 2>&1 &")}))
-
-  (while
-    (= :not-ready
-      (try+
-        (rest-call "/pools/default" nil)
-        (catch [:type :rest-fail] e
-          (if (= (->> e (:error) (:exit)) 7)
-            :not-ready
-            :done))))
-    (Thread/sleep 2000)))
+    (wait-for-daemon))
 
 (defn teardown
   "Stop the couchbase server instances and delete the data files"

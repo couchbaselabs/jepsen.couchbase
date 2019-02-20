@@ -227,6 +227,51 @@
       op)
     (teardown! [this test])))
 
+(defn disk-failure
+  "Simulate a disk failure on the data path.
+
+  This nemesis will not work correctly with docker containers"
+  []
+  (reify nemesis/Nemesis
+    (setup! [this test]
+      (let [path        (or (->> test :package :path) "/opt/couchbase")
+            server-path (str path "/bin/couchbase-server")
+            data-path   (str path "/var/lib/couchbase/data")]
+        (c/with-test-nodes test
+          (c/su (c/exec :dd "if=/dev/zero" "of=/tmp/cbdata.img" "bs=1M" "count=512")
+                (c/exec :losetup "/dev/loop0" "/tmp/cbdata.img")
+                (c/exec :dmsetup :create :cbdata :--table (c/lit "'0 1048576 linear /dev/loop0 0'"))
+                (c/exec :mkfs.ext4 "/dev/mapper/cbdata")
+                (c/exec server-path :-k)
+                (c/exec :mv data-path "/tmp/cbdata")
+                (c/exec :mkdir data-path)
+                (c/exec :mount "/dev/mapper/cbdata" data-path)
+                (c/exec :chmod "a+rwx" data-path)
+                (c/exec :mv (c/lit "/tmp/cbdata/*") data-path)
+                (c/exec :rm :-r "/tmp/cbdata"))
+          (c/ssh* {:cmd (str "nohup " server-path " -- -noinput >> /dev/null 2>&1 &")})
+          (util/wait-for-daemon)
+          (util/wait-for-warmup))
+        this))
+    (invoke! [this test op]
+      (case (:f op)
+        :start (let [fail (->> test :nodes shuffle (take (op :count)))]
+                 (c/on-many
+                  fail
+                  (c/su (c/exec :dmsetup :wipe_table :cbdata :--noflush :--nolockfs)
+                        ;; Drop buffers. Since most of our tests use little data we can read
+                        ;; everything from the filesystem level buffer despite the block device
+                        ;; returning errors.
+                        (c/exec :echo "3" :> :/proc/sys/vm/drop_caches)))
+                 (assoc op :value [:failed fail]))))
+
+    (teardown! [this test]
+      (c/with-test-nodes test
+        (c/su (c/exec :umount :-l "/dev/mapper/cbdata")
+              (c/exec :dmsetup :remove :-f "/dev/mapper/cbdata")
+              (c/exec :losetup :-d "/dev/loop0")
+              (c/exec :rm "/tmp/cbdata.img"))))))
+
 (defn filter-nodes
   "This function will take in node-state atom and targeter-opts. Target conditions will be extracted from
   targeter-opts and used to filter nodes represented in node-states. This function allows target conditions to
@@ -402,3 +447,4 @@
       (teardown! [this test])
 
       )))
+
