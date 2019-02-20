@@ -30,7 +30,7 @@
   merging the custom parameters"
   ([opts & more]
    `(let-and-merge
-        ~'oplimit               (or (~opts :oplimit)     1200)
+        ~'cycles                (or (~opts :cycles)      1)
         ~'rate                  (or (~opts :rate)        1/3)
         ~'doc-count             (or (~opts :doc-count)   40)
         ~'doc-threads           (or (~opts :doc-threads) 3)
@@ -49,6 +49,34 @@
                         {:perf (checker/perf)})))
         ~@more)))
 
+;; =================
+;; HELPER GENERATORS
+;; =================
+
+(gen/defgenerator while-atom-true
+  [controlatom gen]
+  [controlatom gen]
+  (op [_ test process]
+      (if @controlatom
+        (gen/op gen test process))))
+
+
+(gen/defgenerator set-atom-false
+  [controlatom]
+  [controlatom]
+  (op [_ test process]
+      (reset! controlatom false)
+      nil))
+
+(defn do-n-nemesis-cycles
+  [n nemesis-seq client-gen]
+  (let [control-atom (atom true)
+        nemesis-gen  (gen/seq (flatten [(repeat n nemesis-seq)
+                                        (gen/sleep 3)
+                                        (set-atom-false. control-atom)]))
+        rclient-gen  (while-atom-true. control-atom client-gen)]
+    (gen/nemesis nemesis-gen rclient-gen)))
+
 ;; ==================
 ;; Register workloads
 ;; ==================
@@ -66,14 +94,13 @@
                                           (fn [_ _] {:type :invoke :f :write :value (rand-int 5)})
                                           (fn [_ _] {:type :invoke :f :cas   :value [(rand-int 5) (rand-int 5)]})])
                                 (gen/stagger (/ rate)))))
-                       (gen/limit oplimit)
-                       (gen/clients))))
+                       (do-n-nemesis-cycles cycles
+                                            [(gen/sleep 20)]))))
 
 (defn Partition-workload
   "Paritions the network by isolating nodes from each other, then will recover if autofailover happens"
   [opts]
   (with-register-base opts
-    cycles         (or (opts :cycles) 1)
     replicas       (or (opts :replicas) 1)
     replicate-to   (or (opts :replicate-to) 0)
     autofailover   (if (nil? (opts :autofailover)) false (opts :autofailover))
@@ -87,45 +114,36 @@
                                                             (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
                                                                            (fn [_ _] {:type :invoke :f :write :value (rand-int 50)})])
                                                                  (gen/stagger (/ rate)))))
-                        (gen/nemesis (gen/seq
-                                       (reduce into [] (repeat cycles (if should-autofailover
-                                                                        [(gen/sleep 5)
-                                                                         {:type :info :f :partition-network
-                                                                          :f-opts
-                                                                                {:partition-type :isolate-completely}
-                                                                          :targeter-opts
-                                                                                {:type :random-subset
-                                                                                 :count disrupt-count
-                                                                                 :condition [[:active :connected]]}}
-                                                                         {:type :info :f :wait-for-autofailover
-                                                                          :targeter-opts
-                                                                                {:type :random
-                                                                                 :condition [[:active :connected]]}}
-                                                                         (gen/sleep (- disrupt-time autofailover-timeout))
-                                                                         {:type :info :f :heal-network}
-                                                                         (gen/sleep 5)
-                                                                         {:type :info :f :recover
-                                                                          :f-opts
-                                                                                {:recovery-type recovery-type}
-                                                                          :targeter-opts
-                                                                                {:type :all
-                                                                                 :condition [[:failed :connected]]}}
-                                                                         (gen/sleep 5)]
+                        (do-n-nemesis-cycles cycles
+                                             [(gen/sleep 5)
+                                              {:type   :info
+                                               :f      :partition-network
+                                               :f-opts {:partition-type :isolate-completely}
+                                               :targeter-opts {:type      :random-subset
+                                                               :count     disrupt-count
+                                                               :condition [[:active :connected]]}}
 
-                                                                        [(gen/sleep 5)
-                                                                         {:type :info :f :partition-network
-                                                                          :f-opts
-                                                                                {:partition-type :isolate-completely}
-                                                                          :targeter-opts
-                                                                                {:type :random-subset
-                                                                                 :count disrupt-count
-                                                                                 :condition [[:active :connected]]}}
-                                                                         (gen/sleep disrupt-time)
-                                                                         {:type :info :f :heal-network}
-                                                                         (gen/sleep 5)]
-                                                                        )
-                                                               ))))
-                        (gen/limit oplimit))))
+                                              (if should-autofailover
+                                                [{:type :info
+                                                  :f    :wait-for-autofailover
+                                                  :targeter-opts {:type      :random
+                                                                  :condition [[:active :connected]]}}
+                                                 (gen/sleep (- disrupt-time autofailover-timeout))]
+                                                (gen/sleep disrupt-time))
+
+                                              {:type :info :f :heal-network}
+                                              (gen/sleep 5)
+
+                                              (if should-autofailover
+                                                [{:type   :info
+                                                  :f      :recover
+                                                  :f-opts {:recovery-type recovery-type}
+                                                  :targeter-opts {:type      :all
+                                                                  :condition [[:failed :connected]]}}
+                                                 (gen/sleep 5)]
+                                                [])]))))
+
+
 
 (defn Partition-Failover-workload
   "Trigger non-linearizable behaviour where successful mutations with replicate-to=1
@@ -142,16 +160,16 @@
                                         (fn [_ _] {:type :invoke, :f :write :value (rand-int 50)})])
                               (gen/limit (* 50 (+ 0.5 (rand))))
                               (gen/stagger (/ rate)))))
-                     (gen/nemesis (gen/seq (cycle [(gen/sleep 10)
-                                                   {:type :info :f :start-partition}
-                                                   (gen/sleep 5)
-                                                   {:type :info :f :start-failover}
-                                                   (gen/sleep 10)
-                                                   {:type :info :f :stop-partition}
-                                                   (gen/sleep 5)
-                                                   {:type :info :f :recover}
-                                                   (gen/sleep 5)])))
-                     (gen/limit oplimit))))
+                      (do-n-nemesis-cycles cycles
+                                           [(gen/sleep 10)
+                                            {:type :info :f :start-partition}
+                                            (gen/sleep 5)
+                                            {:type :info :f :start-failover}
+                                            (gen/sleep 10)
+                                            {:type :info :f :stop-partition}
+                                            (gen/sleep 5)
+                                            {:type :info :f :recover}
+                                            (gen/sleep 5)]))))
 
 (defn Sequential-Rebalance-workload
   "Rebalance a nodes out and back into the cluster sequentially"
@@ -167,15 +185,15 @@
                            (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
                                           (fn [_ _] {:type :invoke :f :write :value (rand-int 50)})])
                                 (gen/stagger (/ rate)))))
-                       (gen/nemesis (gen/seq (cycle (flatten [(repeatedly disrupt-count
-                                                                          #(do [(gen/sleep 5)
-                                                                                {:type :info :f :rebalance-out}]))
-                                                              (gen/sleep 10)
-                                                              (repeatedly disrupt-count
-                                                                          #(do [(gen/sleep 5)
-                                                                                {:type :info :f :rebalance-in}]))
-                                                              (gen/sleep 10)]))))
-                       (gen/limit oplimit))))
+                       (do-n-nemesis-cycles cycles
+                                            [(repeatedly disrupt-count
+                                                         #(do [(gen/sleep 5)
+                                                               {:type :info :f :rebalance-out}]))
+                                             (gen/sleep 10)
+                                             (repeatedly disrupt-count
+                                                         #(do [(gen/sleep 5)
+                                                               {:type :info :f :rebalance-in}]))
+                                             (gen/sleep 10)]))))
 
 (defn Bulk-Rebalance-workload
   "Rebalance multiple nodes out and back into the cluster simultaneously"
@@ -191,13 +209,12 @@
                            (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
                                           (fn [_ _] {:type :invoke :f :write :value (rand-int 50)})])
                                 (gen/stagger (/ rate)))))
-                       (gen/nemesis (gen/seq (cycle [(gen/sleep 5)
-                                                     {:type :info :f :rebalance-out :count disrupt-count}
-                                                     (gen/sleep 15)
-                                                     {:type :info :f :rebalance-in  :count disrupt-count}
-                                                     (gen/sleep 10)])))
-                       (gen/limit oplimit))))
-
+                       (do-n-nemesis-cycles cycles
+                                            [(gen/sleep 5)
+                                             {:type :info :f :rebalance-out :count disrupt-count}
+                                             (gen/sleep 15)
+                                             {:type :info :f :rebalance-in  :count disrupt-count}
+                                             (gen/sleep 10)]))))
 
 (defn Swap-Rebalance-workload
   "Swap rebalance nodes within a cluster"
@@ -213,10 +230,10 @@
                            (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
                                           (fn [_ _] {:type :invoke :f :write :value (rand-int 50)})])
                                 (gen/stagger (/ rate)))))
-                       (gen/nemesis (gen/seq (cycle [(gen/sleep 5)
-                                                     {:type :info :f :swap}
-                                                     (gen/sleep 5)])))
-                       (gen/limit oplimit))))
+                       (do-n-nemesis-cycles cycles
+                                            [(gen/sleep 5)
+                                             {:type :info :f :swap}
+                                             (gen/sleep 5)]))))
 
 (defn Fail-Rebalance-workload
   "Kill memcached during a rebalance"
@@ -232,18 +249,17 @@
                            (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
                                           (fn [_ _] {:type :invoke :f :write :value (rand-int 50)})])
                                 (gen/stagger (/ rate)))))
-                       (gen/nemesis (gen/seq (cycle [(gen/sleep 5)
-                                                     {:type :info :f :start :count disrupt-count}
-                                                     (gen/sleep 5)])))
-                       (gen/limit oplimit))))
+                       (do-n-nemesis-cycles cycles
+                                            [(gen/sleep 5)
+                                             {:type :info :f :start :count disrupt-count}
+                                             (gen/sleep 5)]))))
 
 (defn Failover-workload
   "Failover and recover"
   [opts]
   (with-register-base opts
-    cycles         (or (opts :cycles) 1)
-    replicas     (or (opts :replicas)     1)
-    replicate-to (or (opts :replicate-to) 0)
+    replicas      (or (opts :replicas)     1)
+    replicate-to  (or (opts :replicate-to) 0)
     recovery-type (or (keyword (opts :recovery-type)) :delta)
     failover-type (or (keyword (opts :failover-type)) :hard)
     disrupt-count (or (opts :disrupt-count) 1)
@@ -253,25 +269,21 @@
                           (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
                                          (fn [_ _] {:type :invoke :f :write :value (rand-int 50)})])
                                (gen/stagger (/ rate)))))
-                      (gen/nemesis (gen/seq
-                                     (reduce into []
-                                             (repeat cycles [(gen/sleep 5)
-                                                             {:type :info :f :failover
-                                                              :f-opts
-                                                                    {:failover-type failover-type}
-                                                              :targeter-opts
-                                                                    {:type :random-subset
-                                                                     :count disrupt-count
-                                                                     :condition [[:active :connected]]}}
-                                                             (gen/sleep 10)
-                                                             {:type :info :f :recover
-                                                              :f-opts
-                                                                    {:recovery-type recovery-type}
-                                                              :targeter-opts
-                                                                    {:type :all
-                                                                     :condition [[:failed :connected]]}}
-                                                             (gen/sleep 5)]))))
-                      (gen/limit oplimit))))
+                      (do-n-nemesis-cycles cycles
+                                           [(gen/sleep 5)
+                                            {:type :info
+                                             :f    :failover
+                                             :f-opts {:failover-type failover-type}
+                                             :targeter-opts {:type :random-subset
+                                                             :count disrupt-count
+                                                             :condition [[:active :connected]]}}
+                                            (gen/sleep 10)
+                                            {:type :info
+                                             :f    :recover
+                                             :f-opts {:recovery-type recovery-type}
+                                             :targeter-opts {:type :all
+                                                             :condition [[:failed :connected]]}}
+                                            (gen/sleep 5)]))))
 
 (defn Graceful-Failover-workload
   "Gracefully failover and recover random nodes"
@@ -287,12 +299,12 @@
                           (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
                                          (fn [_ _] {:type :invoke :f :write :value (rand-int 50)})])
                                (gen/stagger (/ rate)))))
-                      (gen/nemesis (gen/seq (cycle [(gen/sleep 5)
-                                                    {:type :info :f :start}
-                                                    (gen/sleep 10)
-                                                    {:type :info :f :stop}
-                                                    (gen/sleep 5)])))
-                      (gen/limit oplimit))))
+                      (do-n-nemesis-cycles cycles
+                                           [(gen/sleep 5)
+                                            {:type :info :f :start}
+                                            (gen/sleep 10)
+                                            {:type :info :f :stop}
+                                            (gen/sleep 5)]))))
 
 (defn Disk-Failure-workload
   "Simulate a disk failure. This workload will not function correctly with docker containers."
@@ -312,7 +324,7 @@
                                 (gen/stagger (/ rate)))))
                        (gen/nemesis (gen/seq [(gen/sleep 15)
                                               {:type :info :f :start :count disrupt-count}]))
-                       (gen/limit oplimit))))
+                       (gen/limit 1500))))
 
 ;; =============
 ;; Set Workloads
@@ -328,7 +340,7 @@
       delclient     nil
       dcpclient     (cbclients/simple-dcp-client)
 
-      oplimit       (or (opts :oplimit)      50000)
+      cycles        (or (opts :cycles) 1)
       client        (clients/set-client addclient delclient dcpclient)
       concurrency   250
       batch-size    50
@@ -348,8 +360,8 @@
                        (->> (range)
                             (map (fn [x] {:type :invoke :f :add :value x}))
                             (gen/seq)
-                            (gen/clients)
-                            (gen/limit oplimit))
+                            (do-n-nemesis-cycles cycles
+                                                 [(gen/sleep 20)]))
                        (gen/sleep 3)
                        (gen/clients (gen/once {:type :invoke :f :read :value nil})))))
 
@@ -361,7 +373,7 @@
       addclient             (cbclients/batch-insert-pool)
       delclient             nil
       dcpclient             (cbclients/simple-dcp-client)
-      oplimit               (or (opts :oplimit) 250000)
+      cycles                (or (opts :cycles) 1)
       concurrency           500
       batch-size            50
       pool-size             6
@@ -384,10 +396,10 @@
                              (->> (range)
                                   (map (fn [x] {:type :invoke :f :add :value x}))
                                   (gen/seq)
-                                  (gen/nemesis (gen/seq (cycle [(gen/sleep 10)
-                                                                {:type :info :f :kill :count disrupt-count}
-                                                                (gen/sleep 20)])))
-                                  (gen/limit oplimit))
+                                  (do-n-nemesis-cycles cycles
+                                                       [(gen/sleep 10)
+                                                        {:type :info :f :kill :count disrupt-count}
+                                                        (gen/sleep 20)]))
                              (gen/clients (gen/once {:type :invoke :f :read :value nil})))))
 
 (defn Set-kill-ns_server-workload
@@ -398,7 +410,7 @@
       addclient             (cbclients/batch-insert-pool)
       delclient             nil
       dcpclient             (cbclients/simple-dcp-client)
-      oplimit               (or (opts :oplimit) 250000)
+      cycles                (or (opts :cycles) 1)
       concurrency           500
       batch-size            50
       pool-size             6
@@ -421,10 +433,10 @@
                              (->> (range)
                                   (map (fn [x] {:type :invoke :f :add :value x}))
                                   (gen/seq)
-                                  (gen/nemesis (gen/seq (cycle [(gen/sleep 10)
-                                                                {:type :info :f :kill :count disrupt-count}
-                                                                (gen/sleep 20)])))
-                                  (gen/limit oplimit))
+                                  (do-n-nemesis-cycles cycles
+                                                       [(gen/sleep 10)
+                                                        {:type :info :f :kill :count disrupt-count}
+                                                        (gen/sleep 20)]))
                              (gen/clients (gen/once {:type :invoke :f :read :value nil})))))
 
 (defn Set-kill-babysitter-workload
@@ -435,7 +447,7 @@
       addclient             (cbclients/batch-insert-pool)
       delclient             nil
       dcpclient             (cbclients/simple-dcp-client)
-      oplimit               (or (opts :oplimit) 250000)
+      cycles                (or (opts :cycles) 1)
       concurrency           1000
       batch-size            50
       pool-size             16
@@ -459,25 +471,24 @@
                              (->> (range)
                                   (map (fn [x] {:type :invoke :f :add :value x}))
                                   (gen/seq)
-                                  (gen/nemesis
-                                  (gen/seq (cycle [(gen/sleep 10)
-                                                   {:type :info :f :kill :count disrupt-count}
-                                                   (gen/sleep disrupt-time)
-                                                   {:type :info :f :restart}
-                                                   (gen/sleep 15)
-                                                   {:type :info :f :recover}
-                                                   (gen/sleep 10)])))
-                                  (gen/limit oplimit))
+                                  (do-n-nemesis-cycles cycles
+                                                       [(gen/sleep 10)
+                                                        {:type :info :f :kill :count disrupt-count}
+                                                        (gen/sleep disrupt-time)
+                                                        {:type :info :f :restart}
+                                                        (gen/sleep 15)
+                                                        {:type :info :f :recover}
+                                                        (gen/sleep 10)]))
                              (gen/clients (gen/once {:type :invoke :f :read :value nil})))))
 
 (defn WhiteRabbit-workload
   "Trigger lost inserts due to one of several white-rabbit variants"
   [opts]
   (let-and-merge
-      addclient (cbclients/batch-insert-pool)
-      delclient nil
-      dcpclient (cbclients/simple-dcp-client)
-      oplimit               (or (opts :oplimit) 2500000)
+      addclient             (cbclients/batch-insert-pool)
+      delclient             nil
+      dcpclient             (cbclients/simple-dcp-client)
+      cycles                (or (opts :cycles) 5)
       concurrency           500
       batch-size            50
       pool-size             6
@@ -499,12 +510,12 @@
                              (->> (range)
                                   (map (fn [x] {:type :invoke :f :add :value x}))
                                   (gen/seq)
-                                  (gen/nemesis (gen/seq (cycle [(gen/sleep 10)
-                                                                {:type :info :f :rebalance-out}
-                                                                (gen/sleep 10)
-                                                                {:type :info :f :rebalance-in}])))
-                                  (gen/limit oplimit))
-                             (gen/nemesis (gen/once {:type :info :f :stop}))
+                                  (do-n-nemesis-cycles cycles
+                                                       [(gen/sleep 10)
+                                                        {:type :info :f :rebalance-out}
+                                                        (gen/sleep 10)
+                                                        {:type :info :f :rebalance-in}]))
+                             (gen/sleep 3)
                              (gen/clients (gen/once {:type :invoke :f :read :value nil})))))
 
 (defn MB29369-workload
