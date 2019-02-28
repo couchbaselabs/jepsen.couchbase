@@ -169,11 +169,15 @@
         cluster-condition (if (nil? (:cluster filter-conditions)) (set [:active :failed :inactive :ejected]) (set (:cluster filter-conditions)))
         network-condition (if (nil? (:network filter-conditions)) (set [:connected :partitioned]) (set (:network filter-conditions)))
         node-condition    (if (nil? (:node filter-conditions)) (set [:running :killed]) (set (:node filter-conditions)))
+        server-group-condition (set (:server-group filter-conditions))
         cluster-match-nodes (select-keys node-states (for [[k v] node-states :when (contains? cluster-condition (get-in v [:state :cluster]))] k))
         network-match-nodes (select-keys node-states (for [[k v] node-states :when (contains? network-condition (get-in v [:state :network]))] k))
         node-match-nodes (select-keys node-states (for [[k v] node-states :when (contains? node-condition (get-in v [:state :node]))] k))
-        matching-nodes (set/intersection (set (keys cluster-match-nodes)) (set (keys network-match-nodes)) (set (keys node-match-nodes)))]
-    (vec matching-nodes)))
+        server-group-match-nodes (select-keys node-states (for [[k v] node-states :when (contains? server-group-condition (get-in v [:state :server-group]))] k))
+        matching-nodes (set/intersection (set (keys cluster-match-nodes)) (set (keys network-match-nodes)) (set (keys node-match-nodes)))
+        sg-matching-nodes (if (nil? (:server-group filter-conditions)) matching-nodes (set/intersection matching-nodes (set (keys server-group-match-nodes))))
+        ]
+    (vec sg-matching-nodes)))
 
 (defn apply-targeter
   "This function takes in a list of nodes and a targeter-opts map that specifies how to select a subset of the nodes.
@@ -221,6 +225,18 @@
         updated-state (merge node-state new-states)]
     (swap! node-states assoc-in [target :state] updated-state)))
 
+(defn set-node-server-group-state
+  [node-states]
+  (let [server-group-info (util/rest-call (first (keys @node-states)) "/pools/default/serverGroups" nil)
+        server-group-json (parse-string server-group-info true)
+        server-groups (:groups server-group-json)]
+    (doseq [group server-groups]
+      (doseq [node (:nodes group)]
+        (let [group-name (:name group)
+              otpNode (:otpNode node)
+              node-name (string/replace otpNode #"ns_1@" "")]
+          (update-node-state node-states node-name {:server-group group-name}))))))
+
 (defn couchbase
   "The Couchbase nemesis represents operations that can be taken against a Couchbase cluster. Nodes are
   represented as a map atom where the keys are node ips and the values are state maps. State maps store node
@@ -235,6 +251,7 @@
         (net/heal! (:net test) test)
         (reset! nodes (:nodes test))
         (reset! node-states (reduce #(assoc %1 %2 {:state {:cluster :active :network :connected :node :running}}) {} (:nodes test)))
+        (set-node-server-group-state node-states)
         this)
 
       (invoke! [this test op]
@@ -270,6 +287,7 @@
                 (if (= failover-type :graceful)
                   (util/wait-for #(util/rest-call call-node "/pools/default/rebalanceProgress" nil) "{\"status\":\"none\"}"))
                 (update-node-state node-states target {:cluster :failed}))
+              (info "cluster state: " @node-states)
               (assoc op :value :failover-complete))
 
             :recover
@@ -280,12 +298,15 @@
               (assert (<= (count target-nodes) (count failed-nodes)) "recovery count must be less or equal to the total failed node count")
               (doseq [target target-nodes]
                 (let [params (str (format  "otpNode=%s&recoveryType=%s" (str "ns_1@" target) (str (name recovery-type))))]
+                  (info "setting recovery type to " (str (name recovery-type)) "for node " target)
                   (util/rest-call call-node "/controller/setRecoveryType" params)))
+              (info "cluster nodes: " cluster-nodes)
               (util/rebalance cluster-nodes)
               (doseq [target target-nodes]
                 (update-node-state node-states target {:cluster :active}))
               (doseq [eject-node eject-nodes]
                 (update-node-state node-states eject-node {:cluster :ejected}))
+              (info "cluster state: " @node-states)
               (assoc op :value :recovery-complete))
 
             :partition-network
@@ -294,6 +315,7 @@
               (net/drop-all! test grudge)
               (doseq [target target-nodes]
                 (update-node-state node-states target {:network :partitioned :cluster :inactive}))
+              (info "cluster state: " @node-states)
               (assoc op :value [:isolated grudge]))
 
             :heal-network
@@ -306,6 +328,7 @@
                   (if (and (= target-cluster-state :inactive) (= target-node-state :running) (= target-network-state :partitioned))
                     (update-node-state node-states target {:cluster :active :network :connected})
                     (update-node-state node-states target {:network :connected}))))
+              (info "cluster state: " @node-states)
               (assoc op :value :network-healed))
 
             :wait-for-autofailover
@@ -323,11 +346,9 @@
                     (if (and active-before failed-after)
                       (do
                         (update-node-state node-states node-key {:cluster :failed})
-                        (swap! autofailover-count inc)))
-                    )
-                  )
-                )
+                        (swap! autofailover-count inc))))))
               (assert (= @autofailover-count 1) (str "autofailover-count != 1"))
+              (info "cluster state: " @node-states)
               (assoc op :value :autofailover-complete))
 
             :rebalance-out
@@ -342,6 +363,7 @@
               (util/rebalance (set cluster-nodes) (set nodes-to-eject))
               (doseq [eject-node nodes-to-eject]
                 (update-node-state node-states eject-node {:cluster :ejected}))
+              (info "cluster state: " @node-states)
               (assoc op :value (str "Removed: " nodes-to-eject)))
 
             :rebalance-in
@@ -359,8 +381,8 @@
                 (update-node-state node-states target-node {:cluster :active}))
               (doseq [failed-node failed-nodes]
                 (update-node-state node-states failed-node {:cluster :ejected}))
-              (assoc op :value (str "Added: " target-nodes " Removed: " failed-nodes))
-              )
+              (info "cluster state: " @node-states)
+              (assoc op :value (str "Added: " target-nodes " Removed: " failed-nodes)))
 
             :swap-rebalance
             ; rebalance will not work if there is an :inactive :killed node in the cluster
@@ -379,6 +401,7 @@
                 (update-node-state node-states add-node {:cluster :active}))
               (doseq [remove-node nodes-to-remove]
                 (update-node-state node-states remove-node {:cluster :ejected}))
+              (info "cluster state: " @node-states)
               (assoc op :value (str "Added: " target-nodes " Removed: " (vec nodes-to-remove))))
 
             :kill-process
@@ -387,10 +410,12 @@
                 :memcached
                 (do
                   (c/on-many target-nodes (c/su (c/exec :pkill :-9 :memcached)))
+                  (info "cluster state: " @node-states)
                   (assoc op :value [:killed :memcached target-nodes]))
                 :ns-server
                 (do
                   (c/on-many target-nodes (c/su (c/exec :bash :-c "kill -9 $(pgrep beam.smp | tail -n +2)")))
+                  (info "cluster state: " @node-states)
                   (assoc op :value [:killed :ns_server target-nodes]))
                 :babysitter
                 (do
@@ -401,6 +426,7 @@
                       ;node will become inactive after being killed only if it is in the cluster
                       (update-node-state node-states killed-node {:cluster :inactive :node :killed})
                       (update-node-state node-states killed-node {:node :killed})))
+                  (info "cluster state: " @node-states)
                   (assoc op :value [:killed :babysitter target-nodes]))))
 
             :start-process
@@ -421,27 +447,31 @@
                         ; should wait here until node status is healthy
                         (util/wait-for #(get-in (util/get-node-info (first healthy-cluster-nodes)) [started-node :status]) "healthy"))
                       ; failed over nodes will only be recoverable if couchbase-server is running
-                      (update-node-state node-states started-node {:node :running})
-                      )
-                    )
+                      (update-node-state node-states started-node {:node :running})))
+                  (info "cluster state: " @node-states)
                   (assoc op :value [:started :couchbase-server target-nodes]))))
 
             :slow-dcp-client
             (let [dcpclient (:dcpclient (:client test))]
               (reset! (:slow dcpclient) true)
+              (info "cluster state: " @node-states)
               (assoc op :type :info))
             :reset-dcp-client
             (let [dcpclient (:dcpclient (:client test))]
               (reset! (:slow dcpclient) false)
+              (info "cluster state: " @node-states)
               (assoc op :type :info))
 
             :trigger-compaction
             (do
               (util/rest-call (rand-nth (test :nodes)) "/pools/default/buckets/default/controller/compactBucket" "")
+              (info "cluster state: " @node-states)
               op)
 
             :noop
-            (assoc op :value "noop")
+            (do
+              (info "cluster state: " @node-states)
+              (assoc op :value "noop"))
 
             )))
 

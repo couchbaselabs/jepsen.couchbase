@@ -121,6 +121,11 @@
     :default nil
     :parse-fn read-string
     :validate [#(boolean? %) "Must be boolean"]]
+   [nil "--server-group-autofailover SERVER-GROUP-AUTOFAILOVER"
+    "Enable server group autofailover"
+    :default nil
+    :parse-fn read-string
+    :validate [#(boolean? %) "Must be boolean"]]
    [nil "--autofailover-timeout AUTOFAILOVER-TIMEOUT"
     "Autofailover timeout if autofailover is enabled"
     :default nil
@@ -142,10 +147,10 @@
     :parse-fn parse-int
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
    [nil "--recovery-type RECOVERY-TYPE"
-    :parse-fn #(cond % "delta" :delta "full" :full :invalid)
+    :parse-fn #(cond (= % "delta") :delta (= % "full") :full :else :invalid)
     :validate [#(not= :invalid %) "Must be delta or full"]]
    [nil "--failover-type FAILOVER-TYPE"
-    :parse-fn #(cond % "hard" :hard "graceful" :graceful :invalid)
+    :parse-fn #(cond (= % "hard") :hard (= % "graceful") :graceful :else :invalid)
     :validate [#(not= :invalid %) "Must be hard or graceful"]]
    [nil "--disrupt-count COUNT"
     "Number of nodes to disrupt"
@@ -166,6 +171,16 @@
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
    [nil "--durability-timeout DURABILITY-TIMEOUT"
     "Durability timeout in seconds"
+    :default nil
+    :parse-fn parse-int
+    :validate [#(and (number? %) (pos? %)) "Must be a number"]]
+   [nil "--node-count NODE-COUNT"
+    "Number of nodes to use for this test"
+    :default nil
+    :parse-fn parse-int
+    :validate [#(and (number? %) (pos? %)) "Must be a number"]]
+   [nil "--server-group-count SERVER-GROUP-COUNT"
+    "Number of nodes to use for this test"
     :default nil
     :parse-fn parse-int
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]

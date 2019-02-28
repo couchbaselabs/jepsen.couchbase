@@ -30,7 +30,12 @@
   merging the custom parameters"
   ([opts & more]
    `(let-and-merge
-        ~'cycles                (or (~opts :cycles)      1)
+        ~'cycles                (or (~opts :cycles) 1)
+        ~'node-count            (or (~opts :node-count) (count (~opts :nodes)))
+        ~'nodes                 (if (>= (count (~opts :nodes)) ~'node-count)
+                                  (vec (take ~'node-count (~opts :nodes)))
+                                  (assert false "node-count greater than available nodes"))
+        ~'server-group-count    (or (~opts :server-group-count) 1)
         ~'rate                  (or (~opts :rate)        1/3)
         ~'doc-count             (or (~opts :doc-count)   40)
         ~'doc-threads           (or (~opts :doc-threads) 3)
@@ -85,7 +90,7 @@
 ;; Register workloads
 ;; ==================
 
-(defn Register-workload
+(defn register-workload
   "Basic register workload"
   [opts]
   (with-register-base opts
@@ -101,17 +106,22 @@
                        (do-n-nemesis-cycles cycles
                                             [(gen/sleep 20)]))))
 
-(defn Partition-workload
+(defn partition-workload
   "Paritions the network by isolating nodes from each other, then will recover if autofailover happens"
   [opts]
   (with-register-base opts
     replicas       (or (opts :replicas) 1)
     replicate-to   (or (opts :replicate-to) 0)
     autofailover   (if (nil? (opts :autofailover)) false (opts :autofailover))
+    server-group-autofailover (if (nil? (opts :server-group-autofailover)) false (opts :server-group-autofailover))
     disrupt-time   (or (opts :disrupt-time) 20)
     recovery-type  (or (keyword (opts :recovery-type)) :delta)
     disrupt-count  (or (opts :disrupt-count) 1)
-    should-autofailover (and autofailover (= disrupt-count 1) (> disrupt-time autofailover-timeout) (>= (count (:nodes opts)) 3))
+    should-autofailover (and autofailover (>= replicas 1) (= disrupt-count 1)
+                             (> disrupt-time autofailover-timeout) (>= node-count 3))
+    should-server-group-autofailover (and autofailover server-group-autofailover (>= replicas 1) (>= (:server-group-count opts) 3)
+                                          (>= disrupt-count (int (Math/ceil (/ node-count (:server-group-count opts)))))
+                                          (> disrupt-time autofailover-timeout) (>= node-count 3))
     nemesis        (cbnemesis/couchbase)
     client-generator (independent/concurrent-generator
                        doc-threads (range)
@@ -130,9 +140,10 @@
                                         :count     disrupt-count
                                         :condition {:cluster [:active]
                                                     :network [:connected]
-                                                    :node [:running]}}}
+                                                    :node [:running]
+                                                    :server-group ["Group 1"]}}}
 
-                       (if should-autofailover
+                       (if (or should-autofailover should-server-group-autofailover)
                          [{:type :info
                            :f    :wait-for-autofailover
                            :targeter-opts {:type      :random
@@ -143,10 +154,10 @@
                          (gen/sleep disrupt-time))
 
                        {:type :info :f :heal-network}
-                       (gen/sleep 5)
 
-                       (if should-autofailover
-                         [{:type   :info
+                       (if (or should-autofailover should-server-group-autofailover)
+                         [(gen/sleep (if should-server-group-autofailover 20 10))
+                          {:type   :info
                            :f      :recover
                            :f-opts {:recovery-type recovery-type}
                            :targeter-opts {:type      :all
@@ -184,7 +195,18 @@
                                             (gen/sleep 5)]))))
 
 (defn Rebalance-workload
-  "Rebalance a nodes out and back into the cluster sequentially"
+  "Rebalance scenarios:
+  Sequential Rebalance In/Out - rebalance out a single node at a time until disrupt-count nodes have been
+                                rebalanced out. This is followed by the opposite - rebalance back in a single
+                                node at a time until disrupt-count nodes have been rebalanced back in.
+
+  Bulk Rebalance In/Out       - rebalance out disrupt-count nodes at once followed by rebalancing in the same
+                                node at once.
+
+  Swap Rebalance              - first disrupt-count nodes are rebalanced out of the cluster. Then, these nodes
+                                are used to perform a swap rebalance with dirsupt-count nodes that are still
+                                in the cluster"
+
   [opts]
   (with-register-base opts
     replicas      (or (opts :replicas)      1)
@@ -397,14 +419,14 @@
   the cluster"
   [opts]
   (let-and-merge
-      scenario              (keyword (opts :scenario))
+      scenario              (opts :scenario)
       addclient             (cbclients/batch-insert-pool)
       delclient             nil
       dcpclient             (cbclients/simple-dcp-client)
       cycles                (or (opts :cycles) 1)
-      concurrency           (case scenario :kill-memcached 500 :kill-ns-server 500 :kill-babysitter 1000)
+      concurrency           1000
       batch-size            50
-      pool-size             (case scenario :kill-memcached 6 :kill-ns-server 6 :kill-babysitter 16)
+      pool-size             16
       custom-vbucket-count  64
       replicas              (or (opts :replicas) 1)
       replicate-to          (or (opts :replicate-to) 0)

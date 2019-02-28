@@ -1,8 +1,10 @@
 (ns couchbase.util
   (:require [clojure.java.shell :as shell]
+            [clojure.set    :as set]
             [clojure.java.io :as io]
             [clojure.tools.logging :refer :all]
             [clojure.string :as str]
+            [clj-http.client :as client]
             [cheshire.core :refer :all]
             [jepsen [control :as c]
                     [net     :as net]]
@@ -95,16 +97,21 @@
          eject-nodes-str (->> eject-nodes
                               (map #(str "ns_1@" %))
                               (str/join ","))
-         params          (format "ejectedNodes=%s&knownNodes=%s"
-                                 eject-nodes-str
-                                 known-nodes-str)
-         rest-target     (first (apply disj (set known-nodes) eject-nodes))]
+         params (format "ejectedNodes=%s&knownNodes=%s"
+                        eject-nodes-str
+                        known-nodes-str)
+         rest-target (first (apply disj (set known-nodes) eject-nodes))]
      (if eject-nodes
        (info "Rebalancing nodes" eject-nodes "out of cluster"))
      (rest-call rest-target "/controller/rebalance" params)
-     (wait-for #(get-rebalance-status rest-target) "running")
-     (wait-for #(get-rebalance-status rest-target) "none")
-     (info "Rebalance complete"))))
+     (loop [status ""]
+       (when (not= status "{\"status\":\"none\"}")
+         (info "Rebalance status:" status)
+         (if (re-find #"Rebalance failed" status)
+           (throw (RuntimeException. "Rebalance failed")))
+         (Thread/sleep 1000)
+         (recur (rest-call rest-target "/pools/default/rebalanceProgress" nil))))
+       (info "Rebalance complete"))))
 
 (defn create-bucket
   "Create the default bucket"
@@ -126,12 +133,13 @@
 (defn set-autofailover
   "Apply autofailover settings to cluster"
   [test]
-  (let [enabled  (boolean (test :autofailover))
-        timeout  (or (test :autofailover-timeout) 6)
+  (let [enabled (boolean (test :autofailover))
+        sg-enabled (boolean (test :server-group-autofailover))
+        timeout (or (test :autofailover-timeout) 6)
         maxcount (or (test :autofailover-maxcount) 3)]
     (rest-call "/settings/autoFailover"
-               (format "enabled=%s&timeout=%s&maxCount=%s"
-                       enabled timeout maxcount))))
+               (format "enabled=%s&timeout=%s&maxCount=%s&failoverServerGroup=%s"
+                       enabled timeout maxcount sg-enabled))))
 
 (defn wait-for-warmup
   "Wait for warmup to complete"
@@ -144,14 +152,14 @@
   "Set the cursor dropping marks to a new value on all nodes"
   [test]
   (let [lower_mark (nth (test :custom-cursor-drop-marks) 0)
-          upper_mark (nth (test :custom-cursor-drop-marks) 1)
-          config     (format "cursor_dropping_lower_mark=%d;cursor_dropping_upper_mark=%d"
-                             lower_mark
-			     upper_mark)
-	  props      (format "[{extra_config_string, \"%s\"}]" config)
-          params     (format "ns_bucket:update_bucket_props(\"default\", %s)." props)]
-      (doseq [node (test :nodes)]
-        (rest-call "/diag/eval" params)))
+        upper_mark (nth (test :custom-cursor-drop-marks) 1)
+        config (format "cursor_dropping_lower_mark=%d;cursor_dropping_upper_mark=%d"
+                       lower_mark
+                       upper_mark)
+        props (format "[{extra_config_string, \"%s\"}]" config)
+        params (format "ns_bucket:update_bucket_props(\"default\", %s)." props)]
+    (doseq [node (test :nodes)]
+      (rest-call "/diag/eval" params)))
   (c/with-test-nodes test (c/su (c/exec :pkill :memcached)))
   ;; Before polling to check if we have warmed up again, we need to wait a while
   ;; for ns_server to detect memcached was killed
@@ -159,12 +167,64 @@
   (info "Waiting for memcached to restart")
   (wait-for-warmup))
 
+(defn create-server-groups
+  [server-group-count]
+  (let [server-group-nums (vec (range 1 (+ server-group-count 1)))]
+    (doseq [server-group-num server-group-nums]
+      (if (not= server-group-num 1)
+        (rest-call "/pools/default/serverGroups" (format "name=Group %s" server-group-num))))))
+
+(defn populate-server-groups
+  "This function will deterministically add nodes to server groups"
+  [test]
+  (let [server-group-info (rest-call "/pools/default/serverGroups" nil)
+        server-group-json (parse-string server-group-info true)
+        revision-uri (:uri server-group-json)
+        server-groups (:groups server-group-json)
+        nodes (atom #{}) ; this will be used to build up and store the set of nodes in the cluster
+        groups (atom []) ; this will be used to build up and store the vector of group json
+        endpoint (str "http://" (first (:nodes test)) ":8091" revision-uri)]
+    ; accumulate nodes and groups into respective atoms
+    (doseq [group server-groups]
+      (reset! nodes (set/union @nodes (set (:nodes group))))
+      (reset! groups (conj @groups (assoc group :nodes []))))
+    ; sort groups for deterministic population
+    (reset! groups (vec (sort-by :name @groups)))
+    ; for each node we calculate the group it should belong to and
+    ; add it to the nodes field in the group json in groups atom
+    (doseq [index (range 0 (count @nodes))]
+      (let [group-count (count @groups)
+            group-index (mod index group-count)
+            node-index (quot index group-count)
+            node-to-add (first @nodes)
+            current-group-nodes (vec (get-in @groups [group-index :nodes]))
+            updated-group-nodes (vec (assoc current-group-nodes node-index node-to-add))
+            updated-groups (assoc-in @groups [group-index :nodes] updated-group-nodes)]
+        ; after adding the node to cooresponding group, we remove the node from nodes atom
+        (reset! nodes (set (remove #{node-to-add} @nodes)))
+        (reset! groups updated-groups)))
+    (client/put endpoint
+                 {:basic-auth ["Administrator" "abc123"]
+                  :body (generate-string {:groups @groups})
+                  :headers {"X-Api-Version" "2"}
+                  :content-type :json
+                  :socket-timeout 1000
+                  :conn-timeout 1000
+                  :accept :json})))
+
+(defn setup-server-groups
+  [test]
+  (let [server-group-count (:server-group-count test)
+        nodes (:nodes test)]
+    (create-server-groups server-group-count)
+    (populate-server-groups test)))
+
 (defn setup-cluster
   "Setup couchbase cluster"
   [test node]
   (info "Creating couchbase cluster from" node)
-  (let [nodes        (test :nodes)
-        other-nodes  (remove #(= node %) nodes)
+  (let [nodes (test :nodes)
+        other-nodes (remove #(= node %) nodes)
         num-replicas (test :replicas)]
     (initialise)
     (add-nodes other-nodes)
@@ -176,6 +236,9 @@
     (wait-for-warmup)
     (if (test :custom-cursor-drop-marks)
       (set-custom-cursor-drop-marks test))
+    (if (and (:server-group-count test)
+             (> (:server-group-count test) 1))
+      (setup-server-groups test))
     (info "Setup complete")))
 
 (defn install-package
@@ -201,11 +264,11 @@
   (while
     (= :not-ready
        (try+
-        (rest-call "/pools/default" nil)
-        (catch [:type :rest-fail] e
-          (if (= (->> e (:error) (:exit)) 7)
-            :not-ready
-            :done))))
+         (rest-call "/pools/default" nil)
+         (catch [:type :rest-fail] e
+           (if (= (->> e (:error) (:exit)) 7)
+             :not-ready
+             :done))))
     (Thread/sleep 2000)))
 
 (defn setup-node
@@ -213,14 +276,14 @@
   [test]
   (info "Setting up couchbase")
   (let [package (:package test)
-        path    (or (:path package) "/opt/couchbase")]
+        path (or (:path package) "/opt/couchbase")]
     (c/su (c/exec :mkdir :-p (str path "/var/lib/couchbase")))
     (c/su (c/exec :chmod :a+rwx (str path "/var/lib/couchbase")))
     (if package
       (install-package package))
     (info "Starting daemon")
     (c/ssh* {:cmd (str "nohup " path "/bin/couchbase-server -- -noinput >> /dev/null 2>&1 &")}))
-    (wait-for-daemon))
+  (wait-for-daemon))
 
 (defn teardown
   "Stop the couchbase server instances and delete the data files"
@@ -241,8 +304,7 @@
       (net/heal! (:net test) test)
       )
     )
-  (info "Teardown Complete")
-  )
+  (info "Teardown Complete"))
 
 (defn get-version
   "Get the couchbase version running on the cluster"
@@ -256,13 +318,13 @@
   "Use the couchbase java sdk to create a CouchbaseCluster instance, then open
   the default bucket."
   [test]
-  (let [nodes   (test :nodes)
-        auth    (if (or (>= (first (get-version (first nodes))) 5)
-                        (=  (first (get-version (first nodes))) 0))
-                  (new PasswordAuthenticator "Administrator" "abc123")
-                  (-> (new ClassicAuthenticator)
-                      (.cluster "Administrator" "abc123")
-                      (.bucket "default" "")))
+  (let [nodes (test :nodes)
+        auth (if (or (>= (first (get-version (first nodes))) 5)
+                     (= (first (get-version (first nodes))) 0))
+               (new PasswordAuthenticator "Administrator" "abc123")
+               (-> (new ClassicAuthenticator)
+                   (.cluster "Administrator" "abc123")
+                   (.bucket "default" "")))
         cluster (-> (CouchbaseCluster/create nodes)
                     (.authenticate auth))]
     cluster))
@@ -290,23 +352,23 @@
   [package]
   (cond
     (and (re-matches #".*\.rpm" package)
-         (.isFile (io/file package)))        {:type :rpm :package (io/file package)}
+         (.isFile (io/file package))) {:type :rpm :package (io/file package)}
     (and (re-matches #".*\.deb" package)
-         (.isFile (io/file package)))        {:type :deb :package (io/file package)}
+         (.isFile (io/file package))) {:type :deb :package (io/file package)}
     (and (.isDirectory (io/file package))
          (.isDirectory (io/file package "bin"))
          (.isDirectory (io/file package "etc"))
          (.isDirectory (io/file package "lib"))
-         (.isDirectory (io/file package "share"))) {:type :tar
+         (.isDirectory (io/file package "share"))) {:type    :tar
                                                     :package (tar-build (io/file package))
-                                                    :path (.getCanonicalPath (io/file package))}
-    :else    (throw (RuntimeException. (str "Couldn't load package " package)))))
+                                                    :path    (.getCanonicalPath (io/file package))}
+    :else (throw (RuntimeException. (str "Couldn't load package " package)))))
 
 (defn get-logs
   "Get a vector of log file paths"
   [test]
   (let [install-dir (or (:path (test :package))
-                            "/opt/couchbase")]
+                        "/opt/couchbase")]
     (when (test :get-cbcollect)
       (info "Generating cbcollect...")
       (c/su (c/exec (str install-dir "/bin/cbcollect_info")
@@ -314,14 +376,14 @@
     (when (test :hashdump)
       (info "Getting hashtable dump from all vbuckets")
       (c/su
-       (c/exec
-        :for :i :in (c/lit "$(seq 0 1023);") :do
+        (c/exec
+          :for :i :in (c/lit "$(seq 0 1023);") :do
           (str install-dir "/bin/cbstats")
-            :localhost :-u :Administrator :-p :abc123 :-b :default :raw
-            (c/lit "\"_hash-dump $i\"")
-            :>> (str install-dir "/var/lib/couchbase/logs/hashdump.txt") (c/lit ";")
+          :localhost :-u :Administrator :-p :abc123 :-b :default :raw
+          (c/lit "\"_hash-dump $i\"")
+          :>> (str install-dir "/var/lib/couchbase/logs/hashdump.txt") (c/lit ";")
           :echo :>> (str install-dir "/var/lib/couchbase/logs/hashdump.txt") (c/lit ";")
-        :done)))
+          :done)))
 
     (c/su (c/exec :chmod :-R :a+rx "/opt/couchbase"))
     (try
@@ -359,4 +421,4 @@
               updated-node-info-map (assoc node-info-map node-name node-info)
               updated-nodes-info (remove #(= node-info %) nodes-info)]
           (recur updated-node-info-map updated-nodes-info))
-          node-info-map))))
+        node-info-map))))
