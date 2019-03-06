@@ -246,9 +246,22 @@
   [package]
   (case (:type package)
     :rpm (do
-           (c/su (c/upload (:package package) "couchbase.rpm"))
-           (c/su (c/exec :yum :install :-y "~/couchbase.rpm"))
-           (c/su (c/exec :rm "~/couchbase.rpm")))
+           (let [package-name (.getName (:package package))
+                 split-package-name (str/split package-name #"-")
+                 package-version (str (nth split-package-name 3) "-" (nth split-package-name 4))]
+             (try
+               (do
+                 (c/su (c/exec (str "/opt/couchbase" "/bin/couchbase-server") :-v))
+                 (c/su (c/exec :rpm :-e "couchbase-server"))
+                 (throw (Exception. "removed server")))
+               (catch Exception e
+                 (let [root-files (c/su (c/exec :ls "/root"))]
+                   (if (not (str/includes? root-files package-name))
+                     (c/su (c/upload (:package package) package-name)))
+                   (c/su (c/exec :yum :install :-y (str "/root/" package-name)))
+                   (c/su (c/exec :mv (str "/root/" package-name) "/tmp/"))
+                   (c/su (c/exec :rm :-rf "/root/*"))
+                   (c/su (c/exec :mv (str "/tmp/" package-name) "/root/")))))))
     :deb (do
            (c/su (c/upload (:package package) "couchbase.deb"))
            (c/su (c/exec :apt :install :-y "~/couchbase.deb"))

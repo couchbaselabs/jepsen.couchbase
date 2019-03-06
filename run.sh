@@ -47,7 +47,7 @@ if [ -z "$PACKAGE" ]; then
     exit 1
 fi
 
-if [ "$PROVISIONER" != "vagrant" -a "$PROVISIONER" != "docker" ]; then
+if [ "$PROVISIONER" != "vagrant" -a "$PROVISIONER" != "docker" -a "$PROVISIONER" != "vmpool" ]; then
     echo "Provisioner must be either docker or vagrant, got $PROVISIONER"
 fi
 
@@ -56,6 +56,8 @@ vagrantBaseCommand="lein trampoline run test"
 vagrantParams="--nodes-file ./nodes --username vagrant --ssh-private-key ./resources/vagrantkey"
 dockerBaseCommand="docker exec -it -w '/jepsen' jepsen-control lein trampoline run test"
 dockerParams="--nodes-file ./nodes"
+vmpoolBaseCommand="lein trampoline run test"
+vmpoolParams="--nodes-file ./nodes --username root --password couchbase"
 packageParam="--package $PACKAGE"
 pass=0
 fail=0
@@ -99,6 +101,14 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
         eval $command
         EXITCODE=$?
         docker cp jepsen-control:/jepsen/store .
+    fi
+    if [ "$PROVISIONER" == "vmpool" ]; then
+        command="$vmpoolBaseCommand $testParams $vmpoolParams $packageParam"
+        echo ""
+        echo "Test command: $command"
+        echo ""
+        eval $command
+        EXITCODE=$?
     fi
 
 
