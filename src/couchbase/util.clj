@@ -9,10 +9,7 @@
             [jepsen [control :as c]
                     [net     :as net]]
             [slingshot.slingshot :refer [try+ throw+]])
-  (:import com.couchbase.client.java.CouchbaseCluster
-           com.couchbase.client.java.auth.ClassicAuthenticator
-           com.couchbase.client.java.auth.PasswordAuthenticator
-           java.io.File))
+  (:import java.io.File))
 
 (defn rest-call
   "Perform a rest api call"
@@ -326,21 +323,6 @@
        (re-find #"(?<=\"implementationVersion\":\")([0-9])\.([0-9])\.([0-9])")
        (rest)
        (map #(Integer/parseInt %))))
-
-(defn get-connection
-  "Use the couchbase java sdk to create a CouchbaseCluster instance, then open
-  the default bucket."
-  [test]
-  (let [nodes (test :nodes)
-        auth (if (or (>= (first (get-version (first nodes))) 5)
-                     (= (first (get-version (first nodes))) 0))
-               (new PasswordAuthenticator "Administrator" "abc123")
-               (-> (new ClassicAuthenticator)
-                   (.cluster "Administrator" "abc123")
-                   (.bucket "default" "")))
-        cluster (-> (CouchbaseCluster/create nodes)
-                    (.authenticate auth))]
-    cluster))
 
 ;; When pointed at a custom build, we need to place the install on each vagrant
 ;; node at the same path as it was built, or absolute paths in the couchbase

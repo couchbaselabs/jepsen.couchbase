@@ -40,9 +40,10 @@
         ~'doc-count             (or (~opts :doc-count)   40)
         ~'doc-threads           (or (~opts :doc-threads) 3)
         ~'concurrency           (* ~'doc-count ~'doc-threads)
+        ~'pool-size             (~opts :pool-size 6)
         ~'autofailover-timeout  (or (~opts :autofailover-timeout)  6)
         ~'autofailover-maxcount (or (~opts :autofailover-maxcount) 3)
-        ~'client                (clients/register-client (cbclients/basic-client))
+        ~'client                (clients/register-client)
         ~'model                 (model/cas-register :nil)
         ~'checker   (checker/compose
                      (merge
@@ -385,14 +386,11 @@
   stream all mutations, keeping track of which keys exist"
   [opts]
   (let-and-merge
-      addclient     (cbclients/batch-insert-pool)
-      delclient     nil
-      dcpclient     (cbclients/simple-dcp-client)
+      dcpclient     (cbclients/dcp-client)
 
       cycles        (or (opts :cycles) 1)
-      client        (clients/set-client addclient delclient dcpclient)
+      client        (clients/set-client dcpclient)
       concurrency   250
-      batch-size    50
       pool-size     4
       replicas      (or (opts :replicas) 0)
       replicate-to  (or (opts :replicate-to) 0)
@@ -420,12 +418,9 @@
   [opts]
   (let-and-merge
       scenario              (opts :scenario)
-      addclient             (cbclients/batch-insert-pool)
-      delclient             nil
-      dcpclient             (cbclients/simple-dcp-client)
+      dcpclient             (cbclients/dcp-client)
       cycles                (or (opts :cycles) 1)
       concurrency           1000
-      batch-size            50
       pool-size             16
       custom-vbucket-count  64
       replicas              (or (opts :replicas) 1)
@@ -438,7 +433,7 @@
       disrupt-count         (or (opts :disrupt-count) 1)
       disrupt-time          (or (opts :disrupt-time)  30)
       should-autofailover   (and autofailover (= disrupt-count 1) (> disrupt-time autofailover-timeout) (>= (count (:nodes opts)) 3))
-      client                (clients/set-client addclient delclient dcpclient)
+      client                (clients/set-client dcpclient)
       nemesis               (cbnemesis/couchbase)
       checker               (checker/compose
                              (merge
@@ -526,12 +521,8 @@
   "Trigger lost inserts due to one of several white-rabbit variants"
   [opts]
   (let-and-merge
-      addclient             (cbclients/batch-insert-pool)
-      delclient             nil
-      dcpclient             (cbclients/simple-dcp-client)
       cycles                (or (opts :cycles) 5)
       concurrency           500
-      batch-size            50
       pool-size             6
       custom-vbucket-count  64
       replicas              (or (opts :replicas) 0)
@@ -540,7 +531,8 @@
       autofailover-timeout  (or (opts :autofailover-timeout)  6)
       autofailover-maxcount (or (opts :autofailover-maxcount) 3)
       disrupt-count         (or (opts :disrupt-count) 1)
-      client                (clients/set-client addclient delclient dcpclient)
+      dcpclient             (cbclients/dcp-client)
+      client                (clients/set-client dcpclient)
 
       nemesis               (cbnemesis/couchbase)
       checker               (checker/compose
@@ -573,9 +565,6 @@
   "Workload to trigger lost inserts due to cursor dropping bug MB29369"
   [opts]
   (let-and-merge
-      addclient (cbclients/batch-insert-pool)
-      delclient nil
-      dcpclient (cbclients/dcp-client)
       ;; Around 100 Kops per node should be sufficient to trigger cursor dropping with
       ;; 100 MB per node bucket quota and ep_cursor_dropping_upper_mark reduced to 30%.
       ;; Since we need the first 2/3 of the ops to cause cursor dropping, we need 150 K
@@ -584,14 +573,15 @@
                         (* (count (opts :nodes)) 150000))
       custom-cursor-drop-marks [20 30]
       concurrency   250
-      batch-size    20
       pool-size     8
       replicas      (or (opts :replicas) 0)
       replicate-to  (or (opts :replicate-to) 0)
       autofailover  (if (nil? (opts :autofailover)) true (opts :autofailover))
       autofailover-timeout     (or (opts :autofailover-timeout)  6)
       autofailover-maxcount    (or (opts :autofailover-maxcount) 3)
-      client        (clients/set-client addclient delclient dcpclient)
+
+      dcpclient     (cbclients/dcp-client)
+      client        (clients/set-client dcpclient)
       nemesis       (cbnemesis/couchbase)
       checker       (checker/compose
                      (merge
@@ -600,6 +590,8 @@
                         {:perf (checker/perf)})))
 
       generator     (gen/phases
+                     ;; Start dcp streaming
+                     (gen/clients (gen/once {:type :info :f :dcp-start-streaming}))
                      ;; Make DCP slow and write 2/3 of the ops; oplimit should be chosen
                      ;; such that this is sufficient to trigger cursor dropping.
                      ;; ToDo: It would be better if we could monitor ep_cursors_dropped
@@ -634,9 +626,8 @@
   "Workload to trigger lost deletes due to cursor dropping bug MB29480"
   [opts]
   (let-and-merge
-      addclient     (cbclients/batch-insert-pool)
-      delclient     (cbclients/basic-client)
       dcpclient     (cbclients/dcp-client)
+      client        (clients/set-client dcpclient)
 
       ;; Around 100 Kops per node should be sufficient to trigger cursor dropping with
       ;; 100 MB per node bucket quota and ep_cursor_dropping_upper_mark reduced to 30%.
@@ -644,14 +635,12 @@
                         (+ (* (count (opts :nodes)) 100000) 50000))
       custom-cursor-drop-marks [20 30]
       concurrency   250
-      batch-size    50
       pool-size     4
       replicas      (or (opts :replicas) 0)
       replicate-to  (or (opts :replicate-to) 0)
       autofailover  (if (nil? (opts :autofailover)) true (opts :autofailover))
       autofailover-timeout     (or (opts :autofailover-timeout)  6)
       autofailover-maxcount    (or (opts :autofailover-maxcount) 3)
-      client        (clients/set-client addclient delclient dcpclient)
       nemesis       (nemesis/compose {{:slow-dcp-client :slow-dcp-client
                                        :reset-dcp-client :reset-dcp-client
                                        :trigger-compaction :trigger-compaction} (cbnemesis/couchbase)
@@ -663,6 +652,8 @@
                         {:perf (checker/perf)})))
 
       generator     (gen/phases
+                     ;; Start dcp stream
+                     (gen/clients (gen/once {:type :info :f :dcp-start-streaming}))
                      ;; First create 10000 keys and let the client see them
                      (->> (range 0 10000)
                           (map (fn [x] {:type :invoke :f :add :value x}))

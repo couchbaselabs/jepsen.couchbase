@@ -3,10 +3,12 @@
   :main couchbase.core
   :dependencies [[org.clojure/clojure "1.9.0"]
                  [jepsen "0.1.11"]
-                 [com.couchbase.client/java-client "2.6.2"]
-                 [com.couchbase.client/dcp-client "0.20.0"]
+                 [com.couchbase.client/java-client "3.0.0-alpha.1"]
+                 [com.couchbase.client/dcp-client "0.21.0-SHADEDCORE"]
                  [cheshire "5.8.1"]
                  [clj-http "3.9.1"]]
+  :repositories [["couchbase-preview" {:url "https://files.couchbase.com/maven2"
+                                       :checksum :ignore}]]
   :jvm-opts ~(if (-> (System/getProperty "java.version")
                      (clojure.string/split #"\.")
                      (first)
