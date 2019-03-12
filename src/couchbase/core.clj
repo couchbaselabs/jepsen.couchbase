@@ -152,7 +152,14 @@
     :parse-fn parse-int
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
    [nil "--scenario SCENARIO"
-    :parse-fn #(keyword %)]])
+    :parse-fn #(keyword %)]
+   [nil "--durability L0:L1:L2:L3"
+    "Probability distribution for the durability level"
+    :default [100 0 0 0]
+    :parse-fn #(->> (str/split % #":")
+                    (map parse-int))
+    :validate [#(and (= (reduce + %) 100)
+                     (= (count %) 4))]]])
 
 
 (defn -main

@@ -3,7 +3,8 @@
             [couchbase [checker   :as cbchecker]
                        [clients   :as clients]
                        [cbclients :as cbclients]
-                       [nemesis   :as cbnemesis]]
+                       [nemesis   :as cbnemesis]
+                       [util      :as util]]
             [jepsen [checker     :as checker]
                     [generator   :as gen]
                     [independent :as independent]
@@ -100,8 +101,14 @@
     generator     (->> (independent/concurrent-generator doc-threads (range)
                          (fn [k]
                            (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
-                                          (fn [_ _] {:type :invoke :f :write :value (rand-int 5)})
-                                          (fn [_ _] {:type :invoke :f :cas   :value [(rand-int 5) (rand-int 5)]})])
+                                          (fn [_ _] {:type :invoke
+                                                     :f :write
+                                                     :value (rand-int 5)
+                                                     :durability-level (util/random-durability-level opts)})
+                                          (fn [_ _] {:type :invoke
+                                                     :f :cas
+                                                     :value [(rand-int 5) (rand-int 5)]
+                                                     :durability-level (util/random-durability-level opts)})])
                                 (gen/stagger (/ rate)))))
                        (do-n-nemesis-cycles cycles
                                             [(gen/sleep 20)]))))
@@ -127,7 +134,10 @@
                        doc-threads (range)
                        (fn [k]
                          (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
-                                        (fn [_ _] {:type :invoke :f :write :value (rand-int 50)})])
+                                        (fn [_ _] {:type :invoke
+                                                   :f :write
+                                                   :value (rand-int 50)
+                                                   :durability-level (util/random-durability-level opts)})])
                               (gen/stagger (/ rate)))))
 
     generator       (do-n-nemesis-cycles
@@ -180,7 +190,10 @@
     generator    (->> (independent/concurrent-generator doc-threads (range)
                        (fn [k]
                          (->> (gen/mix [(fn [_ _] {:type :invoke, :f :read, :value nil})
-                                        (fn [_ _] {:type :invoke, :f :write :value (rand-int 50)})])
+                                        (fn [_ _] {:type :invoke
+                                                   :f :write
+                                                   :value (rand-int 50)
+                                                   :durability-level (util/random-durability-level opts)})])
                               (gen/limit (* 50 (+ 0.5 (rand))))
                               (gen/stagger (/ rate)))))
                       (do-n-nemesis-cycles cycles
@@ -227,7 +240,10 @@
                        doc-threads (range)
                        (fn [k]
                          (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
-                                        (fn [_ _] {:type :invoke :f :write :value (rand-int 50)})])
+                                        (fn [_ _] {:type :invoke
+                                                   :f :write
+                                                   :value (rand-int 50)
+                                                   :durability-level (util/random-durability-level opts)})])
                               (gen/stagger (/ rate)))))
     generator     (case scenario
                     :sequential-rebalance-out-in
@@ -313,7 +329,10 @@
     generator     (->> (independent/concurrent-generator doc-threads (range)
                          (fn [k]
                            (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
-                                          (fn [_ _] {:type :invoke :f :write :value (rand-int 50)})])
+                                          (fn [_ _] {:type :invoke
+                                                     :f :write
+                                                     :value (rand-int 50)
+                                                     :durability-level (util/random-durability-level opts)})])
                                 (gen/stagger (/ rate)))))
                        (do-n-nemesis-cycles cycles
                                             [(gen/sleep 5)
@@ -333,7 +352,10 @@
     generator    (->> (independent/concurrent-generator doc-threads (range)
                         (fn [k]
                           (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
-                                         (fn [_ _] {:type :invoke :f :write :value (rand-int 50)})])
+                                         (fn [_ _] {:type :invoke
+                                                    :f :write
+                                                    :value (rand-int 50)
+                                                    :durability-level (util/random-durability-level opts)})])
                                (gen/stagger (/ rate)))))
                       (do-n-nemesis-cycles cycles
                                            [(gen/sleep 5)
@@ -367,7 +389,10 @@
     generator     (->> (independent/concurrent-generator doc-threads (range)
                          (fn [k]
                            (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
-                                          (fn [_ _] {:type :invoke :f :write :value (rand-int 50)})])
+                                          (fn [_ _] {:type :invoke
+                                                     :f :write
+                                                     :value (rand-int 50)
+                                                     :durability-level (util/random-durability-level opts)})])
                                 (gen/limit 20)
                                 (gen/stagger (/ rate)))))
                        (gen/nemesis (gen/seq [(gen/sleep 15)
@@ -403,7 +428,10 @@
                           {:perf (checker/perf)})))
       generator     (gen/phases
                        (->> (range)
-                            (map (fn [x] {:type :invoke :f :add :value x}))
+                            (map (fn [x] {:type :invoke
+                                          :f :add
+                                          :value x
+                                          :durability-level (util/random-durability-level opts)}))
                             (gen/seq)
                             (do-n-nemesis-cycles cycles
                                                  [(gen/sleep 20)]))
@@ -439,7 +467,10 @@
                               (if (opts :perf-graphs)
                                 {:perf (checker/perf)})))
       client-gen (->> (range)
-                      (map (fn [x] {:type :invoke :f :add :value x}))
+                      (map (fn [x] {:type :invoke
+                                    :f :add
+                                    :value x
+                                    :durability-level (util/random-durability-level opts)}))
                       (gen/seq))
       generator             (gen/phases
                               (case scenario
@@ -540,7 +571,10 @@
                                 {:perf (checker/perf)})))
       generator             (gen/phases
                              (->> (range)
-                                  (map (fn [x] {:type :invoke :f :add :value x}))
+                                  (map (fn [x] {:type :invoke
+                                                :f :add
+                                                :value x
+                                                :durability-level (util/random-durability-level opts)}))
                                   (gen/seq)
                                   (do-n-nemesis-cycles cycles
                                                        [(gen/sleep 5)

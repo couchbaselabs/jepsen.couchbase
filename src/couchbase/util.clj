@@ -417,3 +417,11 @@
               updated-nodes-info (remove #(= node-info %) nodes-info)]
           (recur updated-node-info-map updated-nodes-info))
         node-info-map))))
+
+(defn random-durability-level
+  "Get a random durability level following the probability distribution in (:durability opts)"
+  [opts]
+  (let [rand-seed  (rand 100)]
+    (->> (reductions + (:durability opts))
+         (keep-indexed #(if (<= rand-seed %2) %1))
+         (first))))
