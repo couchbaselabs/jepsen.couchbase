@@ -50,23 +50,12 @@
   ;; opts passed to this function come straight from cli parsing
   ;; these ops are then passed to workload
   (merge tests/noop-test
-         ;; generic cli parameters
+         opts
+         ;; generic parameters
          {:name "Couchbase"
           :db (couchbase)
           :os os
-          :workload (opts :workload)
-          :hashdump (opts :hashdump)
-          :ssh-private-key (opts :ssh-private-key)
-          :package (opts :package)
-          :ssh (opts :ssh)
-          :nodes (opts :nodes)
-          :test-count (opts :test-count)
-          :get-cbcollect (opts :get-cbcollect)
-          :time-limit (opts :time-limit)
-          :perf-graphs (opts :perf-graphs)
-          :skip-teardown (opts :skip-teardown)
-          :db-intialized (atom false)
-          }
+          :db-intialized (atom false)}
          ;; workload specific parameter
          (try
            (as-> (opts :workload) %
@@ -76,22 +65,18 @@
            (catch NullPointerException _
              (let [msg (format "Workload %s does not exist" (opts :workload))]
                (fatal msg)
-               (throw (RuntimeException. msg)))))
-         ))
+               (throw (RuntimeException. msg)))))))
 
 (defn parse-int [x] (Integer/parseInt x))
 
 (def extra-cli-options
   [[nil "--package URL-OR-FILENAME"
     "Install this couchbase package, use preinstalled version if not given"
-    :default nil
     :parse-fn util/get-package]
    [nil "--workload WORKLOAD"
-    "The workload to run"
-    :default  nil]
+    "The workload to run"]
    [nil "--oplimit LIMIT"
     "Limit the total number of operations"
-    :default nil
     :parse-fn parse-int
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
    [nil "--get-cbcollect"
@@ -105,45 +90,32 @@
     :default false]
    [nil "--replicas REPLICAS"
     "Number of replicas"
-    :default nil
     :parse-fn parse-int ]
    [nil "--replicate-to REPLICATE-TO"
     "Replicate-to value"
-    :default nil
     :parse-fn parse-int]
    [nil "--rate RATE"
     "Rate of operations"
-    :default nil
     :parse-fn read-string
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
-   [nil "--autofailover AUTOFAILOVER"
-    "Enable autofailover"
-    :default nil
-    :parse-fn read-string
-    :validate [#(boolean? %) "Must be boolean"]]
-   [nil "--server-group-autofailover SERVER-GROUP-AUTOFAILOVER"
-    "Enable server group autofailover"
-    :default nil
-    :parse-fn read-string
-    :validate [#(boolean? %) "Must be boolean"]]
+   [nil "--[no-]autofailover"
+    "Enable autofailover?"]
+   [nil "--[no-]server-group-autofailover"
+    "Enable server group autofailover"]
    [nil "--autofailover-timeout AUTOFAILOVER-TIMEOUT"
     "Autofailover timeout if autofailover is enabled"
-    :default nil
     :parse-fn parse-int
     :validate [#(> % 5) "Must be greater than 5 seconds"]]
    [nil "--autofailover-maxcount AUTOFAILOVER-MAXCOUNT"
     "Autofailover max count if autofailover is enabled"
-    :default nil
     :parse-fn parse-int
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
    [nil "--doc-count DOC-COUNT"
     "Number of documents"
-    :default nil
     :parse-fn parse-int
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
    [nil "--doc-threads DOC-THREADS"
     "Number of threads per document"
-    :default nil
     :parse-fn parse-int
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
    [nil "--recovery-type RECOVERY-TYPE"
@@ -161,31 +133,25 @@
     :default false]
    [nil "--cycles CYCLES"
     "Number of nemesis cycles to run"
-    :default nil
     :parse-fn parse-int
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
    [nil "--disrupt-time DISRUPTION-TIME"
     "Number of seconds for which the nemesis will act"
-    :default nil
     :parse-fn parse-int
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
    [nil "--durability-timeout DURABILITY-TIMEOUT"
     "Durability timeout in seconds"
-    :default nil
     :parse-fn parse-int
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
    [nil "--node-count NODE-COUNT"
     "Number of nodes to use for this test"
-    :default nil
     :parse-fn parse-int
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
    [nil "--server-group-count SERVER-GROUP-COUNT"
     "Number of nodes to use for this test"
-    :default nil
     :parse-fn parse-int
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
    [nil "--scenario SCENARIO"
-    :default nil
     :parse-fn #(keyword %)]])
 
 

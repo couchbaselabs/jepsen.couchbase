@@ -30,19 +30,19 @@
   merging the custom parameters"
   ([opts & more]
    `(let-and-merge
-        ~'cycles                (or (~opts :cycles) 1)
-        ~'node-count            (or (~opts :node-count) (count (~opts :nodes)))
+        ~'cycles                (~opts :cycles 1)
+        ~'node-count            (~opts :node-count (count (~opts :nodes)))
         ~'nodes                 (if (>= (count (~opts :nodes)) ~'node-count)
                                   (vec (take ~'node-count (~opts :nodes)))
                                   (assert false "node-count greater than available nodes"))
-        ~'server-group-count    (or (~opts :server-group-count) 1)
-        ~'rate                  (or (~opts :rate)        1/3)
-        ~'doc-count             (or (~opts :doc-count)   40)
-        ~'doc-threads           (or (~opts :doc-threads) 3)
+        ~'server-group-count    (~opts :server-group-count 1)
+        ~'rate                  (~opts :rate 1/3)
+        ~'doc-count             (~opts :doc-count 40)
+        ~'doc-threads           (~opts :doc-threads 3)
         ~'concurrency           (* ~'doc-count ~'doc-threads)
         ~'pool-size             (~opts :pool-size 6)
-        ~'autofailover-timeout  (or (~opts :autofailover-timeout)  6)
-        ~'autofailover-maxcount (or (~opts :autofailover-maxcount) 3)
+        ~'autofailover-timeout  (~opts :autofailover-timeout 6)
+        ~'autofailover-maxcount (~opts :autofailover-maxcount 3)
         ~'client                (clients/register-client)
         ~'model                 (model/cas-register :nil)
         ~'checker   (checker/compose
@@ -84,8 +84,7 @@
                                          (gen/sleep 3)
                                          (set-atom-false. control-atom)]))
          rclient-gen  (while-atom-true. control-atom client-gen)]
-     (gen/nemesis nemesis-gen rclient-gen)))
-  )
+     (gen/nemesis nemesis-gen rclient-gen))))
 
 ;; ==================
 ;; Register workloads
@@ -95,8 +94,8 @@
   "Basic register workload"
   [opts]
   (with-register-base opts
-    replicas      (or (opts :replicas) 1)
-    replicate-to  (or (opts :replicate-to) 0)
+    replicas      (opts :replicas 1)
+    replicate-to  (opts :replicate-to 0)
     nemesis       nemesis/noop
     generator     (->> (independent/concurrent-generator doc-threads (range)
                          (fn [k]
@@ -111,13 +110,13 @@
   "Paritions the network by isolating nodes from each other, then will recover if autofailover happens"
   [opts]
   (with-register-base opts
-    replicas       (or (opts :replicas) 1)
-    replicate-to   (or (opts :replicate-to) 0)
-    autofailover   (if (nil? (opts :autofailover)) false (opts :autofailover))
-    server-group-autofailover (if (nil? (opts :server-group-autofailover)) false (opts :server-group-autofailover))
-    disrupt-time   (or (opts :disrupt-time) 20)
-    recovery-type  (or (keyword (opts :recovery-type)) :delta)
-    disrupt-count  (or (opts :disrupt-count) 1)
+    replicas       (opts :replicas 1)
+    replicate-to   (opts :replicate-to 0)
+    autofailover   (opts :autofailover false)
+    server-group-autofailover (opts :server-group-autofailover false))
+    disrupt-time   (opts :disrupt-time 20)
+    recovery-type  (opts :recovery-type :delta)
+    disrupt-count  (opts :disrupt-count 1)
     should-autofailover (and autofailover (>= replicas 1) (= disrupt-count 1)
                              (> disrupt-time autofailover-timeout) (>= node-count 3))
     should-server-group-autofailover (and autofailover server-group-autofailover (>= replicas 1) (>= (:server-group-count opts) 3)
@@ -174,9 +173,9 @@
   are lost due to promotion of the 'wrong' replica upon failover of the active"
   [opts]
   (with-register-base opts
-    replicas     (or (opts :replicas) 2)
-    replicate-to (or (opts :replicate-to) 1)
-    autofailover (if (nil? (opts :autofailover)) false (opts :autofailover))
+    replicas     (opts :replicas 2)
+    replicate-to (opts :replicate-to 1)
+    autofailover (opts :autofailover false)
     nemesis      (cbnemesis/partition-then-failover)
     generator    (->> (independent/concurrent-generator doc-threads (range)
                        (fn [k]
@@ -210,20 +209,19 @@
 
   [opts]
   (with-register-base opts
-    replicas      (or (opts :replicas)      1)
-    replicate-to  (or (opts :replicate-to)  0)
+    replicas      (opts :replicas 1)
+    replicate-to  (opts :replicate-to 0)
     scenario      (opts :scenario)
     disrupt-count (if (= scenario :swap-rebalance)
-                    (let [disrupt-count (or (opts :disrupt-count) 1)
+                    (let [disrupt-count (opts :disrupt-count 1)
                           max-disrupt-count (- (Math/ceil (double (/ (count (:nodes opts)) 2))) 1)]
                       (assert (<= disrupt-count max-disrupt-count))
                       disrupt-count)
-                    (let [disrupt-count (or (opts :disrupt-count) 1)
+                    (let [disrupt-count (opts :disrupt-count 1)
                           max-disrupt-count (- (count (:nodes opts)) 1)]
                       (assert (<= disrupt-count max-disrupt-count))
-                      disrupt-count)
-                    )
-    autofailover  (if (nil? (opts :autofailover)) false (opts :autofailover))
+                      disrupt-count))
+    autofailover  (opts :autofailover false)
     nemesis       (cbnemesis/couchbase)
     client-generator (independent/concurrent-generator
                        doc-threads (range)
@@ -307,10 +305,10 @@
   "Kill memcached during a rebalance"
   [opts]
   (with-register-base opts
-    replicas      (or (opts :replicas)      1)
-    replicate-to  (or (opts :replicate-to)  0)
-    disrupt-count (or (opts :disrupt-count) 1)
-    autofailover  (if (nil? (opts :autofailover)) false (opts :autofailover))
+    replicas      (opts :replicas 1)
+    replicate-to  (opts :replicate-to 0)
+    disrupt-count (opts :disrupt-count 1)
+    autofailover  (opts :autofailover false)
     nemesis       (cbnemesis/fail-rebalance)
     generator     (->> (independent/concurrent-generator doc-threads (range)
                          (fn [k]
@@ -326,11 +324,11 @@
   "Failover and recover"
   [opts]
   (with-register-base opts
-    replicas      (or (opts :replicas)     1)
-    replicate-to  (or (opts :replicate-to) 0)
-    recovery-type (or (keyword (opts :recovery-type)) :delta)
-    failover-type (or (keyword (opts :failover-type)) :hard)
-    disrupt-count (or (opts :disrupt-count) 1)
+    replicas      (opts :replicas 1)
+    replicate-to  (opts :replicate-to 0)
+    recovery-type (opts :recovery-type :delta)
+    failover-type (opts :failover-type :hard)
+    disrupt-count (opts :disrupt-count 1)
     nemesis      (cbnemesis/couchbase)
     generator    (->> (independent/concurrent-generator doc-threads (range)
                         (fn [k]
@@ -360,11 +358,11 @@
   "Simulate a disk failure. This workload will not function correctly with docker containers."
   [opts]
   (with-register-base opts
-    replicas      (or (opts :replicas)      2)
-    replicate-to  (or (opts :replicate-to)  0)
-    disrupt-count (or (opts :disrupt-count) 1)
-    autofailover  (if (nil? (opts :autofailover)) false (opts :autofailover))
-    recovery      (or (opts :recovery) :delta)
+    replicas      (opts :replicas 2)
+    replicate-to  (opts :replicate-to 0)
+    disrupt-count (opts :disrupt-count 1)
+    autofailover  (opts :autofailover false)
+    recovery      (opts :recovery :delta)
     nemesis       (cbnemesis/disk-failure)
     generator     (->> (independent/concurrent-generator doc-threads (range)
                          (fn [k]
@@ -388,15 +386,15 @@
   (let-and-merge
       dcpclient     (cbclients/dcp-client)
 
-      cycles        (or (opts :cycles) 1)
+      cycles        (opts :cycles 1)
       client        (clients/set-client dcpclient)
       concurrency   250
       pool-size     4
-      replicas      (or (opts :replicas) 0)
-      replicate-to  (or (opts :replicate-to) 0)
-      autofailover  (if (nil? (opts :autofailover)) true (opts :autofailover))
-      autofailover-timeout  (or (opts :autofailover-timeout)  6)
-      autofailover-maxcount (or (opts :autofailover-maxcount) 3)
+      replicas      (opts :replicas 0)
+      replicate-to  (opts :replicate-to 0)
+      autofailover  (opts :autofailover true)
+      autofailover-timeout  (opts :autofailover-timeout 6)
+      autofailover-maxcount (opts :autofailover-maxcount 3)
 
       checker       (checker/compose
                       (merge
@@ -419,19 +417,19 @@
   (let-and-merge
       scenario              (opts :scenario)
       dcpclient             (cbclients/dcp-client)
-      cycles                (or (opts :cycles) 1)
+      cycles                (opts :cycles 1)
       concurrency           1000
       pool-size             16
       custom-vbucket-count  64
-      replicas              (or (opts :replicas) 1)
-      replicate-to          (or (opts :replicate-to) 0)
-      disrupt-count         (or (opts :disrupt-count) 1)
-      recovery-type         (or (opts :recovery-type) :delta)
-      autofailover          (if (nil? (opts :autofailover)) false (opts :autofailover))
-      autofailover-timeout  (or (opts :autofailover-timeout)  6)
-      autofailover-maxcount (or (opts :autofailover-maxcount) 3)
-      disrupt-count         (or (opts :disrupt-count) 1)
-      disrupt-time          (or (opts :disrupt-time)  30)
+      replicas              (opts :replicas 1)
+      replicate-to          (opts :replicate-to 0)
+      disrupt-count         (opts :disrupt-count 1)
+      recovery-type         (opts :recovery-type :delta)
+      autofailover          (opts :autofailover false)
+      autofailover-timeout  (opts :autofailover-timeout  6)
+      autofailover-maxcount (opts :autofailover-maxcount 3)
+      disrupt-count         (opts :disrupt-count 1)
+      disrupt-time          (opts :disrupt-time 30)
       should-autofailover   (and autofailover (= disrupt-count 1) (> disrupt-time autofailover-timeout) (>= (count (:nodes opts)) 3))
       client                (clients/set-client dcpclient)
       nemesis               (cbnemesis/couchbase)
@@ -521,16 +519,16 @@
   "Trigger lost inserts due to one of several white-rabbit variants"
   [opts]
   (let-and-merge
-      cycles                (or (opts :cycles) 5)
+      cycles                (opts :cycles 5)
       concurrency           500
       pool-size             6
       custom-vbucket-count  64
-      replicas              (or (opts :replicas) 0)
-      replicate-to          (or (opts :replicate-to) 0)
-      autofailover          (if (nil? (opts :autofailover)) true (opts :autofailover))
-      autofailover-timeout  (or (opts :autofailover-timeout)  6)
-      autofailover-maxcount (or (opts :autofailover-maxcount) 3)
-      disrupt-count         (or (opts :disrupt-count) 1)
+      replicas              (opts :replicas 0)
+      replicate-to          (opts :replicate-to 0)
+      autofailover          (opts :autofailover true)
+      autofailover-timeout  (opts :autofailover-timeout 6)
+      autofailover-maxcount (opts :autofailover-maxcount 3)
+      disrupt-count         (opts :disrupt-count 1)
       dcpclient             (cbclients/dcp-client)
       client                (clients/set-client dcpclient)
 
@@ -569,16 +567,15 @@
       ;; 100 MB per node bucket quota and ep_cursor_dropping_upper_mark reduced to 30%.
       ;; Since we need the first 2/3 of the ops to cause cursor dropping, we need 150 K
       ;; per node
-      oplimit       (or (opts :oplimit)
-                        (* (count (opts :nodes)) 150000))
+      oplimit       (opts :oplimit (* (count (opts :nodes)) 150000))
       custom-cursor-drop-marks [20 30]
       concurrency   250
       pool-size     8
-      replicas      (or (opts :replicas) 0)
-      replicate-to  (or (opts :replicate-to) 0)
-      autofailover  (if (nil? (opts :autofailover)) true (opts :autofailover))
-      autofailover-timeout     (or (opts :autofailover-timeout)  6)
-      autofailover-maxcount    (or (opts :autofailover-maxcount) 3)
+      replicas      (opts :replicas 0)
+      replicate-to  (opts :replicate-to 0)
+      autofailover  (opts :autofailover true)
+      autofailover-timeout     (opts :autofailover-timeout 6)
+      autofailover-maxcount    (opts :autofailover-maxcount 3)
 
       dcpclient     (cbclients/dcp-client)
       client        (clients/set-client dcpclient)
@@ -631,16 +628,15 @@
 
       ;; Around 100 Kops per node should be sufficient to trigger cursor dropping with
       ;; 100 MB per node bucket quota and ep_cursor_dropping_upper_mark reduced to 30%.
-      oplimit       (or (opts :oplimit)
-                        (+ (* (count (opts :nodes)) 100000) 50000))
+      oplimit       (opts :oplimit (+ (* (count (opts :nodes)) 100000) 50000))
       custom-cursor-drop-marks [20 30]
       concurrency   250
       pool-size     4
-      replicas      (or (opts :replicas) 0)
-      replicate-to  (or (opts :replicate-to) 0)
-      autofailover  (if (nil? (opts :autofailover)) true (opts :autofailover))
-      autofailover-timeout     (or (opts :autofailover-timeout)  6)
-      autofailover-maxcount    (or (opts :autofailover-maxcount) 3)
+      replicas      (opts :replicas 0)
+      replicate-to  (opts :replicate-to 0)
+      autofailover  (opts :autofailover true)
+      autofailover-timeout (opts :autofailover-timeout 6)
+      autofailover-maxcount (opts :autofailover-maxcount 3)
       nemesis       (nemesis/compose {{:slow-dcp-client :slow-dcp-client
                                        :reset-dcp-client :reset-dcp-client
                                        :trigger-compaction :trigger-compaction} (cbnemesis/couchbase)
