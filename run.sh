@@ -62,6 +62,9 @@ packageParam="--package $PACKAGE"
 pass=0
 fail=0
 crash=0
+test_num=1
+fail_array=()
+crash_array=()
 
 while IFS='' read -r line || [[ -n "$line" ]]; do
 
@@ -70,7 +73,9 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
         continue
     fi
 
-    echo "Running test: $line"
+    echo "################################################################"
+    echo "Running test: #$test_num"
+    echo "Test params: $line"
 
     # parse conf file line for workload and parameters
     IFS=,
@@ -86,7 +91,6 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
 
     if [ "$PROVISIONER" == "vagrant" ]; then
         command="$vagrantBaseCommand $testParams $vagrantParams $packageParam"
-        echo ""
         echo "Test command: $command"
         echo ""
         eval $command
@@ -95,7 +99,6 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
     if [ "$PROVISIONER" == "docker" ]; then
         docker exec -it jepsen-control bash -c "rm -rf /jepsen/store"
         command="$dockerBaseCommand $testParams $dockerParams $packageParam"
-        echo ""
         echo "Test command: $command"
         echo ""
         eval $command
@@ -104,7 +107,6 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
     fi
     if [ "$PROVISIONER" == "vmpool" ]; then
         command="$vmpoolBaseCommand $testParams $vmpoolParams $packageParam"
-        echo ""
         echo "Test command: $command"
         echo ""
         eval $command
@@ -116,26 +118,45 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
         LAST_RUN=$(cd ./store/latest; pwd -P)
         if [ "$PREVIOUS_RUN" != "$LAST_RUN" ] && grep -q -e "^ :valid? false" store/latest/results.edn; then
             grep -m 1 -e ":workload.*" store/latest/jepsen.log | cut -d "\"" -f 2 | xargs printf "\n\nJepsen exited with failure for workload %s\n\n"
-            echo "Test failed!\n\n"
+            printf "Test failed!\n\n"
             fail=$(($fail+1))
+            fail_array+=($test_num)
         else
-            printf "Jepsen failed with unknown failure\n\n"
-            echo "Test crashed!\n\n"
+            printf "Jepsen failed with unknown failure \n"
+            printf "Test crashed! \n"
             crash=$(($crash+1))
+            crash_array+=("#$test_num")
         fi
 
     else
-        printf "Jepsen tests passed\n\n"
-        echo "Test passed!\n\n"
+        printf "Jepsen tests passed\n"
+        printf "Test passed!\n"
         pass=$(($pass+1))
     fi
+    test_num=$(($test_num+1))
 done < "$SUITE"
+echo "################################################################"
 
 total=$(($pass+$fail+$crash))
 percent=`echo  "scale=2; $pass*100/$total" | bc`
 echo "Jepsen tests complete!"
-echo ""
+echo "###### Test Report #########"
 echo "pass: $pass"
 echo "fail: $fail"
 echo "crash: $crash"
 echo "$pass/$total = $percent%"
+if [ "$fail" -gt 0 ];then
+    echo "###### Failed Tests #########"
+    printf '%s\n' "${fail_array[@]}"
+fi
+if [ "$crash" -gt 0 ];then
+    echo "###### Crashed Tests ########"
+    printf '%s\n' "${crash_array[@]}"
+fi
+echo "############################"
+
+if [ "$fail" -gt 0 ] || [ "$crash" -gt 0 ];then
+    exit 1
+else
+    exit 0
+fi
