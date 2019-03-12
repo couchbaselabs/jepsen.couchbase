@@ -100,44 +100,59 @@
     nemesis       nemesis/noop
     generator     (->> (independent/concurrent-generator doc-threads (range)
                          (fn [k]
-                           (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
-                                          (fn [_ _] {:type :invoke
-                                                     :f :write
-                                                     :value (rand-int 5)
-                                                     :durability-level (util/random-durability-level opts)})
-                                          (fn [_ _] {:type :invoke
-                                                     :f :cas
-                                                     :value [(rand-int 5) (rand-int 5)]
-                                                     :durability-level (util/random-durability-level opts)})])
+                           (->> (gen/mix
+                                 [(fn [_ _] {:type :invoke :f :read  :value nil})
+                                  (fn [_ _]
+                                    {:type :invoke
+                                     :f :write
+                                     :value (rand-int 5)
+                                     :durability-level (util/random-durability-level opts)})
+                                  (fn [_ _]
+                                   {:type :invoke
+                                     :f :cas
+                                     :value [(rand-int 5) (rand-int 5)]
+                                     :durability-level (util/random-durability-level opts)})])
                                 (gen/stagger (/ rate)))))
                        (do-n-nemesis-cycles cycles
                                             [(gen/sleep 20)]))))
 
 (defn partition-workload
-  "Paritions the network by isolating nodes from each other, then will recover if autofailover happens"
+  "Paritions the network by isolating nodes from each other, then will recover if autofailover
+  happens"
   [opts]
   (with-register-base opts
     replicas       (opts :replicas 1)
     replicate-to   (opts :replicate-to 0)
     autofailover   (opts :autofailover false)
-    server-group-autofailover (opts :server-group-autofailover false))
+    server-group-autofailover (opts :server-group-autofailover false)
     disrupt-time   (opts :disrupt-time 20)
     recovery-type  (opts :recovery-type :delta)
     disrupt-count  (opts :disrupt-count 1)
-    should-autofailover (and autofailover (>= replicas 1) (= disrupt-count 1)
-                             (> disrupt-time autofailover-timeout) (>= node-count 3))
-    should-server-group-autofailover (and autofailover server-group-autofailover (>= replicas 1) (>= (:server-group-count opts) 3)
-                                          (>= disrupt-count (int (Math/ceil (/ node-count (:server-group-count opts)))))
-                                          (> disrupt-time autofailover-timeout) (>= node-count 3))
+    should-autofailover (and autofailover
+                             (>= replicas 1)
+                             (= disrupt-count 1)
+                             (> disrupt-time autofailover-timeout)
+                             (>= node-count 3))
+    should-server-group-autofailover (and autofailover
+                                          server-group-autofailover
+                                          (>= replicas 1)
+                                          (>= (:server-group-count opts) 3)
+                                          (>= disrupt-count
+                                              (Math/ceil (/ node-count
+                                                            (:server-group-count opts))))
+                                          (> disrupt-time autofailover-timeout)
+                                          (>= node-count 3))
     nemesis        (cbnemesis/couchbase)
     client-generator (independent/concurrent-generator
                        doc-threads (range)
                        (fn [k]
-                         (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
-                                        (fn [_ _] {:type :invoke
-                                                   :f :write
-                                                   :value (rand-int 50)
-                                                   :durability-level (util/random-durability-level opts)})])
+                         (->> (gen/mix
+                               [(fn [_ _] {:type :invoke :f :read  :value nil})
+                                (fn [_ _]
+                                  {:type :invoke
+                                   :f :write
+                                   :value (rand-int 50)
+                                   :durability-level (util/random-durability-level opts)})])
                               (gen/stagger (/ rate)))))
 
     generator       (do-n-nemesis-cycles
@@ -189,11 +204,13 @@
     nemesis      (cbnemesis/partition-then-failover)
     generator    (->> (independent/concurrent-generator doc-threads (range)
                        (fn [k]
-                         (->> (gen/mix [(fn [_ _] {:type :invoke, :f :read, :value nil})
-                                        (fn [_ _] {:type :invoke
-                                                   :f :write
-                                                   :value (rand-int 50)
-                                                   :durability-level (util/random-durability-level opts)})])
+                         (->> (gen/mix
+                               [(fn [_ _] {:type :invoke, :f :read, :value nil})
+                                (fn [_ _]
+                                  {:type :invoke
+                                   :f :write
+                                   :value (rand-int 50)
+                                   :durability-level (util/random-durability-level opts)})])
                               (gen/limit (* 50 (+ 0.5 (rand))))
                               (gen/stagger (/ rate)))))
                       (do-n-nemesis-cycles cycles
@@ -209,16 +226,17 @@
 
 (defn Rebalance-workload
   "Rebalance scenarios:
-  Sequential Rebalance In/Out - rebalance out a single node at a time until disrupt-count nodes have been
-                                rebalanced out. This is followed by the opposite - rebalance back in a single
-                                node at a time until disrupt-count nodes have been rebalanced back in.
+  Sequential Rebalance In/Out - rebalance out a single node at a time until disrupt-count nodes have
+                                been rebalanced out. This is followed by the opposite - rebalance
+                                back in a single node at a time until disrupt-count nodes have been
+                                rebalanced back in.
 
-  Bulk Rebalance In/Out       - rebalance out disrupt-count nodes at once followed by rebalancing in the same
-                                node at once.
+  Bulk Rebalance In/Out       - rebalance out disrupt-count nodes at once followed by rebalancing in
+                                the same node at once.
 
-  Swap Rebalance              - first disrupt-count nodes are rebalanced out of the cluster. Then, these nodes
-                                are used to perform a swap rebalance with dirsupt-count nodes that are still
-                                in the cluster"
+  Swap Rebalance              - first disrupt-count nodes are rebalanced out of the cluster. Then,
+                                these nodes are used to perform a swap rebalance with dirsupt-count
+                                nodes that are still in the cluster"
 
   [opts]
   (with-register-base opts
@@ -236,15 +254,16 @@
                       disrupt-count))
     autofailover  (opts :autofailover false)
     nemesis       (cbnemesis/couchbase)
-    client-generator (independent/concurrent-generator
-                       doc-threads (range)
-                       (fn [k]
-                         (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
-                                        (fn [_ _] {:type :invoke
-                                                   :f :write
-                                                   :value (rand-int 50)
-                                                   :durability-level (util/random-durability-level opts)})])
-                              (gen/stagger (/ rate)))))
+    client-gen    (independent/concurrent-generator
+                   doc-threads (range)
+                   (fn [k]
+                     (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
+                                    (fn [_ _]
+                                      {:type :invoke
+                                       :f :write
+                                       :value (rand-int 50)
+                                       :durability-level (util/random-durability-level opts)})])
+                          (gen/stagger (/ rate)))))
     generator     (case scenario
                     :sequential-rebalance-out-in
                     (do-n-nemesis-cycles
@@ -269,7 +288,7 @@
                                                    :network [:connected]
                                                    :node [:running]}}}]))
                        (gen/sleep 5)]
-                      client-generator)
+                      client-gen)
 
                     :bulk-rebalance-out-in
                     (do-n-nemesis-cycles
@@ -290,7 +309,8 @@
                                :condition {:cluster [:ejected]
                                            :network [:connected]
                                            :node [:running]}}}
-                       (gen/sleep 5)] client-generator)
+                       (gen/sleep 5)]
+                      client-gen)
 
                     :swap-rebalance
                     (do-n-nemesis-cycles
@@ -302,8 +322,7 @@
                                :count disrupt-count
                                :condition {:cluster [:active :inactive :failed]
                                            :network [:connected]
-                                           :node [:running]}
-                               }}
+                                           :node [:running]}}}
                        (gen/sleep 5)]
                       [{:type :info :f :swap-rebalance
                         :targeter-opts
@@ -313,9 +332,8 @@
                                            :network [:connected]
                                            :node [:running]}}}
                        (gen/sleep 5)]
-                      [] client-generator)
-
-                    )))
+                      []
+                      client-gen))))
 
 (defn Fail-Rebalance-workload
   "Kill memcached during a rebalance"
@@ -328,11 +346,13 @@
     nemesis       (cbnemesis/fail-rebalance)
     generator     (->> (independent/concurrent-generator doc-threads (range)
                          (fn [k]
-                           (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
-                                          (fn [_ _] {:type :invoke
-                                                     :f :write
-                                                     :value (rand-int 50)
-                                                     :durability-level (util/random-durability-level opts)})])
+                           (->> (gen/mix
+                                 [(fn [_ _] {:type :invoke :f :read  :value nil})
+                                  (fn [_ _]
+                                    {:type :invoke
+                                     :f :write
+                                     :value (rand-int 50)
+                                     :durability-level (util/random-durability-level opts)})])
                                 (gen/stagger (/ rate)))))
                        (do-n-nemesis-cycles cycles
                                             [(gen/sleep 5)
@@ -348,33 +368,34 @@
     recovery-type (opts :recovery-type :delta)
     failover-type (opts :failover-type :hard)
     disrupt-count (opts :disrupt-count 1)
-    nemesis      (cbnemesis/couchbase)
-    generator    (->> (independent/concurrent-generator doc-threads (range)
-                        (fn [k]
-                          (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
-                                         (fn [_ _] {:type :invoke
-                                                    :f :write
-                                                    :value (rand-int 50)
-                                                    :durability-level (util/random-durability-level opts)})])
-                               (gen/stagger (/ rate)))))
-                      (do-n-nemesis-cycles cycles
-                                           [(gen/sleep 5)
-                                            {:type :info
-                                             :f    :failover
-                                             :f-opts {:failover-type failover-type}
-                                             :targeter-opts {:type :random-subset
-                                                             :count disrupt-count
-                                                             :condition {:cluster [:active :inactive]
-                                                                         :network [:connected]}}}
-                                            (gen/sleep 10)
-                                            {:type :info
-                                             :f    :recover
-                                             :f-opts {:recovery-type recovery-type}
-                                             :targeter-opts {:type :all
-                                                             :condition {:cluster [:failed]
-                                                                         :network [:connected]
-                                                                         :node [:running]}}}
-                                            (gen/sleep 5)]))))
+    nemesis   (cbnemesis/couchbase)
+    generator (->> (independent/concurrent-generator doc-threads (range)
+                     (fn [k]
+                       (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
+                                      (fn [_ _]
+                                        {:type :invoke
+                                         :f :write
+                                         :value (rand-int 50)
+                                         :durability-level (util/random-durability-level opts)})])
+                            (gen/stagger (/ rate)))))
+                   (do-n-nemesis-cycles cycles
+                                        [(gen/sleep 5)
+                                         {:type :info
+                                          :f    :failover
+                                          :f-opts {:failover-type failover-type}
+                                          :targeter-opts {:type :random-subset
+                                                          :count disrupt-count
+                                                          :condition {:cluster [:active :inactive]
+                                                                      :network [:connected]}}}
+                                         (gen/sleep 10)
+                                         {:type :info
+                                          :f    :recover
+                                          :f-opts {:recovery-type recovery-type}
+                                          :targeter-opts {:type :all
+                                                          :condition {:cluster [:failed]
+                                                                      :network [:connected]
+                                                                      :node [:running]}}}
+                                         (gen/sleep 5)]))))
 
 (defn Disk-Failure-workload
   "Simulate a disk failure. This workload will not function correctly with docker containers."
@@ -388,11 +409,13 @@
     nemesis       (cbnemesis/disk-failure)
     generator     (->> (independent/concurrent-generator doc-threads (range)
                          (fn [k]
-                           (->> (gen/mix [(fn [_ _] {:type :invoke :f :read  :value nil})
-                                          (fn [_ _] {:type :invoke
-                                                     :f :write
-                                                     :value (rand-int 50)
-                                                     :durability-level (util/random-durability-level opts)})])
+                           (->> (gen/mix
+                                 [(fn [_ _] {:type :invoke :f :read  :value nil})
+                                  (fn [_ _]
+                                    {:type :invoke
+                                     :f :write
+                                     :value (rand-int 50)
+                                     :durability-level (util/random-durability-level opts)})])
                                 (gen/limit 20)
                                 (gen/stagger (/ rate)))))
                        (gen/nemesis (gen/seq [(gen/sleep 15)
@@ -458,7 +481,10 @@
       autofailover-maxcount (opts :autofailover-maxcount 3)
       disrupt-count         (opts :disrupt-count 1)
       disrupt-time          (opts :disrupt-time 30)
-      should-autofailover   (and autofailover (= disrupt-count 1) (> disrupt-time autofailover-timeout) (>= (count (:nodes opts)) 3))
+      should-autofailover   (and autofailover
+                                 (= disrupt-count 1)
+                                 (> disrupt-time autofailover-timeout)
+                                 (>= (count (:nodes opts)) 3))
       client                (clients/set-client dcpclient)
       nemesis               (cbnemesis/couchbase)
       checker               (checker/compose
@@ -472,79 +498,77 @@
                                     :value x
                                     :durability-level (util/random-durability-level opts)}))
                       (gen/seq))
-      generator             (gen/phases
-                              (case scenario
-                                :kill-memcached
-                                (do-n-nemesis-cycles cycles
-                                                     [(gen/sleep 10)
-                                                      {:type :info
-                                                       :f    :kill-process
-                                                       :f-opts {:process :memcached}
-                                                       :targeter-opts {:type :random-subset
-                                                                       :count disrupt-count
-                                                                       :condition {:cluster [:active]
-                                                                                   :network [:connected]
-                                                                                   :node [:running]}}}
-                                                      (gen/sleep 20)] client-gen)
+      generator  (gen/phases
+                  (case scenario
+                    :kill-memcached
+                    (do-n-nemesis-cycles cycles
+                                         [(gen/sleep 10)
+                                          {:type :info
+                                           :f    :kill-process
+                                           :f-opts {:process :memcached}
+                                           :targeter-opts {:type :random-subset
+                                                           :count disrupt-count
+                                                           :condition {:cluster [:active]
+                                                                       :network [:connected]
+                                                                       :node [:running]}}}
+                                          (gen/sleep 20)]
+                                         client-gen)
 
-                                :kill-ns-server
-                                (do-n-nemesis-cycles cycles
-                                                     [(gen/sleep 10)
-                                                      {:type :info
-                                                       :f    :kill-process
-                                                       :f-opts {:process :ns-server}
-                                                       :targeter-opts {:type :random-subset
-                                                                       :count disrupt-count
-                                                                       :condition {:cluster [:active]
-                                                                                   :network [:connected]
-                                                                                   :node [:running]}}}
-                                                      (gen/sleep 20)] client-gen)
+                    :kill-ns-server
+                    (do-n-nemesis-cycles cycles
+                                         [(gen/sleep 10)
+                                          {:type :info
+                                           :f    :kill-process
+                                           :f-opts {:process :ns-server}
+                                           :targeter-opts {:type :random-subset
+                                                           :count disrupt-count
+                                                           :condition {:cluster [:active]
+                                                                       :network [:connected]
+                                                                       :node [:running]}}}
+                                          (gen/sleep 20)]
+                                         client-gen)
 
-                                :kill-babysitter
-                                (do-n-nemesis-cycles cycles
-                                                     [(gen/sleep 5)
-                                                      {:type :info
-                                                       :f    :kill-process
-                                                       :f-opts {:process :babysitter}
-                                                       :targeter-opts {:type :random-subset
-                                                                       :count disrupt-count
-                                                                       :condition {:cluster [:active]
-                                                                                   :network [:connected]
-                                                                                   :node [:running]}}}
-                                                      (if should-autofailover
-                                                        [{:type :info
-                                                          :f    :wait-for-autofailover
-                                                          :targeter-opts {:type      :random
-                                                                          :condition {:cluster [:active]
-                                                                                      :network [:connected]
-                                                                                      :node [:running]}}}
-                                                         (gen/sleep (- disrupt-time autofailover-timeout))]
-                                                        (gen/sleep disrupt-time))
+                    :kill-babysitter
+                    (do-n-nemesis-cycles cycles
+                                         [(gen/sleep 5)
+                                          {:type :info
+                                           :f    :kill-process
+                                           :f-opts {:process :babysitter}
+                                           :targeter-opts {:type :random-subset
+                                                           :count disrupt-count
+                                                           :condition {:cluster [:active]
+                                                                       :network [:connected]
+                                                                       :node [:running]}}}
+                                          (if should-autofailover
+                                            [{:type :info
+                                              :f    :wait-for-autofailover
+                                              :targeter-opts {:type      :random
+                                                              :condition {:cluster [:active]
+                                                                          :network [:connected]
+                                                                          :node [:running]}}}
+                                             (gen/sleep (- disrupt-time autofailover-timeout))]
+                                            (gen/sleep disrupt-time))
 
-                                                      {:type :info
-                                                       :f    :start-process
-                                                       :f-opts {:process :couchbase-server}
-                                                       :targeter-opts {:type      :all
-                                                                       :condition {:cluster [:inactive :failed]
-                                                                                   :network [:connected]
-                                                                                   :node [:killed]}}}
-                                                      (gen/sleep 5)
-                                                      (if should-autofailover
-                                                        [{:type   :info
-                                                          :f      :recover
-                                                          :f-opts {:recovery-type recovery-type}
-                                                          :targeter-opts {:type      :all
-                                                                          :condition {:cluster [:failed]
-                                                                                      :network [:connected]
-                                                                                      :node [:running]}}}
-                                                         (gen/sleep 5)]
-                                                        [])
-                                                      ] client-gen)
-                                )
-                             (gen/clients (gen/once {:type :invoke :f :read :value nil})))
-
-
-      ))
+                                          {:type :info
+                                           :f    :start-process
+                                           :f-opts {:process :couchbase-server}
+                                           :targeter-opts {:type      :all
+                                                           :condition {:cluster [:inactive :failed]
+                                                                       :network [:connected]
+                                                                       :node [:killed]}}}
+                                          (gen/sleep 5)
+                                          (if should-autofailover
+                                            [{:type   :info
+                                              :f      :recover
+                                              :f-opts {:recovery-type recovery-type}
+                                              :targeter-opts {:type      :all
+                                                              :condition {:cluster [:failed]
+                                                                          :network [:connected]
+                                                                          :node [:running]}}}
+                                             (gen/sleep 5)]
+                                            [])]
+                                         client-gen))
+                 (gen/clients (gen/once {:type :invoke :f :read :value nil})))))
 
 (defn WhiteRabbit-workload
   "Trigger lost inserts due to one of several white-rabbit variants"
@@ -571,10 +595,11 @@
                                 {:perf (checker/perf)})))
       generator             (gen/phases
                              (->> (range)
-                                  (map (fn [x] {:type :invoke
-                                                :f :add
-                                                :value x
-                                                :durability-level (util/random-durability-level opts)}))
+                                  (map (fn [x]
+                                         {:type :invoke
+                                          :f :add
+                                          :value x
+                                          :durability-level (util/random-durability-level opts)}))
                                   (gen/seq)
                                   (do-n-nemesis-cycles cycles
                                                        [(gen/sleep 5)
@@ -608,8 +633,8 @@
       replicas      (opts :replicas 0)
       replicate-to  (opts :replicate-to 0)
       autofailover  (opts :autofailover true)
-      autofailover-timeout     (opts :autofailover-timeout 6)
-      autofailover-maxcount    (opts :autofailover-maxcount 3)
+      autofailover-timeout (opts :autofailover-timeout 6)
+      autofailover-maxcount (opts :autofailover-maxcount 3)
 
       dcpclient     (cbclients/dcp-client)
       client        (clients/set-client dcpclient)
@@ -648,7 +673,8 @@
                           (gen/seq)
                           (gen/clients))
                      (gen/once
-                      (fn [] (info "DCP Mutations received thus far:" (count @(:store dcpclient))) nil))
+                      (fn [] (info "DCP Mutations received thus far:"
+                                   (count @(:store dcpclient)))))
                      ;; Wait for the cluster to settle before issuing final read
                      (gen/sleep 3)
                      (gen/clients (gen/once {:type :invoke :f :read :value :nil})))))
@@ -671,10 +697,10 @@
       autofailover  (opts :autofailover true)
       autofailover-timeout (opts :autofailover-timeout 6)
       autofailover-maxcount (opts :autofailover-maxcount 3)
-      nemesis       (nemesis/compose {{:slow-dcp-client :slow-dcp-client
-                                       :reset-dcp-client :reset-dcp-client
-                                       :trigger-compaction :trigger-compaction} (cbnemesis/couchbase)
-                                      {:bump-time :bump}          (nt/clock-nemesis)})
+      nemesis       (nemesis/compose {#{:slow-dcp-client
+                                        :reset-dcp-client
+                                        :trigger-compaction} (cbnemesis/couchbase)
+                                      {:bump-time :bump}     (nt/clock-nemesis)})
       checker       (checker/compose
                      (merge
                       {:set (cbchecker/extended-set-checker)}
