@@ -224,7 +224,7 @@
                                             {:type :info :f :recover}
                                             (gen/sleep 5)]))))
 
-(defn Rebalance-workload
+(defn rebalance-workload
   "Rebalance scenarios:
   Sequential Rebalance In/Out - rebalance out a single node at a time until disrupt-count nodes have
                                 been rebalanced out. This is followed by the opposite - rebalance
@@ -359,7 +359,7 @@
                                              {:type :info :f :start :count disrupt-count}
                                              (gen/sleep 5)]))))
 
-(defn Failover-workload
+(defn failover-workload
   "Failover and recover"
   [opts]
   (with-register-base opts
