@@ -85,31 +85,6 @@
                  (assoc op :value :ok))))
     (teardown! [this test])))
 
-(defn slow-dcp [DcpClient]
-  (reify nemesis/Nemesis
-    (setup! [this test] this)
-    (invoke! [this test op]
-      (case (:f op)
-        :start (do
-                 (reset! (:slow DcpClient) true)
-                 (assoc op :type :info))
-        :stop  (do
-                 (reset! (:slow DcpClient) false)
-                 (assoc op :type :info))))
-    (teardown! [this test]
-      (reset! (:slow DcpClient) false))))
-
-(defn trigger-compaction []
-  (reify nemesis/Nemesis
-    (setup! [this test] this)
-    (invoke! [this test op]
-      (assert (= (:f op) :compact))
-      (util/rest-call (rand-nth (test :nodes))
-                      "/pools/default/buckets/default/controller/compactBucket"
-                      "")
-      op)
-    (teardown! [this test])))
-
 (defn disk-failure
   "Simulate a disk failure on the data path.
 
@@ -190,8 +165,7 @@
           :random (take 1 (shuffle filtered-nodes))
           :random-subset (take (:count targeter-opts) (shuffle filtered-nodes))
           :all filtered-nodes)]
-    (vec target-seq))
-  )
+    (vec target-seq)))
 
 (defn get-targets
   "This function takes in an atom representing node states and a targeter-opts map. The function will first
@@ -200,9 +174,7 @@
   [node-states targeter-opts]
   (let [filtered-nodes (filter-nodes node-states targeter-opts)
         target-nodes (apply-targeter filtered-nodes targeter-opts)]
-    target-nodes
-    )
-  )
+    target-nodes))
 
 (defn create-grudge
   "This function will create a partition grudge to be based to Jepsen. Partitions look like [(n1) (n2 n3) (n4)].
@@ -213,9 +185,7 @@
     (let [complement-nodes (seq (set/difference (set all-nodes) (set target-nodes)))
           partitions (conj (partition 1 target-nodes) complement-nodes)
           grudge (nemesis/complete-grudge partitions)]
-      grudge)
-    )
-  )
+      grudge)))
 
 (defn update-node-state
   "This function takes in a atom of node states, a target node, a map of state keys with a single value to update
@@ -456,6 +426,7 @@
               (reset! (:slow dcpclient) true)
               (info "cluster state: " @node-states)
               (assoc op :type :info))
+
             :reset-dcp-client
             (let [dcpclient (:dcpclient (:client test))]
               (reset! (:slow dcpclient) false)
