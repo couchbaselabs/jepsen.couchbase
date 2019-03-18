@@ -81,13 +81,12 @@
                  (c/on-many (->> test :nodes shuffle (take count))
                             (c/su (c/exec :pkill :-9 :memcached)))
                  ;; Wait for rebalance to quit, swallowing rebalance failure
-                 (try @rebalance (catch Exception e))
+                 (try @rebalance (catch Exception e (warn "Rebalance failed")))
                  (assoc op :value :ok))))
     (teardown! [this test])))
 
 (defn disk-failure
   "Simulate a disk failure on the data path.
-
   This nemesis will not work correctly with docker containers"
   []
   (reify nemesis/Nemesis
@@ -254,8 +253,7 @@
                       "failover count must be less than total active and inactive nodes")
               (doseq [target target-nodes]
                 (util/rest-call call-node endpoint (str "otpNode=ns_1@" target))
-                (if (= failover-type :graceful)
-                  (util/wait-for #(util/rest-call call-node "/pools/default/rebalanceProgress" nil) "{\"status\":\"none\"}"))
+                (if (= failover-type :graceful) (util/wait-for-rebalance-complete call-node))
                 (update-node-state node-states target {:cluster :failed}))
               (info "cluster state: " @node-states)
               (assoc op :value :failover-complete))

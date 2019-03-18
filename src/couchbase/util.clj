@@ -79,10 +79,32 @@
 (defn get-rebalance-status
   [target]
   (let [rebalance-info (rest-call target "/pools/default/rebalanceProgress" nil)
-        rebalance-info-map (parse-string rebalance-info true)
-        rebalance-status (:status rebalance-info-map)]
-    rebalance-status))
+        rebalance-info-map (parse-string rebalance-info true)]
+    rebalance-info-map))
 
+(defn wait-for-rebalance-complete
+  ([rest-target] (wait-for-rebalance-complete rest-target 600))
+  ([rest-target retries] (wait-for-rebalance-complete rest-target 600 60))
+  ([rest-target retries max-stuck]
+   (loop [status-map {}
+          retry-count 0
+          stuck-count 0]
+     (info "Rebalance status:" status-map)
+     (info "Rebalance check count:" retry-count)
+     (info "Rebalance stuck count:" stuck-count)
+     (when (:errorMessage status-map)
+       (info "Rebalance failed")
+       (throw (RuntimeException. "Rebalance failed")))
+     ; check if rebalance stuck
+     (when (>= stuck-count max-stuck)
+       (info "Rebalance stuck")
+       (throw (RuntimeException. "Rebalance stuck")))
+     (when (not= (:status status-map) "none")
+       (Thread/sleep 1000)
+       (let [new-status-map (get-rebalance-status rest-target)]
+         (recur new-status-map
+                (+ retry-count 1)
+                (if (= status-map new-status-map) (+ stuck-count 1) stuck-count)))))))
 
 (defn rebalance
   "Inititate a rebalance with the given parameters"
@@ -101,14 +123,8 @@
      (if eject-nodes
        (info "Rebalancing nodes" eject-nodes "out of cluster"))
      (rest-call rest-target "/controller/rebalance" params)
-     (loop [status ""]
-       (when (not= status "{\"status\":\"none\"}")
-         (info "Rebalance status:" status)
-         (if (re-find #"Rebalance failed" status)
-           (throw (RuntimeException. "Rebalance failed")))
-         (Thread/sleep 1000)
-         (recur (rest-call rest-target "/pools/default/rebalanceProgress" nil))))
-       (info "Rebalance complete"))))
+     (wait-for-rebalance-complete rest-target)
+     (info "Rebalance complete"))))
 
 (defn create-bucket
   "Create the default bucket"

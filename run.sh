@@ -133,6 +133,24 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
         printf "Test passed!\n"
         pass=$(($pass+1))
     fi
+
+    total=$(($pass+$fail+$crash))
+    percent=`echo  "scale=2; $pass*100/$total" | bc`
+    echo "###### Current Test Report #########"
+    echo "pass: $pass"
+    echo "fail: $fail"
+    echo "crash: $crash"
+    echo "$pass/$total = $percent%"
+    if [ "$fail" -gt 0 ];then
+        echo "###### Failed Tests #########"
+        printf '%s\n' "${fail_array[@]}"
+    fi
+    if [ "$crash" -gt 0 ];then
+        echo "###### Crashed Tests ########"
+        printf '%s\n' "${crash_array[@]}"
+    fi
+    echo "############################"
+
     test_num=$(($test_num+1))
 done < "$SUITE"
 echo "################################################################"
@@ -140,7 +158,7 @@ echo "################################################################"
 total=$(($pass+$fail+$crash))
 percent=`echo  "scale=2; $pass*100/$total" | bc`
 echo "Jepsen tests complete!"
-echo "###### Test Report #########"
+echo "###### Final Test Report #########"
 echo "pass: $pass"
 echo "fail: $fail"
 echo "crash: $crash"
