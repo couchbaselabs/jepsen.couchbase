@@ -6,6 +6,15 @@
             [jepsen.util :as util]
             [knossos.op :as op]))
 
+(defn check-aborted
+  "If the control atom is :aborted return validity unknown."
+  [control-atom]
+  (reify checker/Checker
+    (check [this test model history opts]
+      (if (= @control-atom :abort)
+        {:valid? :unknown :error "Test aborted!"}
+        {:valid? true}))))
+
 (defn extended-set-checker
   "Checker for operations over a set. A given key must have exactly one add
   operation, followed at most one delete. Cases involving multiple deletes,
