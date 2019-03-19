@@ -48,9 +48,12 @@
 
 (defn initialise
   "Initialise a new cluster"
-  []
-  (let [data-path  "%2Fopt%2Fcouchbase%2Fvar%2Flib%2Fcouchbase%2Fdata"
-        index-path "%2Fopt%2Fcouchbase%2Fvar%2Flib%2Fcouchbase%2Fdata"
+  [test]
+  (let [base-path  (:install-path test)
+        data-path  (-> (str base-path "/var/lib/couchbase/data")
+                       (str/replace "/" "%2F"))
+        index-path (-> (str base-path "/var/lib/couchbase/data")
+                       (str/replace "/" "%2F"))
         params     (format "data_path=%s&index_path=%s" data-path index-path)]
     (rest-call "/nodes/self/controller/settings" params)
     (rest-call "/node/controller/setupServices" "services=kv")
@@ -239,7 +242,7 @@
   (let [nodes (test :nodes)
         other-nodes (remove #(= node %) nodes)
         num-replicas (test :replicas)]
-    (initialise)
+    (initialise test)
     (add-nodes other-nodes)
     (set-vbucket-count test)
     (rebalance nodes)
