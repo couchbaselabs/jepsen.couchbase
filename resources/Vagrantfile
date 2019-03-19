@@ -1,7 +1,11 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
 
-count = ENV['NODES'].to_i || 1
+unless ENV['NODES'].nil? || ENV['NODES'] == 0
+  count = ENV['NODES'].to_i
+else
+  count = 5
+end
 
 Vagrant.configure("2") do |config|
   config.vm.box = "generic/ubuntu1604"
