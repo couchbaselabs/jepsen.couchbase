@@ -91,7 +91,7 @@
   []
   (reify nemesis/Nemesis
     (setup! [this test]
-      (let [path        (or (->> test :package :path) "/opt/couchbase")
+      (let [path        (:install-path test)
             server-path (str path "/bin/couchbase-server")
             data-path   (str path "/var/lib/couchbase/data")]
         (c/with-test-nodes test
@@ -401,7 +401,7 @@
             (let [process (:process f-opts)]
               (case process
                 :couchbase-server
-                (let [path (or (:path (:package test)) "/opt/couchbase")]
+                (let [path (:install-path test)]
                   (c/on-many
                     target-nodes
                     (c/ssh* {:cmd (str "nohup " path "/bin/couchbase-server -- -noinput >> /dev/null 2>&1 &")})

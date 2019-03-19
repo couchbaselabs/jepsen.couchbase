@@ -73,6 +73,9 @@
   [[nil "--package URL-OR-FILENAME"
     "Install this couchbase package, use preinstalled version if not given"
     :parse-fn util/get-package]
+   [nil "--install-path PATH"
+    "The path of the couchbase install on the nodes"
+    :default-fn (fn [opts] (or (-> opts :package :path) "/opt/couchbase"))]
    [nil "--workload WORKLOAD"
     "The workload to run"]
    [nil "--oplimit LIMIT"

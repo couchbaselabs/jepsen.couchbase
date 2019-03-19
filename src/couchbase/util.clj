@@ -302,7 +302,7 @@
   [test]
   (info "Setting up couchbase")
   (let [package (:package test)
-        path (or (:path package) "/opt/couchbase")]
+        path (:install-path test)]
     (c/su (c/exec :mkdir :-p (str path "/var/lib/couchbase")))
     (c/su (c/exec :chmod :a+rwx (str path "/var/lib/couchbase")))
     (if package
@@ -316,20 +316,18 @@
   [test]
   (if (and (test :skip-teardown) (deref (test :db-intialized)))
     (info "Skipping teardown of couchbase node")
-    (do
+    (let [path (:install-path test)]
       (info "Tearing down couchbase node")
       (try
         (c/su (c/exec :systemctl :stop :couchbase-server))
         (catch RuntimeException e))
       (try
-        (let [path (or (:path (:package test))
-                       "/opt/couchbase")]
-          (c/su (c/exec (str path "/bin/couchbase-server") :-k)))
+        (c/su (c/exec (str path "/bin/couchbase-server") :-k))
         (catch RuntimeException e))
-      (c/su (c/exec :rm :-rf "/opt/couchbase/var/lib/couchbase"))
-      (net/heal! (:net test) test)
-      )
-    )
+      (try
+        (c/su (c/exec :rm :-rf (str path "/var/lib/couchbase")))
+        (catch RuntimeException e))
+      (net/heal! (:net test) test)))
   (info "Teardown Complete"))
 
 (defn get-version
@@ -378,8 +376,7 @@
 (defn get-logs
   "Get a vector of log file paths"
   [test]
-  (let [install-dir (or (:path (test :package))
-                        "/opt/couchbase")]
+  (let [install-dir (:install-path test)]
     (when (test :get-cbcollect)
       (info "Generating cbcollect...")
       (c/su (c/exec (str install-dir "/bin/cbcollect_info")
@@ -396,7 +393,7 @@
           :echo :>> (str install-dir "/var/lib/couchbase/logs/hashdump.txt") (c/lit ";")
           :done)))
 
-    (c/su (c/exec :chmod :-R :a+rx "/opt/couchbase"))
+    (c/su (c/exec :chmod :-R :a+rx (str install-dir "/var/lib/couchbase")))
     (try
       (->> (c/exec :ls (str install-dir "/var/lib/couchbase/logs"))
            (str/split-lines)
