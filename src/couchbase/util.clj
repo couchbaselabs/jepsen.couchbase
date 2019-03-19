@@ -303,10 +303,10 @@
   (info "Setting up couchbase")
   (let [package (:package test)
         path (:install-path test)]
-    (c/su (c/exec :mkdir :-p (str path "/var/lib/couchbase")))
-    (c/su (c/exec :chmod :a+rwx (str path "/var/lib/couchbase")))
     (if package
       (install-package package))
+    (c/su (c/exec :mkdir :-p (str path "/var/lib/couchbase")))
+    (c/su (c/exec :chmod :-R :a+rwx (str path "/var/lib/couchbase")))
     (info "Starting daemon")
     (c/ssh* {:cmd (str "nohup " path "/bin/couchbase-server -- -noinput >> /dev/null 2>&1 &")}))
   (wait-for-daemon))
