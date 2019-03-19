@@ -87,6 +87,12 @@
          rclient-gen  (while-atom-true. control-atom client-gen)]
      (gen/nemesis nemesis-gen rclient-gen))))
 
+(defn rate-limit
+  [rate g]
+  (if (not= 0 rate)
+    (gen/stagger (/ rate) g)
+    g))
+
 ;; ==================
 ;; Register workloads
 ;; ==================
@@ -112,7 +118,7 @@
                                     :f :cas
                                     :value [(rand-int 50) (rand-int 50)]
                                     :durability-level (util/random-durability-level opts)})])
-                              (gen/stagger (/ rate)))))
+                              (rate-limit rate))))
     generator (do-n-nemesis-cycles cycles [(gen/sleep 20)] client-generator)))
 
 (defn partition-workload
@@ -156,7 +162,7 @@
                                     :f :cas
                                     :value [(rand-int 50) (rand-int 50)]
                                     :durability-level (util/random-durability-level opts)})])
-                              (gen/stagger (/ rate)))))
+                              (rate-limit rate))))
 
     generator       (do-n-nemesis-cycles
                       cycles
@@ -240,7 +246,7 @@
                               :f :cas
                               :value [(rand-int 50) (rand-int 50)]
                               :durability-level (util/random-durability-level opts)})])
-                        (gen/stagger (/ rate)))))
+                        (rate-limit rate))))
     generator     (case scenario
                     :sequential-rebalance-out-in
                     (do-n-nemesis-cycles
@@ -336,7 +342,7 @@
                                     :f :cas
                                     :value [(rand-int 50) (rand-int 50)]
                                     :durability-level (util/random-durability-level opts)})])
-                              (gen/stagger (/ rate)))))
+                              (rate-limit rate))))
     generator (do-n-nemesis-cycles cycles
                                    [(gen/sleep 5)
                                     {:type :info
@@ -389,7 +395,7 @@
                                     :f :cas
                                     :value [(rand-int 50) (rand-int 50)]
                                     :durability-level (util/random-durability-level opts)})])
-                              (gen/stagger (/ rate)))))
+                              (rate-limit rate))))
     generator  (gen/phases
                  (case scenario
                    :kill-memcached
@@ -484,7 +490,7 @@
                                     :f :cas
                                     :value [(rand-int 50) (rand-int 50)]
                                     :durability-level (util/random-durability-level opts)})])
-                              (gen/stagger (/ rate)))))
+                              (rate-limit rate))))
     generator     (gen/nemesis
                     (gen/seq [(gen/sleep 10)
                               {:type :info :f :start :count disrupt-count}
@@ -514,7 +520,7 @@
                                     :f :cas
                                     :value [(rand-int 50) (rand-int 50)]
                                     :durability-level (util/random-durability-level opts)})])
-                              (gen/stagger (/ rate)))))
+                              (rate-limit rate))))
     generator (do-n-nemesis-cycles cycles
                                    [(gen/sleep 10)
                                     {:type :info :f :start-partition}
@@ -549,7 +555,7 @@
                                     :f :cas
                                     :value [(rand-int 50) (rand-int 50)]
                                     :durability-level (util/random-durability-level opts)})])
-                              (gen/stagger (/ rate)))))
+                              (rate-limit rate))))
     generator (do-n-nemesis-cycles cycles
                                    [(gen/sleep 5)
                                     {:type :info :f :start :count disrupt-count}

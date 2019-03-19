@@ -95,9 +95,9 @@
     "Replicate-to value"
     :parse-fn parse-int]
    [nil "--rate RATE"
-    "Rate of operations"
+    "Rate of operations. A rate of 0 disables rate limiting"
     :parse-fn read-string
-    :validate [#(and (number? %) (pos? %)) "Must be a number"]]
+    :validate [#(and (number? %) (not (neg? %))) "Must be a non-negative number"]]
    [nil "--[no-]autofailover"
     "Enable autofailover?"]
    [nil "--[no-]server-group-autofailover"
