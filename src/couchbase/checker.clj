@@ -6,14 +6,19 @@
             [jepsen.util :as util]
             [knossos.op :as op]))
 
-(defn check-aborted
-  "If the control atom is :aborted return validity unknown."
+(defn sanity-check
+  "Return unknown validity if the test is broken."
   [control-atom]
   (reify checker/Checker
     (check [this test model history opts]
-      (if (= @control-atom :abort)
-        {:valid? :unknown :error "Test aborted!"}
-        {:valid? true}))))
+      (let [reads   (->> history (filter #(and (= (:f %) :read) (= (:type %) :invoke))) (count))
+            okreads (->> history (filter #(and (= (:f %) :read) (= (:type %) :ok))) (count))
+            allfail (> (* 0.01 reads) okreads)
+            aborted (= @control-atom :abort)]
+        (cond
+          aborted {:valid? :unknown :error "Test aborted"}
+          allfail {:valid? :unknown :error "(Almost?) all read ops failed"}
+          :else   {:valid? true})))))
 
 (defn extended-set-checker
   "Checker for operations over a set. A given key must have exactly one add

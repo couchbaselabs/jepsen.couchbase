@@ -53,7 +53,7 @@
                                (checker/compose
                                 {:timeline (timeline/html)
                                  :linear (checker/linearizable)}))
-                       :aborted (cbchecker/check-aborted ~'control-atom)}
+                       :sanity (cbchecker/sanity-check ~'control-atom)}
                       (if (~opts :perf-graphs)
                         {:perf (checker/perf)})))
         ~@more)))
@@ -593,7 +593,7 @@
       checker       (checker/compose
                       (merge
                        {:set (checker/set)
-                        :aborted (cbchecker/check-aborted control-atom)}
+                        :sanity (cbchecker/sanity-check control-atom)}
                         (if (opts :perf-graphs)
                           {:perf (checker/perf)})))
       generator     (gen/phases
@@ -638,7 +638,7 @@
       checker               (checker/compose
                              (merge
                               {:set (checker/set)
-                               :aborted (cbchecker/check-aborted control-atom)}
+                               :sanity (cbchecker/sanity-check control-atom)}
                               (if (opts :perf-graphs)
                                 {:perf (checker/perf)})))
       client-gen (->> (range)
@@ -741,7 +741,7 @@
       checker               (checker/compose
                              (merge
                               {:set (checker/set)
-                               :aborted (cbchecker/check-aborted control-atom)}
+                               :sanity (cbchecker/sanity-check control-atom)}
                               (if (opts :perf-graphs)
                                 {:perf (checker/perf)})))
       generator             (gen/phases
