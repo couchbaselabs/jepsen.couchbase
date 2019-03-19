@@ -51,6 +51,14 @@ if [ "$PROVISIONER" != "vagrant" -a "$PROVISIONER" != "docker" -a "$PROVISIONER"
     echo "Provisioner must be either docker or vagrant, got $PROVISIONER"
 fi
 
+case $PACKAGE in
+    *.rpm)
+	ISBUILD=0 ;;
+    *.deb)
+	ISBUILD=0 ;;
+    *)
+	ISBUILD=1 ;;
+esac
 
 vagrantBaseCommand="lein trampoline run test"
 vagrantParams="--nodes-file ./nodes --username vagrant --ssh-private-key ./resources/vagrantkey"
@@ -150,6 +158,12 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
         printf '%s\n' "${crash_array[@]}"
     fi
     echo "############################"
+    
+    if [ "$ISBUILD" = 1 ]; then
+	packageParam="--install-path $PACKAGE";
+    else
+	packageParam="";
+    fi
 
     test_num=$(($test_num+1))
 done < "$SUITE"
