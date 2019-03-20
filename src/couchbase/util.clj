@@ -272,12 +272,15 @@
                  (throw (Exception. "removed server")))
                (catch Exception e
                  (let [root-files (c/su (c/exec :ls "/root"))]
-                   (if (not (str/includes? root-files package-name))
-                     (c/su (c/upload (:package package) package-name)))
-                   (c/su (c/exec :yum :install :-y (str "/root/" package-name)))
-                   (c/su (c/exec :mv (str "/root/" package-name) "/tmp/"))
-                   (c/su (c/exec :rm :-rf "/root/*"))
-                   (c/su (c/exec :mv (str "/tmp/" package-name) "/root/")))))))
+                   (when (not (str/includes? root-files package-name))
+                     (c/su (c/upload (:package package) package-name))))
+                 (try
+                   (c/su (c/exec :mv (str "/home/vagrant/" package-name) "/root/"))
+                   (catch Exception e (info "no package to move from /home/vagrant to /root")))
+                 (c/su (c/exec :yum :install :-y (str "/root/" package-name)))
+                 (c/su (c/exec :mv (str "/root/" package-name) "/tmp/"))
+                 (c/su (c/exec :rm :-rf "/root/*"))
+                 (c/su (c/exec :mv (str "/tmp/" package-name) "/root/"))))))
     :deb (do
            (c/su (c/upload (:package package) "couchbase.deb"))
            (c/su (c/exec :apt :install :-y "~/couchbase.deb"))
@@ -306,8 +309,10 @@
   (info "Setting up couchbase")
   (let [package (:package test)
         path (:install-path test)]
-    (if package
-      (install-package package))
+    (when package
+      (info "Installing package")
+      (install-package package)
+      (info "Package installed"))
     (c/su (c/exec :mkdir :-p (str path "/var/lib/couchbase")))
     (c/su (c/exec :chmod :-R :a+rwx (str path "/var/lib/couchbase")))
     (info "Starting daemon")

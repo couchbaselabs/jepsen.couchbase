@@ -1,6 +1,7 @@
 /nodes*
 /store
 /resources/.vagrant
+/resources/Vagrantfile
 /resources/docker/docker-compose.yml
 /resources/docker/control/jepsen
 
@@ -13,3 +14,7 @@ pom.xml.asc
 *.class
 /.lein-*
 /.nrepl-port
+.DS_Store
+.idea/
+couchbase.iml
+couchbase-server*.*

@@ -25,6 +25,9 @@ case $i in
     --nodes=*)
     NODES="${i#*=}"
     ;;
+    --vm-os=*)
+    VM_OS="${i#*=}"
+    ;;
     -h|--help)
       print_usage
       exit 0
@@ -51,12 +54,40 @@ case "$TYPE" in
         export VAGRANT_CWD=./resources
         case "$ACTION" in
             "create")
+                if [[ NODES -eq 0 ]]; then
+                    echo "--nodes must be greater than 0"
+                fi
+
+                if [ -z "$VM_OS" ]; then
+                    echo "--vm-os not provided, defaulting to ubuntu1604"
+                    VM_OS="ubuntu1604"
+                else
+                    case "$VM_OS" in
+                    "ubuntu1604")
+                    VM_OS="ubuntu1604"
+                    ;;
+                    "centos7")
+                    VM_OS="centos7"
+                    ;;
+                    *)
+                    echo "--vm-os choice not recognized, exiting"
+                    exit 1
+                    ;;
+                    esac
+
+                fi
                 # create will ensure that the number of nodes requested is the number of nodes present
                 # and will extract ips into nodes file
                 currentNodes=0
                 if [ -d "./resources/.vagrant/machines/" ]; then
                   currentNodes=$(ls -1U ./resources/.vagrant/machines/ | wc -l)
                 fi
+
+                if [[ currentNodes -eq 0 ]]; then
+                    cp ./resources/vagrant/${VM_OS} ./resources/Vagrantfile
+                fi
+
+
                 if [[ NODES -ge currentNodes ]]; then
                     NODES=$NODES vagrant up
                 else
@@ -64,15 +95,25 @@ case "$TYPE" in
                     do
                         NODES=${i} vagrant destroy node${i} --force && rm -rf ./resources/.vagrant/machines/node${i}
                     done
-		    NODES=$NODES vagrant up
+		            NODES=$NODES vagrant up
                 fi
                 for (( i=1; i<=$(ls -1U ./resources/.vagrant/machines/ | wc -l); i++ ))
                 do
-                    if [[ i -eq 1 ]]; then
-                        NODES=$(ls -1U ./resources/.vagrant/machines/ | wc -l) vagrant ssh node${i} -c "ifconfig eth1" | grep -o -E "inet addr:[0-9]+(\.[0-9]+){3}" | cut -d ":" -f 2- >  ./nodes
-                    else
-                        NODES=$(ls -1U ./resources/.vagrant/machines/ | wc -l) vagrant ssh node${i} -c "ifconfig eth1" | grep -o -E "inet addr:[0-9]+(\.[0-9]+){3}" | cut -d ":" -f 2- >>  ./nodes
+                    if [ "$VM_OS" = "ubuntu1604" ]; then
+                        if [[ i -eq 1 ]]; then
+                            NODES=$(ls -1U ./resources/.vagrant/machines/ | wc -l) vagrant ssh node${i} -c "ifconfig eth1" | grep -o -E "inet addr:[0-9]+(\.[0-9]+){3}" | cut -d ":" -f 2- >  ./nodes
+                        else
+                            NODES=$(ls -1U ./resources/.vagrant/machines/ | wc -l) vagrant ssh node${i} -c "ifconfig eth1" | grep -o -E "inet addr:[0-9]+(\.[0-9]+){3}" | cut -d ":" -f 2- >>  ./nodes
+                        fi
                     fi
+                    if [ "$VM_OS" = "centos7" ]; then
+                        if [[ i -eq 1 ]]; then
+                            NODES=$(ls -1U ./resources/.vagrant/machines/ | wc -l) vagrant ssh node${i} -c "ifconfig eth1" | grep -o -E "inet [0-9]+(\.[0-9]+){3}" | cut -d " " -f 2- >  ./nodes
+                        else
+                            NODES=$(ls -1U ./resources/.vagrant/machines/ | wc -l) vagrant ssh node${i} -c "ifconfig eth1" | grep -o -E "inet [0-9]+(\.[0-9]+){3}" | cut -d " " -f 2- >>  ./nodes
+                        fi
+                    fi
+
                 done
                 ;;
             "halt-all")
@@ -82,13 +123,29 @@ case "$TYPE" in
                 # resume-all will start all stopped vagrants in ./resources/.vagrant/machines and
                 # extract the ips into the nodes file
                 NODES=$(ls -1U ./resources/.vagrant/machines/ | wc -l) vagrant up
+
+                is_ubuntu1604=$(grep "ubuntu1604" ./resources/Vagrantfile)
+                is_centos7=$(grep "centos7" ./resources/Vagrantfile)
+
                 for (( i=1; i<=$(ls -1U ./resources/.vagrant/machines/ | wc -l); i++ ))
                 do
-                    if [[ i -eq 1 ]]; then
-                        NODES=$(ls -1U ./resources/.vagrant/machines/ | wc -l) vagrant ssh node${i} -c "ifconfig eth1" | grep -o -E "inet addr:[0-9]+(\.[0-9]+){3}" | cut -d ":" -f 2- >  ./nodes
-                    else
-                        NODES=$(ls -1U ./resources/.vagrant/machines/ | wc -l) vagrant ssh node${i} -c "ifconfig eth1" | grep -o -E "inet addr:[0-9]+(\.[0-9]+){3}" | cut -d ":" -f 2- >>  ./nodes
+
+                    if [ "$is_ubuntu1604" ]; then
+                        if [[ i -eq 1 ]]; then
+                            NODES=$(ls -1U ./resources/.vagrant/machines/ | wc -l) vagrant ssh node${i} -c "ifconfig eth1" | grep -o -E "inet addr:[0-9]+(\.[0-9]+){3}" | cut -d ":" -f 2- >  ./nodes
+                        else
+                            NODES=$(ls -1U ./resources/.vagrant/machines/ | wc -l) vagrant ssh node${i} -c "ifconfig eth1" | grep -o -E "inet addr:[0-9]+(\.[0-9]+){3}" | cut -d ":" -f 2- >>  ./nodes
+                        fi
                     fi
+
+                    if [ "$is_centos7" ]; then
+                        if [[ i -eq 1 ]]; then
+                            NODES=$(ls -1U ./resources/.vagrant/machines/ | wc -l) vagrant ssh node${i} -c "ifconfig eth1" | grep -o -E "inet [0-9]+(\.[0-9]+){3}" | cut -d " " -f 2- >  ./nodes
+                        else
+                            NODES=$(ls -1U ./resources/.vagrant/machines/ | wc -l) vagrant ssh node${i} -c "ifconfig eth1" | grep -o -E "inet [0-9]+(\.[0-9]+){3}" | cut -d " " -f 2- >>  ./nodes
+                        fi
+                    fi
+
                 done
                 ;;
             "destroy-all")
