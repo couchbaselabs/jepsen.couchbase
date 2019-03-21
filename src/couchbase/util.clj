@@ -349,27 +349,32 @@
 (defn teardown
   "Stop the couchbase server instances and delete the data files"
   [test]
-  (if (and (test :skip-teardown) (deref (test :db-intialized)))
-    (info "Skipping teardown of couchbase node")
-    (let [path (:install-path test)]
-      (info "Tearing down couchbase node")
-      (try
-        (c/su (c/exec (str path "/bin/couchbase-server") :-k))
-        (catch RuntimeException e))
-      (try
-        (c/su (c/exec :systemctl :stop :couchbase-server))
-        (catch RuntimeException e))
-      (try
-        (c/su (c/exec :killall :-9 :beam.smp))
-        (catch RuntimeException e ))
-      (try
-        (c/su (c/exec :killall :-9 :memcached))
-        (catch RuntimeException e ))
-      (try
-        (c/su (c/exec :rm :-rf (str path "/var/lib/couchbase")))
-        (catch RuntimeException e (info "rm -rf " (str path "/var/lib/couchbase") " failed: " (str e))))
-      (net/heal! (:net test) test)))
-  (info "Teardown Complete"))
+  (try
+    (if (and (test :skip-teardown) (deref (test :db-intialized)))
+      (info "Skipping teardown of couchbase node")
+      (let [path (:install-path test)]
+        (info "Tearing down couchbase node")
+        (try
+          (c/su (c/exec (str path "/bin/couchbase-server") :-k))
+          (catch RuntimeException e))
+        (try
+          (c/su (c/exec :systemctl :stop :couchbase-server))
+          (catch RuntimeException e))
+        (try
+          (c/su (c/exec :killall :-9 :beam.smp))
+          (catch RuntimeException e ))
+        (try
+          (c/su (c/exec :killall :-9 :memcached))
+          (catch RuntimeException e ))
+        (try
+          (c/su (c/exec :rm :-rf (str path "/var/lib/couchbase")))
+          (catch RuntimeException e (info "rm -rf " (str path "/var/lib/couchbase") " failed: " (str e))))
+        (net/heal! (:net test) test)))
+    (info "Teardown Complete")
+    (catch Exception e
+      (do
+        (str "teardown failed: " (str e))
+        (throw (Exception. "teardown failed"))))))
 
 (defn get-version
   "Get the couchbase version running on the cluster"
