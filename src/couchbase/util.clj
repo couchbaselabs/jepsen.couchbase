@@ -160,9 +160,13 @@
 (defn wait-for-warmup
   "Wait for warmup to complete"
   []
-  (while (->> (rest-call "/pools/default" nil)
-              (re-find #"\"status\":\"warmup\""))
-    (Thread/sleep 1000)))
+  (let [retry-count (atom 0)]
+    (while (->> (rest-call "/pools/default" nil)
+                (re-find #"\"status\":\"warmup\""))
+      (if (> @retry-count 60)
+        (throw (Exception. "bucket failed to warmup")))
+      (swap! retry-count inc)
+      (Thread/sleep 1000))))
 
 (defn set-custom-cursor-drop-marks
   "Set the cursor dropping marks to a new value on all nodes"
@@ -245,7 +249,8 @@
     (initialise test)
     (add-nodes other-nodes)
     (set-vbucket-count test)
-    (rebalance nodes)
+    (if (> (count nodes) 1)
+      (rebalance nodes))
     (set-autofailover test)
     (create-bucket num-replicas)
     (info "Waiting for bucket warmup to complete...")
@@ -267,19 +272,28 @@
                  package-version (str (nth split-package-name 3) "-" (nth split-package-name 4))]
              (try
                (do
+                 (info "checking if couchbase-server already installed...")
                  (c/su (c/exec (str "/opt/couchbase" "/bin/couchbase-server") :-v))
-                 (c/su (c/exec :rpm :-e "couchbase-server"))
+                 (info "couchbase-server is installed, removing...")
+                 (c/su (c/exec :yum :remove :-y "couchbase-server"))
                  (throw (Exception. "removed server")))
                (catch Exception e
                  (let [root-files (c/su (c/exec :ls "/root"))]
+                   (info "checking if package exists in /root...")
                    (when (not (str/includes? root-files package-name))
+                     (info "package does not exist in /root, uploading...")
                      (c/su (c/upload (:package package) package-name))))
                  (try
+                   (info "checking if this is a centos vagrant run...")
                    (c/su (c/exec :mv (str "/home/vagrant/" package-name) "/root/"))
                    (catch Exception e (info "no package to move from /home/vagrant to /root")))
+                 (info "running yum install -y " (str "/root/" package-name))
                  (c/su (c/exec :yum :install :-y (str "/root/" package-name)))
+                 (info "moving package to tmp")
                  (c/su (c/exec :mv (str "/root/" package-name) "/tmp/"))
+                 (info "cleaning up /root")
                  (c/su (c/exec :rm :-rf "/root/*"))
+                 (info "moving package back to /root")
                  (c/su (c/exec :mv (str "/tmp/" package-name) "/root/"))))))
     :deb (do
            (c/su (c/upload (:package package) "couchbase.deb"))
@@ -293,15 +307,21 @@
 (defn wait-for-daemon
   "Wait until couchbase server daemon has started"
   []
-  (while
-    (= :not-ready
-       (try+
-         (rest-call "/pools/default" nil)
-         (catch [:type :rest-fail] e
-           (if (= (->> e (:error) (:exit)) 7)
-             :not-ready
-             :done))))
-    (Thread/sleep 2000)))
+  (let [retry-count (atom 0)]
+    (while
+      (= :not-ready
+         (try+
+           (rest-call "/pools/default" nil)
+           (catch [:type :rest-fail] e
+             (do
+               (if (> @retry-count 30)
+                 (throw (Exception. "daemon failed to start")))
+               (swap! retry-count inc)
+               (if (= (->> e (:error) (:exit)) 7)
+                 :not-ready
+                 :done))
+             )))
+      (Thread/sleep 2000))))
 
 (defn setup-node
   "Start couchbase on a node"
@@ -313,11 +333,14 @@
       (info "Installing package")
       (install-package package)
       (info "Package installed"))
+    (info "making directory " (str path "/var/lib/couchbase"))
     (c/su (c/exec :mkdir :-p (str path "/var/lib/couchbase")))
+    (info "changing permissions for " (str path "/var/lib/couchbase"))
     (c/su (c/exec :chmod :-R :a+rwx (str path "/var/lib/couchbase")))
     (info "Starting daemon")
     (c/ssh* {:cmd (str "nohup " path "/bin/couchbase-server -- -noinput >> /dev/null 2>&1 &")}))
-  (wait-for-daemon))
+  (wait-for-daemon)
+  (info "Daemon started"))
 
 (defn teardown
   "Stop the couchbase server instances and delete the data files"
@@ -327,14 +350,20 @@
     (let [path (:install-path test)]
       (info "Tearing down couchbase node")
       (try
-        (c/su (c/exec :systemctl :stop :couchbase-server))
-        (catch RuntimeException e))
-      (try
         (c/su (c/exec (str path "/bin/couchbase-server") :-k))
         (catch RuntimeException e))
       (try
-        (c/su (c/exec :rm :-rf (str path "/var/lib/couchbase")))
+        (c/su (c/exec :systemctl :stop :couchbase-server))
         (catch RuntimeException e))
+      (try
+        (c/su (c/exec :killall :-9 :beam.smp))
+        (catch RuntimeException e ))
+      (try
+        (c/su (c/exec :killall :-9 :memcached))
+        (catch RuntimeException e ))
+      (try
+        (c/su (c/exec :rm :-rf (str path "/var/lib/couchbase")))
+        (catch RuntimeException e (info "rm -rf " (str path "/var/lib/couchbase") " failed: " (str e))))
       (net/heal! (:net test) test)))
   (info "Teardown Complete"))
 
