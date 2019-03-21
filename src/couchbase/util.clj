@@ -268,8 +268,7 @@
   (case (:type package)
     :rpm (do
            (let [package-name (.getName (:package package))
-                 split-package-name (str/split package-name #"-")
-                 package-version (str (nth split-package-name 3) "-" (nth split-package-name 4))]
+                 split-package-name (str/split package-name #"-")]
              (try
                (do
                  (info "checking if couchbase-server already installed...")
@@ -331,7 +330,12 @@
         path (:install-path test)]
     (when package
       (info "Installing package")
-      (install-package package)
+      (try
+        (install-package package)
+         (catch Exception e
+           (do
+             (info "install failed: " (str e))
+             (throw (Exception. "install failed")))))
       (info "Package installed"))
     (info "making directory " (str path "/var/lib/couchbase"))
     (c/su (c/exec :mkdir :-p (str path "/var/lib/couchbase")))
