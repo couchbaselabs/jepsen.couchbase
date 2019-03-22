@@ -355,9 +355,6 @@
       (let [path (:install-path test)]
         (info "Tearing down couchbase node")
         (try
-          (c/su (c/exec (str path "/bin/couchbase-server") :-k))
-          (catch RuntimeException e))
-        (try
           (c/su (c/exec :systemctl :stop :couchbase-server))
           (catch RuntimeException e))
         (try
