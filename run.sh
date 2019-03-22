@@ -24,6 +24,9 @@ case $i in
     --package=*)
     PACKAGE="${i#*=}"
     ;;
+    --global=*)
+    GLOBAL="${i#*=}"
+    ;;
     -h|--help)
     print_usage
     exit 0
@@ -94,11 +97,20 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
         testParams="$testParams --${ary[$key]}"
     done
 
+    IFS=,
+    ary=($GLOBAL)
+    for key in "${!ary[@]}"
+    do
+        global_param=${ary[$key]}
+        global_param=${global_param//:/=}
+        testParams="$testParams --${global_param}"
+    done
+
     # run test using vagrants or docker
     PREVIOUS_RUN=$(cd ./store/latest; pwd -P)
 
     if [ "$PROVISIONER" == "vagrant" ]; then
-        command="$vagrantBaseCommand $testParams $vagrantParams $packageParam"
+        command="$vagrantBaseCommand $vagrantParams $packageParam $testParams"
         echo "Test command: $command"
         echo ""
         eval $command
@@ -106,7 +118,7 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
     fi
     if [ "$PROVISIONER" == "docker" ]; then
         docker exec -it jepsen-control bash -c "rm -rf /jepsen/store"
-        command="$dockerBaseCommand $testParams $dockerParams $packageParam"
+        command="$dockerBaseCommand $dockerParams $packageParam $testParams"
         echo "Test command: $command"
         echo ""
         eval $command
@@ -114,7 +126,7 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
         docker cp jepsen-control:/jepsen/store .
     fi
     if [ "$PROVISIONER" == "vmpool" ]; then
-        command="$vmpoolBaseCommand $testParams $vmpoolParams $packageParam"
+        command="$vmpoolBaseCommand $vmpoolParams $packageParam $testParams"
         echo "Test command: $command"
         echo ""
         eval $command
