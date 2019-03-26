@@ -407,8 +407,7 @@
                                     :value [(rand-int 50) (rand-int 50)]
                                     :durability-level (util/random-durability-level opts)})])
                               (rate-limit rate))))
-    generator  (gen/phases
-                 (case scenario
+    generator (case scenario
                    :kill-memcached
                    (do-n-nemesis-cycles cycles
                                         [(gen/sleep 10)
@@ -456,7 +455,7 @@
                                                                          :network [:connected]
                                                                          :node [:running]}}}
                                             (gen/sleep (- disrupt-time autofailover-timeout))]
-                                           (gen/sleep disrupt-time))
+                                           [(gen/sleep disrupt-time)])
 
                                          {:type :info
                                           :f    :start-process
@@ -475,9 +474,8 @@
                                                                          :network [:connected]
                                                                          :node [:running]}}}
                                             (gen/sleep 5)]
-                                           [])]
-                                        client-generator))
-                 (gen/clients (gen/once {:type :invoke :f :read :value nil})))))
+                                           [(gen/sleep 5)])]
+                                        client-generator))))
 
 (defn disk-failure-workload
   "Simulate a disk failure. This workload will not function correctly with docker containers."

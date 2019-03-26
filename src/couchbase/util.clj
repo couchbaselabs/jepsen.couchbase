@@ -72,12 +72,16 @@
       (rest-call "/controller/addNode" params))))
 
 (defn wait-for
-  [call-function desired-state]
-  (loop [state (call-function)]
-    (if (not= state desired-state)
-      (do
-        (Thread/sleep 1000)
-        (recur (call-function))))))
+  ([call-function desired-state] (wait-for call-function desired-state 120))
+  ([call-function desired-state retries]
+   (loop [state (call-function)
+          attempts 0]
+     (if (>= attempts retries)
+       (throw (RuntimeException. (str "Desired state not achieved in " (str retries) " retries"))))
+     (if (not= state desired-state)
+       (do
+         (Thread/sleep 1000)
+         (recur (call-function) (+ attempts 1)))))))
 
 (defn get-rebalance-status
   [target]

@@ -36,7 +36,7 @@
         cluster    (Cluster/connect env)
         bucket     (.bucket cluster "default")
         collection (.defaultCollection bucket)]
-    {:cluster cluster :bucket bucket :collection collection}))
+    {:cluster cluster :bucket bucket :collection collection :env env}))
 
 ;; We want to operate with a large amount of jepsen clients in order to test
 ;; lots of keys simultaneously. However, couchbase server connections are
@@ -64,6 +64,8 @@
     (when client-pool
       (doseq [client (take (test :pool-size) @client-pool)]
         (.shutdown (:cluster client)))
+      (doseq [client (take (test :pool-size) @client-pool)]
+        (.shutdown (:env client)))
       (reset! client-pool nil))))
 
 

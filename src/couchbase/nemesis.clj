@@ -303,7 +303,7 @@
             (let [autofailover-count (atom 0)
                   target (first target-nodes)
                   node-info-before (util/get-node-info target)]
-              (util/wait-for #(util/get-autofailover-info target :count) 1)
+              (util/wait-for #(util/get-autofailover-info target :count) 1 120)
               (let [node-info-after (util/get-node-info target)]
                 (doseq [node-info node-info-before]
                   (let [node-key (key node-info)
@@ -411,9 +411,9 @@
                       ; inactive nodes will become active after starting couchbase-server
                       ; the time to become active again is around 3 seconds, we should wait
                       (do
-                        (update-node-state node-states started-node {:cluster :active :node :running})
                         ; should wait here until node status is healthy
-                        (util/wait-for #(get-in (util/get-node-info (first healthy-cluster-nodes)) [started-node :status]) "healthy"))
+                        (util/wait-for #(get-in (util/get-node-info (first healthy-cluster-nodes)) [started-node :status]) "healthy" 30)
+                        (update-node-state node-states started-node {:cluster :active :node :running}))
                       ; failed over nodes will only be recoverable if couchbase-server is running
                       (update-node-state node-states started-node {:node :running})))
                   (info "cluster state: " @node-states)
