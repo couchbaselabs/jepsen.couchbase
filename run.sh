@@ -56,11 +56,11 @@ fi
 
 case $PACKAGE in
     *.rpm)
-	ISBUILD=0 ;;
+        ISBUILD=0 ;;
     *.deb)
-	ISBUILD=0 ;;
+        ISBUILD=0 ;;
     *)
-	ISBUILD=1 ;;
+        ISBUILD=1 ;;
 esac
 
 vagrantBaseCommand="lein trampoline run test"
@@ -73,9 +73,11 @@ packageParam="--package $PACKAGE"
 pass=0
 fail=0
 crash=0
+unknown=0
 test_num=1
 fail_array=()
 crash_array=()
+unknown_array=()
 
 while IFS='' read -r line || [[ -n "$line" ]]; do
 
@@ -137,30 +139,43 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
     if [ $EXITCODE -ne 0 ]; then
         LAST_RUN=$(cd ./store/latest; pwd -P)
         if [ "$PREVIOUS_RUN" != "$LAST_RUN" ] && grep -q -e "^ :valid? false" store/latest/results.edn; then
-            grep -m 1 -e ":workload.*" store/latest/jepsen.log | cut -d "\"" -f 2 | xargs printf "\n\nJepsen exited with failure for workload %s\n\n"
+            grep -m 1 -e ":workload.*" store/latest/jepsen.log | cut -d "\"" -f 2 |
+                xargs printf "\n\nJepsen exited with failure for workload %s\n\n"
             printf "Test failed!\n\n"
             fail=$(($fail+1))
-            fail_array+=($test_num)
+            fail_array+=("#$test_num")
         else
             printf "Jepsen failed with unknown failure \n"
             printf "Test crashed! \n"
             crash=$(($crash+1))
             crash_array+=("#$test_num")
         fi
-
     else
-        printf "Jepsen tests passed\n"
-        printf "Test passed!\n"
-        pass=$(($pass+1))
+        LAST_RUN=$(cd ./store/latest; pwd -P)
+        if tail -n 1 $LAST_RUN/results.edn | grep -q ":valid? true" ; then
+            pass=$(($pass+1))
+            printf "Test passed!\n"
+        elif tail -n 1 $LAST_RUN/results.edn | grep -q ":valid? :unknown" ; then
+            unknown=$(($unknown+1))
+            unknown_array+=("#$test_num")
+            printf "Test history could not be validated\n"
+        else
+            printf "ERROR: Couldn't determine test status\n"
+        fi
     fi
 
     total=$(($pass+$fail+$crash))
     percent=`echo  "scale=2; $pass*100/$total" | bc`
     echo "###### Current Test Report #########"
     echo "pass: $pass"
+    echo "unknown: $unknown"
     echo "fail: $fail"
     echo "crash: $crash"
     echo "$pass/$total = $percent%"
+    if [ "$unknown" -gt 0 ]; then
+        echo "###### Unknown Tests ######"
+        printf '%s\n' "${crash_array[@]}"
+    fi
     if [ "$fail" -gt 0 ];then
         echo "###### Failed Tests #########"
         printf '%s\n' "${fail_array[@]}"
@@ -170,25 +185,30 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
         printf '%s\n' "${crash_array[@]}"
     fi
     echo "############################"
-    
+
     if [ "$ISBUILD" = 1 ]; then
-	packageParam="--install-path $PACKAGE";
+        packageParam="--install-path $PACKAGE";
     else
-	packageParam="";
+        packageParam="";
     fi
 
     test_num=$(($test_num+1))
 done < "$SUITE"
 echo "################################################################"
 
-total=$(($pass+$fail+$crash))
+total=$(($pass+$unknown+$fail+$crash))
 percent=`echo  "scale=2; $pass*100/$total" | bc`
 echo "Jepsen tests complete!"
 echo "###### Final Test Report #########"
 echo "pass: $pass"
+echo "unknown: $unknown"
 echo "fail: $fail"
 echo "crash: $crash"
 echo "$pass/$total = $percent%"
+if [ "$unknown" -gt 0 ]; then
+    echo "###### Unknown Tests ########"
+    printf '%s\n' "${unknown_array[@]}"
+fi
 if [ "$fail" -gt 0 ];then
     echo "###### Failed Tests #########"
     printf '%s\n' "${fail_array[@]}"
