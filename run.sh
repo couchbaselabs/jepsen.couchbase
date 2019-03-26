@@ -219,8 +219,12 @@ if [ "$crash" -gt 0 ];then
 fi
 echo "############################"
 
-if [ "$fail" -gt 0 ] || [ "$crash" -gt 0 ];then
-    exit 1
+if [ "$crash" -gt 0 ]; then
+    exit 4
+elif [ "$fail" -gt 0 ]; then
+    exit 3
+elif [ "$unknown" -gt 0 ]; then
+    exit 2
 else
     exit 0
 fi
