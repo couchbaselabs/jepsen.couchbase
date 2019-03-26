@@ -164,7 +164,7 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
         fi
     fi
 
-    total=$(($pass+$fail+$crash))
+    total=$(($pass+$fail+$crash+$unknown))
     percent=`echo  "scale=2; $pass*100/$total" | bc`
     echo "###### Current Test Report #########"
     echo "pass: $pass"
@@ -174,7 +174,7 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
     echo "$pass/$total = $percent%"
     if [ "$unknown" -gt 0 ]; then
         echo "###### Unknown Tests ######"
-        printf '%s\n' "${crash_array[@]}"
+        printf '%s\n' "${unknown_array[@]}"
     fi
     if [ "$fail" -gt 0 ];then
         echo "###### Failed Tests #########"

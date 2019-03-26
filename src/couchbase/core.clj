@@ -165,7 +165,10 @@
                      (= (count %) 4))]]
    [nil "--custom-vbucket-count CUSTOM-VBUCKET-COUNT"
     :parse-fn parse-int
-    :validate [#(<= 1 % 1024) "Vbucket count must be between 1 and 1024"]]])
+    :validate [#(<= 1 % 1024) "Vbucket count must be between 1 and 1024"]]
+   [nil "--cas"
+    "Enable CAS operations"
+    :default false]])
 
 
 (defn -main

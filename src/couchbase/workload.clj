@@ -13,51 +13,6 @@
             [jepsen.nemesis.time :as nt]
             [knossos.model :as model]))
 
-;; =============
-;; Helper macros
-;; =============
-
-(defmacro let-and-merge
-  "Take pairs of parameter-name parameter-value and merge these into a map. Bind
-  all previous parameter names to their value to allow parameters values
-  dependent on previous values."
-  ([] {})
-  ([param value & more] `(merge {(keyword (name '~param)) ~value}
-                                (let [~param ~value]
-                                  (let-and-merge ~@more)))))
-
-(defmacro with-register-base
-  "Apply a set of shared parameters used across the register workloads before
-  merging the custom parameters"
-  ([opts & more]
-   `(let-and-merge
-        ~'cycles                (~opts :cycles 1)
-        ~'node-count            (~opts :node-count (count (~opts :nodes)))
-        ~'nodes                 (if (>= (count (~opts :nodes)) ~'node-count)
-                                  (vec (take ~'node-count (~opts :nodes)))
-                                  (assert false "node-count greater than available nodes"))
-        ~'server-group-count    (~opts :server-group-count 1)
-        ~'rate                  (~opts :rate 1/3)
-        ~'doc-count             (~opts :doc-count 40)
-        ~'doc-threads           (~opts :doc-threads 3)
-        ~'concurrency           (* ~'doc-count ~'doc-threads)
-        ~'pool-size             (~opts :pool-size 6)
-        ~'autofailover-timeout  (~opts :autofailover-timeout 6)
-        ~'autofailover-maxcount (~opts :autofailover-maxcount 3)
-        ~'client                (clients/register-client)
-        ~'model                 (model/cas-register :nil)
-        ~'control-atom          (atom :continue)
-        ~'checker   (checker/compose
-                     (merge
-                      {:indep (independent/checker
-                               (checker/compose
-                                {:timeline (timeline/html)
-                                 :linear (checker/linearizable)}))
-                       :sanity (cbchecker/sanity-check)}
-                      (if (~opts :perf-graphs)
-                        {:perf (checker/perf)})))
-        ~@more)))
-
 ;; =================
 ;; HELPER GENERATORS
 ;; =================
@@ -104,6 +59,75 @@
     (gen/stagger (/ rate) g)
     g))
 
+;; =============
+;; Helper macros
+;; =============
+
+(defmacro let-and-merge
+  "Take pairs of parameter-name parameter-value and merge these into a map. Bind
+  all previous parameter names to their value to allow parameters values
+  dependent on previous values."
+  ([] {})
+  ([param value & more] `(merge {(keyword (name '~param)) ~value}
+                                (let [~param ~value]
+                                  (let-and-merge ~@more)))))
+
+(defmacro with-register-base
+  "Apply a set of shared parameters used across the register workloads before
+  merging the custom parameters"
+  ([opts & more]
+   `(let-and-merge
+      ~'cycles                (~opts :cycles 1)
+      ~'cas                   (~opts :cas)
+      ~'node-count            (~opts :node-count (count (~opts :nodes)))
+      ~'nodes                 (if (>= (count (~opts :nodes)) ~'node-count)
+                                (vec (take ~'node-count (~opts :nodes)))
+                                (assert false "node-count greater than available nodes"))
+      ~'server-group-count    (~opts :server-group-count 1)
+      ~'rate                  (~opts :rate 1/3)
+      ~'doc-count             (~opts :doc-count 40)
+      ~'doc-threads           (~opts :doc-threads 3)
+      ~'concurrency           (* ~'doc-count ~'doc-threads)
+      ~'pool-size             (~opts :pool-size 6)
+      ~'autofailover-timeout  (~opts :autofailover-timeout 6)
+      ~'autofailover-maxcount (~opts :autofailover-maxcount 3)
+      ~'client                (clients/register-client)
+      ~'model                 (model/cas-register :nil)
+      ~'control-atom          (atom :continue)
+      ~'checker               (checker/compose
+                                (merge
+                                  {:indep (independent/checker
+                                            (checker/compose
+                                              {:timeline (timeline/html)
+                                               :linear (checker/linearizable)}))
+                                   :sanity (cbchecker/sanity-check)}
+                                  (if (~opts :perf-graphs)
+                                    {:perf (checker/perf)})))
+      ~@more)))
+
+;; =================
+;; HELPER FUNCTIONS
+;; =================
+
+(defn client-gen
+  [opts doc-threads rate cas]
+  (let [read-gen  (fn [_ _] {:type :invoke :f :read  :value nil})
+        write-gen (fn [_ _]
+                    {:type :invoke
+                     :f :write
+                     :value (rand-int 50)
+                     :durability-level (util/random-durability-level opts)})
+        cas-gen   (fn [_ _]
+                    {:type :invoke
+                     :f :cas
+                     :value [(rand-int 50) (rand-int 50)]
+                     :durability-level (util/random-durability-level opts)})
+        combined-gen (if cas [read-gen write-gen cas-gen] [read-gen write-gen])]
+    (independent/concurrent-generator
+      doc-threads (range)
+      (fn [k] (->> (gen/mix combined-gen)
+                   (rate-limit rate))))))
+
 ;; ==================
 ;; Register workloads
 ;; ==================
@@ -114,22 +138,7 @@
   (with-register-base opts
     replicas      (opts :replicas 1)
     nemesis       nemesis/noop
-    client-generator (independent/concurrent-generator
-                       doc-threads (range)
-                       (fn [k]
-                         (->> (gen/mix
-                                [(fn [_ _] {:type :invoke :f :read  :value nil})
-                                 (fn [_ _]
-                                   {:type :invoke
-                                    :f :write
-                                    :value (rand-int 50)
-                                    :durability-level (util/random-durability-level opts)})
-                                 (fn [_ _]
-                                   {:type :invoke
-                                    :f :cas
-                                    :value [(rand-int 50) (rand-int 50)]
-                                    :durability-level (util/random-durability-level opts)})])
-                              (rate-limit rate))))
+    client-generator      (client-gen opts doc-threads rate cas)
     generator (do-n-nemesis-cycles cycles [(gen/sleep 20)] client-generator)))
 
 (defn partition-workload
@@ -158,23 +167,7 @@
                                           (> disrupt-time autofailover-timeout)
                                           (>= node-count 3))
     nemesis        (cbnemesis/couchbase)
-    client-generator (independent/concurrent-generator
-                       doc-threads (range)
-                       (fn [k]
-                         (->> (gen/mix
-                                [(fn [_ _] {:type :invoke :f :read  :value nil})
-                                 (fn [_ _]
-                                   {:type :invoke
-                                    :f :write
-                                    :value (rand-int 50)
-                                    :durability-level (util/random-durability-level opts)})
-                                 (fn [_ _]
-                                   {:type :invoke
-                                    :f :cas
-                                    :value [(rand-int 50) (rand-int 50)]
-                                    :durability-level (util/random-durability-level opts)})])
-                              (rate-limit rate))))
-
+    client-generator (client-gen opts doc-threads rate cas)
     generator       (do-n-nemesis-cycles
                       cycles
                       [(gen/sleep 5)
@@ -242,22 +235,7 @@
                       disrupt-count))
     autofailover  (opts :autofailover false)
     nemesis       (cbnemesis/couchbase)
-    client-generator (independent/concurrent-generator
-                 doc-threads (range)
-                 (fn [k]
-                   (->> (gen/mix
-                          [(fn [_ _] {:type :invoke :f :read  :value nil})
-                           (fn [_ _]
-                             {:type :invoke
-                              :f :write
-                              :value (rand-int 50)
-                              :durability-level (util/random-durability-level opts)})
-                           (fn [_ _]
-                             {:type :invoke
-                              :f :cas
-                              :value [(rand-int 50) (rand-int 50)]
-                              :durability-level (util/random-durability-level opts)})])
-                        (rate-limit rate))))
+    client-generator (client-gen opts doc-threads rate cas)
     generator     (case scenario
                     :sequential-rebalance-out-in
                     (do-n-nemesis-cycles
@@ -338,22 +316,7 @@
     failover-type (opts :failover-type :hard)
     disrupt-count (opts :disrupt-count 1)
     nemesis   (cbnemesis/couchbase)
-    client-generator (independent/concurrent-generator
-                       doc-threads (range)
-                       (fn [k]
-                         (->> (gen/mix
-                                [(fn [_ _] {:type :invoke :f :read  :value nil})
-                                 (fn [_ _]
-                                   {:type :invoke
-                                    :f :write
-                                    :value (rand-int 50)
-                                    :durability-level (util/random-durability-level opts)})
-                                 (fn [_ _]
-                                   {:type :invoke
-                                    :f :cas
-                                    :value [(rand-int 50) (rand-int 50)]
-                                    :durability-level (util/random-durability-level opts)})])
-                              (rate-limit rate))))
+    client-generator (client-gen opts doc-threads rate cas)
     generator (do-n-nemesis-cycles cycles
                                    [(gen/sleep 5)
                                     {:type :info
@@ -391,22 +354,7 @@
                                (> disrupt-time autofailover-timeout)
                                (>= node-count 3))
     nemesis               (cbnemesis/couchbase)
-    client-generator (independent/concurrent-generator
-                       doc-threads (range)
-                       (fn [k]
-                         (->> (gen/mix
-                                [(fn [_ _] {:type :invoke :f :read  :value nil})
-                                 (fn [_ _]
-                                   {:type :invoke
-                                    :f :write
-                                    :value (rand-int 50)
-                                    :durability-level (util/random-durability-level opts)})
-                                 (fn [_ _]
-                                   {:type :invoke
-                                    :f :cas
-                                    :value [(rand-int 50) (rand-int 50)]
-                                    :durability-level (util/random-durability-level opts)})])
-                              (rate-limit rate))))
+    client-generator      (client-gen opts doc-threads rate cas)
     generator (case scenario
                    :kill-memcached
                    (do-n-nemesis-cycles cycles
@@ -484,22 +432,7 @@
     replicas      (opts :replicas 1)
     disrupt-count (opts :disrupt-count 1)
     nemesis       (cbnemesis/disk-failure)
-    client-generator (independent/concurrent-generator
-                       doc-threads (range)
-                       (fn [k]
-                         (->> (gen/mix
-                                [(fn [_ _] {:type :invoke :f :read  :value nil})
-                                 (fn [_ _]
-                                   {:type :invoke
-                                    :f :write
-                                    :value (rand-int 50)
-                                    :durability-level (util/random-durability-level opts)})
-                                 (fn [_ _]
-                                   {:type :invoke
-                                    :f :cas
-                                    :value [(rand-int 50) (rand-int 50)]
-                                    :durability-level (util/random-durability-level opts)})])
-                              (rate-limit rate))))
+    client-generator (client-gen opts doc-threads rate cas)
     generator     (gen/nemesis
                     (gen/seq [(gen/sleep 10)
                               {:type :info :f :start :count disrupt-count}
@@ -514,22 +447,7 @@
     replicas     (opts :replicas 1)
     autofailover (opts :autofailover false)
     nemesis      (cbnemesis/partition-then-failover)
-    client-generator (independent/concurrent-generator
-                       doc-threads (range)
-                       (fn [k]
-                         (->> (gen/mix
-                                [(fn [_ _] {:type :invoke :f :read  :value nil})
-                                 (fn [_ _]
-                                   {:type :invoke
-                                    :f :write
-                                    :value (rand-int 50)
-                                    :durability-level (util/random-durability-level opts)})
-                                 (fn [_ _]
-                                   {:type :invoke
-                                    :f :cas
-                                    :value [(rand-int 50) (rand-int 50)]
-                                    :durability-level (util/random-durability-level opts)})])
-                              (rate-limit rate))))
+    client-generator (client-gen opts doc-threads rate cas)
     generator (do-n-nemesis-cycles cycles
                                    [(gen/sleep 10)
                                     {:type :info :f :start-partition}
@@ -549,22 +467,7 @@
     disrupt-count (opts :disrupt-count 1)
     autofailover  (opts :autofailover false)
     nemesis       (cbnemesis/fail-rebalance)
-    client-generator (independent/concurrent-generator
-                       doc-threads (range)
-                       (fn [k]
-                         (->> (gen/mix
-                                [(fn [_ _] {:type :invoke :f :read  :value nil})
-                                 (fn [_ _]
-                                   {:type :invoke
-                                    :f :write
-                                    :value (rand-int 50)
-                                    :durability-level (util/random-durability-level opts)})
-                                 (fn [_ _]
-                                   {:type :invoke
-                                    :f :cas
-                                    :value [(rand-int 50) (rand-int 50)]
-                                    :durability-level (util/random-durability-level opts)})])
-                              (rate-limit rate))))
+    client-generator (client-gen opts doc-threads rate cas)
     generator (do-n-nemesis-cycles cycles
                                    [(gen/sleep 5)
                                     {:type :info :f :start :count disrupt-count}
