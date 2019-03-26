@@ -191,6 +191,29 @@
         (c/su (c/exec :systemctl :stop :virtualbox-guest-utils "|:"))
         (real_install!))))
 
+  ;; This is such a hack, but we want to exit with unknown status if our nemesis
+  ;; crashes. We haven't found a linearizability error, so to exit with failure
+  ;; would be incorrect, but if our nemesis isn't taking effect then we want
+  ;; some warning that a pass is probably meaningless. We catch any exception
+  ;; from the nemesis invocation, then set test's control-atom to abort before
+  ;; rethrowing the exception to ensure it is logged. The sanity checker will
+  ;; then detect that the control-atom is set to abort and return unknown status.
+  (alter-var-root
+   (var jepsen.nemesis/invoke-compat!)
+   (fn [invoke-compat!]
+     (fn [nemesis test op]
+       (try
+         (invoke-compat! nemesis test op)
+         (catch Exception e
+           (if (:control-atom test)
+             (do
+               (compare-and-set! (:control-atom test) :continue :abort)
+               (error "Caught exception in nemesis, aborting test.")
+               (throw e))
+             (do
+               (error "Caught exception in nemesis and couldn't abort test, will hard exit.")
+               (System/exit 1))))))))
+
   ;; Now parse args and run the test
   (let [test        (cli/single-test-cmd {:test-fn  cbtest
                                           :opt-spec extra-cli-options})
