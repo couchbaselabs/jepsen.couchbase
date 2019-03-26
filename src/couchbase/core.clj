@@ -1,13 +1,15 @@
 (ns couchbase.core
   (:require [clojure.string :as str]
             [clojure.tools.logging :refer :all]
-            [couchbase [util     :as util]
-                       [workload :as workload]]
-            [jepsen [cli     :as cli]
-                    [control :as c]
-                    [db      :as db]
-                    [os      :as os]
-                    [tests   :as tests]])
+            [couchbase
+             [util     :as util]
+             [workload :as workload]]
+            [jepsen
+             [cli     :as cli]
+             [control :as c]
+             [db      :as db]
+             [os      :as os]
+             [tests   :as tests]])
   (:gen-class))
 
 (defn couchbase
@@ -59,9 +61,9 @@
          ;; workload specific parameter
          (try
            (as-> (opts :workload) %
-                 (format "couchbase.workload/%s-workload" %)
-                 (resolve (symbol %))
-                 (% opts))
+             (format "couchbase.workload/%s-workload" %)
+             (resolve (symbol %))
+             (% opts))
            (catch NullPointerException _
              (let [msg (format "Workload %s does not exist" (opts :workload))]
                (fatal msg)
@@ -93,7 +95,7 @@
     :default false]
    [nil "--replicas REPLICAS"
     "Number of replicas"
-    :parse-fn parse-int ]
+    :parse-fn parse-int]
    [nil "--replicate-to REPLICATE-TO"
     "Replicate-to value"
     :parse-fn parse-int]
@@ -170,7 +172,6 @@
     "Enable CAS operations"
     :default false]])
 
-
 (defn -main
   "Run the test specified by the cli arguments"
   [& args]
@@ -187,12 +188,12 @@
   ;; frequently auto-syncs the nodes clocks, breaking the time skew nemesies.
   ;; We disable the virtualbox guest additions to prevent this.
   (alter-var-root
-    (var jepsen.nemesis.time/install!)
-    (fn [real_install!]
-      (fn []
-        (c/su (c/exec :systemctl :stop :vboxadd-service "|:"))
-        (c/su (c/exec :systemctl :stop :virtualbox-guest-utils "|:"))
-        (real_install!))))
+   (var jepsen.nemesis.time/install!)
+   (fn [real_install!]
+     (fn []
+       (c/su (c/exec :systemctl :stop :vboxadd-service "|:"))
+       (c/su (c/exec :systemctl :stop :virtualbox-guest-utils "|:"))
+       (real_install!))))
 
   ;; This is such a hack, but we want to exit with unknown status if our nemesis
   ;; crashes. We haven't found a linearizability error, so to exit with failure

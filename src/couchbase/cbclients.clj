@@ -71,6 +71,7 @@
 
 ;; DCP client logic
 
+
 (defn dcpRollbackHandler [{:keys [client store]} event]
   (let [descr (RollbackMessage/toString event)
         vbid  (RollbackMessage/vbucket event)
@@ -157,12 +158,12 @@
   (info "Finished getting mutations, disconnecting...")
   (-> @client (.disconnect) (.await))
   (info "Parsing results...")
-    (if-not (= @store :INVALID)
-      (->> (group-by :key @store)
-           (vals)
-           (map #(apply max-key :seqno %))
-           (keep #(if (= (:key-status %) :exists) (:key %))))
-      (throw (RuntimeException. "Store state invalid"))))
+  (if-not (= @store :INVALID)
+    (->> (group-by :key @store)
+         (vals)
+         (map #(apply max-key :seqno %))
+         (keep #(if (= (:key-status %) :exists) (:key %))))
+    (throw (RuntimeException. "Store state invalid"))))
 
 (defrecord NewSharedDcpClient [client store slow idle])
 

@@ -129,10 +129,10 @@
             current-cas (.cas get-current)]
         (if (= current-value swap-from)
           (let [opts (doto (ReplaceOptions/replaceOptions)
-                         (.timeout (java.time.Duration/ofSeconds 2))
-                         (.cas current-cas)
-                         (apply-durability-options! op)
-                         (apply-observe-options! op))
+                       (.timeout (java.time.Duration/ofSeconds 2))
+                       (.cas current-cas)
+                       (apply-durability-options! op)
+                       (apply-observe-options! op))
                 replace-result (.replace collection dockey swap-to opts)
                 mutation-token (.mutationToken replace-result)]
             (assoc op
@@ -160,7 +160,6 @@
         (assoc op :type :info, :error :Timeout))
       (catch CouchbaseException e
         (assoc op :type :info, :error e)))))
-
 
 (defrecord NewRegisterClient [cluster bucket collection]
   client/Client
@@ -259,7 +258,7 @@
       :read (->> (cbclients/get-all-keys dcpclient test)
                  (map #(Integer/parseInt (subs % 6)))
                  (sort)
-                 (assoc op :type :ok, :value ))
+                 (assoc op :type :ok, :value))
 
       :dcp-start-streaming (do (cbclients/start-streaming dcpclient test) op)))
   (close! [_ _])

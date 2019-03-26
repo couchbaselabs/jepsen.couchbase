@@ -7,7 +7,7 @@
             [clj-http.client :as client]
             [cheshire.core :refer :all]
             [jepsen [control :as c]
-                    [net     :as net]]
+             [net     :as net]]
             [slingshot.slingshot :refer [try+ throw+]])
   (:import java.io.File))
 
@@ -228,13 +228,13 @@
         (reset! nodes (set (remove #{node-to-add} @nodes)))
         (reset! groups updated-groups)))
     (client/put endpoint
-                 {:basic-auth ["Administrator" "abc123"]
-                  :body (generate-string {:groups @groups})
-                  :headers {"X-Api-Version" "2"}
-                  :content-type :json
-                  :socket-timeout 1000
-                  :conn-timeout 1000
-                  :accept :json})))
+                {:basic-auth ["Administrator" "abc123"]
+                 :body (generate-string {:groups @groups})
+                 :headers {"X-Api-Version" "2"}
+                 :content-type :json
+                 :socket-timeout 1000
+                 :conn-timeout 1000
+                 :accept :json})))
 
 (defn setup-server-groups
   [test]
@@ -312,18 +312,17 @@
   []
   (let [retry-count (atom 0)]
     (while
-      (= :not-ready
-         (try+
-           (rest-call "/pools/default" nil)
-           (catch [:type :rest-fail] e
-             (do
-               (if (> @retry-count 30)
-                 (throw (Exception. "daemon failed to start")))
-               (swap! retry-count inc)
-               (if (= (->> e (:error) (:exit)) 7)
-                 :not-ready
-                 :done))
-             )))
+     (= :not-ready
+        (try+
+         (rest-call "/pools/default" nil)
+         (catch [:type :rest-fail] e
+           (do
+             (if (> @retry-count 30)
+               (throw (Exception. "daemon failed to start")))
+             (swap! retry-count inc)
+             (if (= (->> e (:error) (:exit)) 7)
+               :not-ready
+               :done)))))
       (Thread/sleep 2000))))
 
 (defn setup-node
@@ -336,10 +335,10 @@
       (info "Installing package")
       (try
         (install-package package)
-         (catch Exception e
-           (do
-             (info "install failed: " (str e))
-             (throw (Exception. "install failed")))))
+        (catch Exception e
+          (do
+            (info "install failed: " (str e))
+            (throw (Exception. "install failed")))))
       (info "Package installed"))
     (info "making directory " (str path "/var/lib/couchbase"))
     (c/su (c/exec :mkdir :-p (str path "/var/lib/couchbase")))
@@ -363,10 +362,10 @@
           (catch RuntimeException e))
         (try
           (c/su (c/exec :killall :-9 :beam.smp))
-          (catch RuntimeException e ))
+          (catch RuntimeException e))
         (try
           (c/su (c/exec :killall :-9 :memcached))
-          (catch RuntimeException e ))
+          (catch RuntimeException e))
         (try
           (c/su (c/exec :rm :-rf (str path "/var/lib/couchbase")))
           (catch RuntimeException e (info "rm -rf " (str path "/var/lib/couchbase") " failed: " (str e))))
@@ -431,14 +430,14 @@
     (when (test :hashdump)
       (info "Getting hashtable dump from all vbuckets")
       (c/su
-        (c/exec
-          :for :i :in (c/lit "$(seq 0 1023);") :do
-          (str install-dir "/bin/cbstats")
-          :localhost :-u :Administrator :-p :abc123 :-b :default :raw
-          (c/lit "\"_hash-dump $i\"")
-          :>> (str install-dir "/var/lib/couchbase/logs/hashdump.txt") (c/lit ";")
-          :echo :>> (str install-dir "/var/lib/couchbase/logs/hashdump.txt") (c/lit ";")
-          :done)))
+       (c/exec
+        :for :i :in (c/lit "$(seq 0 1023);") :do
+        (str install-dir "/bin/cbstats")
+        :localhost :-u :Administrator :-p :abc123 :-b :default :raw
+        (c/lit "\"_hash-dump $i\"")
+        :>> (str install-dir "/var/lib/couchbase/logs/hashdump.txt") (c/lit ";")
+        :echo :>> (str install-dir "/var/lib/couchbase/logs/hashdump.txt") (c/lit ";")
+        :done)))
 
     (c/su (c/exec :chmod :-R :a+rx (str install-dir "/var/lib/couchbase")))
     (try

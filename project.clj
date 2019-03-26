@@ -1,6 +1,7 @@
 (defproject couchbase "0.1.0-SNAPSHOT"
   :description "Jepsen testing for couchbase"
   :main couchbase.core
+  :plugins [[lein-cljfmt "0.6.4"]]
   :dependencies [[org.clojure/clojure "1.9.0"]
                  [jepsen "0.1.11"]
                  [com.couchbase.client/java-client "3.0.0-alpha.1"]

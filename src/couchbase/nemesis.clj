@@ -1,12 +1,12 @@
 (ns couchbase.nemesis
   (:require [clojure [set    :as set]
-                     [string :as string]]
+             [string :as string]]
             [clojure.tools.logging :refer :all]
             [couchbase [util      :as util]]
             [jepsen    [control   :as c]
-                       [generator :as gen]
-                       [nemesis   :as nemesis]
-                       [net :as net]]
+             [generator :as gen]
+             [nemesis   :as nemesis]
+             [net :as net]]
             [cheshire.core :refer :all]
             [slingshot.slingshot :refer [try+ throw+]]))
 
@@ -17,22 +17,22 @@
   ([targeter] (failover-basic targeter :delta))
   ([targeter recovery-type]
    (nemesis/node-start-stopper
-     targeter
-     (fn start [test node]
-       (let [endpoint "/controller/failOver"
-             params   (str "otpNode=ns_1@" node)]
-         (util/rest-call endpoint params)
-         [:failed-over node]))
+    targeter
+    (fn start [test node]
+      (let [endpoint "/controller/failOver"
+            params   (str "otpNode=ns_1@" node)]
+        (util/rest-call endpoint params)
+        [:failed-over node]))
 
-     (fn stop [test node]
-       (try
-         (util/rest-call "/controller/setRecoveryType"
-                         (format "otpNode=%s&recoveryType=%s"
-                                 (str "ns_1@" node)
-                                 (name recovery-type)))
-         (util/rebalance (test :nodes))
-         (catch Exception e
-           (warn "Recovery failed")))))))
+    (fn stop [test node]
+      (try
+        (util/rest-call "/controller/setRecoveryType"
+                        (format "otpNode=%s&recoveryType=%s"
+                                (str "ns_1@" node)
+                                (name recovery-type)))
+        (util/rebalance (test :nodes))
+        (catch Exception e
+          (warn "Recovery failed")))))))
 
 (defn partition-then-failover
   "Introduce a partition such that two nodes cannot communicate, then failover
@@ -149,8 +149,7 @@
         node-match-nodes (select-keys node-states (for [[k v] node-states :when (contains? node-condition (get-in v [:state :node]))] k))
         server-group-match-nodes (select-keys node-states (for [[k v] node-states :when (contains? server-group-condition (get-in v [:state :server-group]))] k))
         matching-nodes (set/intersection (set (keys cluster-match-nodes)) (set (keys network-match-nodes)) (set (keys node-match-nodes)))
-        sg-matching-nodes (if (nil? (:server-group filter-conditions)) matching-nodes (set/intersection matching-nodes (set (keys server-group-match-nodes))))
-        ]
+        sg-matching-nodes (if (nil? (:server-group filter-conditions)) matching-nodes (set/intersection matching-nodes (set (keys server-group-match-nodes))))]
     (vec sg-matching-nodes)))
 
 (defn apply-targeter
@@ -403,9 +402,9 @@
                 :couchbase-server
                 (let [path (:install-path test)]
                   (c/on-many
-                    target-nodes
-                    (c/ssh* {:cmd (str "nohup " path "/bin/couchbase-server -- -noinput >> /dev/null 2>&1 &")})
-                    (util/wait-for-daemon))
+                   target-nodes
+                   (c/ssh* {:cmd (str "nohup " path "/bin/couchbase-server -- -noinput >> /dev/null 2>&1 &")})
+                   (util/wait-for-daemon))
                   (doseq [started-node target-nodes]
                     (if (contains? (set inactive-nodes) started-node)
                       ; inactive nodes will become active after starting couchbase-server
@@ -440,11 +439,7 @@
             :noop
             (do
               (info "cluster state: " @node-states)
-              (assoc op :value "noop"))
+              (assoc op :value "noop")))))
 
-            )))
-
-      (teardown! [this test])
-
-      )))
+      (teardown! [this test]))))
 
