@@ -53,7 +53,7 @@
                                (checker/compose
                                 {:timeline (timeline/html)
                                  :linear (checker/linearizable)}))
-                       :sanity (cbchecker/sanity-check ~'control-atom)}
+                       :sanity (cbchecker/sanity-check)}
                       (if (~opts :perf-graphs)
                         {:perf (checker/perf)})))
         ~@more)))
@@ -63,39 +63,39 @@
 ;; =================
 
 (gen/defgenerator while-atom-continue
-  [controlatom gen]
-  [controlatom gen]
+  [gen]
+  [gen]
   (op [_ test process]
-      (if (= @controlatom :continue)
+      (if (= @(:control-atom test) :continue)
         (gen/op gen test process))))
 
 
 (gen/defgenerator set-atom-stop
-  [controlatom]
-  [controlatom]
+  []
+  []
   (op [_ test process]
-      (compare-and-set! controlatom :continue :stop)
+      (compare-and-set! (:control-atom test) :continue :stop)
       nil))
 
 (gen/defgenerator start-timeout
-  [control-atom timeout]
-  [control-atom timeout]
+  [timeout]
+  [timeout]
   (op [_ test process]
       (future (do (Thread/sleep timeout)
-                  (if (compare-and-set! control-atom :continue :abort)
+                  (if (compare-and-set! (:control-atom test) :continue :abort)
                     (error "TEST TIMEOUT EXCEEDED, ABORTING"))))
       nil))
 
 (defn do-n-nemesis-cycles
-  ([n control-atom nemesis-seq client-gen] (do-n-nemesis-cycles n control-atom [] nemesis-seq [] client-gen))
-  ([n control-atom nemesis-pre-seq nemesis-seq nemesis-post-seq client-gen]
-   (let [nemesis-gen  (gen/seq (flatten [(start-timeout. control-atom (* n 1000 60 30))
+  ([n nemesis-seq client-gen] (do-n-nemesis-cycles n [] nemesis-seq [] client-gen))
+  ([n nemesis-pre-seq nemesis-seq nemesis-post-seq client-gen]
+   (let [nemesis-gen  (gen/seq (flatten [(start-timeout. (* n 1000 60 30))
                                          nemesis-pre-seq
                                          (repeat n nemesis-seq)
                                          nemesis-post-seq
                                          (gen/sleep 3)
-                                         (set-atom-stop. control-atom)]))
-         rclient-gen  (while-atom-continue. control-atom client-gen)]
+                                         (set-atom-stop.)]))
+         rclient-gen  (while-atom-continue. client-gen)]
      (gen/nemesis nemesis-gen rclient-gen))))
 
 (defn rate-limit
@@ -130,7 +130,7 @@
                                     :value [(rand-int 50) (rand-int 50)]
                                     :durability-level (util/random-durability-level opts)})])
                               (rate-limit rate))))
-    generator (do-n-nemesis-cycles cycles control-atom [(gen/sleep 20)] client-generator)))
+    generator (do-n-nemesis-cycles cycles [(gen/sleep 20)] client-generator)))
 
 (defn partition-workload
   "Paritions the network by isolating nodes from each other, then will recover if autofailover
@@ -176,7 +176,7 @@
                               (rate-limit rate))))
 
     generator       (do-n-nemesis-cycles
-                      cycles control-atom
+                      cycles
                       [(gen/sleep 5)
                        {:type   :info
                         :f      :partition-network
@@ -261,7 +261,7 @@
     generator     (case scenario
                     :sequential-rebalance-out-in
                     (do-n-nemesis-cycles
-                      cycles control-atom
+                      cycles
                       [(repeatedly
                          disrupt-count
                          #(do [(gen/sleep 5)
@@ -286,7 +286,7 @@
 
                     :bulk-rebalance-out-in
                     (do-n-nemesis-cycles
-                      cycles control-atom
+                      cycles
                       [(gen/sleep 5)
                        {:type :info :f :rebalance-out
                         :targeter-opts
@@ -308,7 +308,7 @@
 
                     :swap-rebalance
                     (do-n-nemesis-cycles
-                      cycles control-atom
+                      cycles
                       [(gen/sleep 5)
                        {:type :info :f :rebalance-out
                         :targeter-opts
@@ -354,7 +354,7 @@
                                     :value [(rand-int 50) (rand-int 50)]
                                     :durability-level (util/random-durability-level opts)})])
                               (rate-limit rate))))
-    generator (do-n-nemesis-cycles cycles control-atom
+    generator (do-n-nemesis-cycles cycles
                                    [(gen/sleep 5)
                                     {:type :info
                                      :f    :failover
@@ -410,7 +410,7 @@
     generator  (gen/phases
                  (case scenario
                    :kill-memcached
-                   (do-n-nemesis-cycles cycles control-atom
+                   (do-n-nemesis-cycles cycles
                                         [(gen/sleep 10)
                                          {:type :info
                                           :f    :kill-process
@@ -424,7 +424,7 @@
                                         client-generator)
 
                    :kill-ns-server
-                   (do-n-nemesis-cycles cycles control-atom
+                   (do-n-nemesis-cycles cycles
                                         [(gen/sleep 10)
                                          {:type :info
                                           :f    :kill-process
@@ -438,7 +438,7 @@
                                         client-generator)
 
                    :kill-babysitter
-                   (do-n-nemesis-cycles cycles control-atom
+                   (do-n-nemesis-cycles cycles
                                         [(gen/sleep 5)
                                          {:type :info
                                           :f    :kill-process
@@ -532,7 +532,7 @@
                                     :value [(rand-int 50) (rand-int 50)]
                                     :durability-level (util/random-durability-level opts)})])
                               (rate-limit rate))))
-    generator (do-n-nemesis-cycles cycles control-atom
+    generator (do-n-nemesis-cycles cycles
                                    [(gen/sleep 10)
                                     {:type :info :f :start-partition}
                                     (gen/sleep 5)
@@ -567,7 +567,7 @@
                                     :value [(rand-int 50) (rand-int 50)]
                                     :durability-level (util/random-durability-level opts)})])
                               (rate-limit rate))))
-    generator (do-n-nemesis-cycles cycles control-atom
+    generator (do-n-nemesis-cycles cycles
                                    [(gen/sleep 5)
                                     {:type :info :f :start :count disrupt-count}
                                     (gen/sleep 5)] client-generator)))
@@ -598,7 +598,7 @@
       checker       (checker/compose
                       (merge
                        {:set (checker/set)
-                        :sanity (cbchecker/sanity-check control-atom)}
+                        :sanity (cbchecker/sanity-check)}
                         (if (opts :perf-graphs)
                           {:perf (checker/perf)})))
       generator     (gen/phases
@@ -608,7 +608,7 @@
                                           :value x
                                           :durability-level (util/random-durability-level opts)}))
                             (gen/seq)
-                            (do-n-nemesis-cycles cycles control-atom
+                            (do-n-nemesis-cycles cycles
                                                  [(gen/sleep 20)]))
                        (gen/sleep 3)
                        (gen/clients (gen/once {:type :invoke :f :read :value nil})))))
@@ -643,7 +643,7 @@
       checker               (checker/compose
                              (merge
                               {:set (checker/set)
-                               :sanity (cbchecker/sanity-check control-atom)}
+                               :sanity (cbchecker/sanity-check)}
                               (if (opts :perf-graphs)
                                 {:perf (checker/perf)})))
       client-gen (->> (range)
@@ -655,7 +655,7 @@
       generator  (gen/phases
                   (case scenario
                     :kill-memcached
-                    (do-n-nemesis-cycles cycles control-atom
+                    (do-n-nemesis-cycles cycles
                                          [(gen/sleep 10)
                                           {:type :info
                                            :f    :kill-process
@@ -669,7 +669,7 @@
                                          client-gen)
 
                     :kill-ns-server
-                    (do-n-nemesis-cycles cycles control-atom
+                    (do-n-nemesis-cycles cycles
                                          [(gen/sleep 10)
                                           {:type :info
                                            :f    :kill-process
@@ -683,7 +683,7 @@
                                          client-gen)
 
                     :kill-babysitter
-                    (do-n-nemesis-cycles cycles control-atom
+                    (do-n-nemesis-cycles cycles
                                          [(gen/sleep 5)
                                           {:type :info
                                            :f    :kill-process
@@ -746,7 +746,7 @@
       checker               (checker/compose
                              (merge
                               {:set (checker/set)
-                               :sanity (cbchecker/sanity-check control-atom)}
+                               :sanity (cbchecker/sanity-check)}
                               (if (opts :perf-graphs)
                                 {:perf (checker/perf)})))
       generator             (gen/phases
@@ -757,7 +757,7 @@
                                           :value x
                                           :durability-level (util/random-durability-level opts)}))
                                   (gen/seq)
-                                  (do-n-nemesis-cycles cycles control-atom
+                                  (do-n-nemesis-cycles cycles
                                                        [(gen/sleep 5)
                                                         {:type :info :f :rebalance-out
                                                          :targeter-opts

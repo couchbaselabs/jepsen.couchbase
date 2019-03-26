@@ -8,7 +8,7 @@
 
 (defn sanity-check
   "Return unknown validity if the test is broken."
-  [control-atom]
+  []
   (reify checker/Checker
     (check [this test model history opts]
       (let [reads   (->> history (filter #(and (= (:f %) :read) (= (:type %) :invoke))) (count))
@@ -19,7 +19,7 @@
                                     (->> history
                                          (filter #(and (= (:f %) ftype) (= (:type %) :ok)))
                                          (count))))
-            aborted (= @control-atom :abort)]
+            aborted (= @(:control-atom test) :abort)]
         (cond
           aborted {:valid? :unknown :error "Test aborted"}
           (allfail? :read) {:valid? :unknown :error "Insufficient read ops returned :ok"}
