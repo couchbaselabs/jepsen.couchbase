@@ -77,20 +77,25 @@
       (compare-and-set! controlatom :continue :stop)
       nil))
 
+(gen/defgenerator start-timeout
+  [control-atom timeout]
+  [control-atom timeout]
+  (op [_ test process]
+      (future (do (Thread/sleep timeout)
+                  (if (compare-and-set! control-atom :continue :abort)
+                    (error "TEST TIMEOUT EXCEEDED, ABORTING"))))
+      nil))
+
 (defn do-n-nemesis-cycles
   ([n control-atom nemesis-seq client-gen] (do-n-nemesis-cycles n control-atom [] nemesis-seq [] client-gen))
   ([n control-atom nemesis-pre-seq nemesis-seq nemesis-post-seq client-gen]
-   (let [nemesis-gen  (gen/seq (flatten [nemesis-pre-seq
+   (let [nemesis-gen  (gen/seq (flatten [(start-timeout. control-atom (* n 1000 60 30))
+                                         nemesis-pre-seq
                                          (repeat n nemesis-seq)
                                          nemesis-post-seq
                                          (gen/sleep 3)
                                          (set-atom-stop. control-atom)]))
          rclient-gen  (while-atom-continue. control-atom client-gen)]
-     ;; Allow at most 30 minutes per nemesis cycle, if the test takes longer
-     ;; then presume it is stuck and abort.
-     (future (do (Thread/sleep (* n 1000 60 30))
-                 (if (compare-and-set! control-atom :continue :abort)
-                   (error "TEST TIMEOUT EXCEEDED, ABORTING"))))
      (gen/nemesis nemesis-gen rclient-gen))))
 
 (defn rate-limit
