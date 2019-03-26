@@ -263,7 +263,7 @@
 
       :dcp-start-streaming (do (cbclients/start-streaming dcpclient test) op)))
   (close! [_ _])
-  (teardown! [_ _]
+  (teardown! [_ test]
     (cbclients/shutdown-pool test)))
 
 (defn set-client [dcpclient]
