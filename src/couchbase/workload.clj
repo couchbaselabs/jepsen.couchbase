@@ -618,7 +618,7 @@
       cycles                (opts :cycles 1)
       concurrency           1000
       pool-size             16
-      custom-vbucket-count  64
+      custom-vbucket-count  (opts :custom-vbucket-count 64)
       replicas              (opts :replicas 1)
       replicate-to          (opts :replicate-to 0)
       disrupt-count         (opts :disrupt-count 1)
@@ -726,7 +726,7 @@
       cycles                (opts :cycles 5)
       concurrency           500
       pool-size             6
-      custom-vbucket-count  64
+      custom-vbucket-count  (opts :custom-vbucket-count 64)
       replicas              (opts :replicas 0)
       replicate-to          (opts :replicate-to 0)
       autofailover          (opts :autofailover true)
