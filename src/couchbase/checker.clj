@@ -12,12 +12,19 @@
   (reify checker/Checker
     (check [this test model history opts]
       (let [reads   (->> history (filter #(and (= (:f %) :read) (= (:type %) :invoke))) (count))
-            okreads (->> history (filter #(and (= (:f %) :read) (= (:type %) :ok))) (count))
-            allfail (> (* 0.01 reads) okreads)
+            allfail? (fn [ftype] (> (->> history
+                                         (filter #(and (= (:f %) ftype) (= (:type %) :invoke)))
+                                         (count)
+                                         (* 0.01))
+                                    (->> history
+                                         (filter #(and (= (:f %) ftype) (= (:type %) :ok)))
+                                         (count))))
             aborted (= @control-atom :abort)]
         (cond
           aborted {:valid? :unknown :error "Test aborted"}
-          allfail {:valid? :unknown :error "(Almost?) all read ops failed"}
+          (allfail? :read) {:valid? :unknown :error "Insufficient read ops returned :ok"}
+          (allfail? :write) {:valid? :unknown :error "Insufficient write ops returned :ok"}
+          (allfail? :add) {:valid? :unknown :error "Insufficient add ops returned :ok"}
           :else   {:valid? true})))))
 
 (defn extended-set-checker
