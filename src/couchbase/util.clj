@@ -367,6 +367,18 @@
           (c/su (c/exec :killall :-9 :memcached))
           (catch RuntimeException e))
         (try
+          (c/su (c/exec :umount :-l "/dev/mapper/cbdata"))
+          (catch RuntimeException e))
+        (try
+          (c/su (c/exec :dmsetup :remove :-f "/dev/mapper/cbdata"))
+          (catch RuntimeException e))
+        (try
+          (c/su (c/exec :losetup :-d "/dev/loop0"))
+          (catch RuntimeException e))
+        (try
+          (c/su (c/exec :rm "/tmp/cbdata.img"))
+          (catch RuntimeException e))
+        (try
           (c/su (c/exec :rm :-rf (str path "/var/lib/couchbase")))
           (catch RuntimeException e (info "rm -rf " (str path "/var/lib/couchbase") " failed: " (str e))))
         (net/heal! (:net test) test)))

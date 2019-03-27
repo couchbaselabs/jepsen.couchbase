@@ -119,15 +119,10 @@
                         ;; Drop buffers. Since most of our tests use little data we can read
                         ;; everything from the filesystem level buffer despite the block device
                         ;; returning errors.
-                        (c/exec :echo "3" :> :/proc/sys/vm/drop_caches)))
+                        (c/exec :echo "3" :> (keyword "/proc/sys/vm/drop_caches"))))
                  (assoc op :value [:failed fail]))))
 
-    (teardown! [this test]
-      (c/with-test-nodes test
-        (c/su (c/exec :umount :-l "/dev/mapper/cbdata")
-              (c/exec :dmsetup :remove :-f "/dev/mapper/cbdata")
-              (c/exec :losetup :-d "/dev/loop0")
-              (c/exec :rm "/tmp/cbdata.img"))))))
+    (teardown! [this test])))
 
 (defn filter-nodes
   "This function will take in node-state atom and targeter-opts. Target conditions will be extracted from
