@@ -122,7 +122,12 @@
                         (c/exec :echo "3" :> (keyword "/proc/sys/vm/drop_caches"))))
                  (assoc op :value [:failed fail]))))
 
-    (teardown! [this test])))
+    (teardown! [this test]
+      (c/with-test-nodes test
+                         (c/su (c/exec :umount :-l "/dev/mapper/cbdata")
+                               (c/exec :dmsetup :remove :-f "/dev/mapper/cbdata")
+                               (c/exec :losetup :-d "/dev/loop0")
+                               (c/exec :rm "/tmp/cbdata.img"))))))
 
 (defn filter-nodes
   "This function will take in node-state atom and targeter-opts. Target conditions will be extracted from
