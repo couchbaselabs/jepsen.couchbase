@@ -27,6 +27,9 @@ case $i in
     --global=*)
     GLOBAL="${i#*=}"
     ;;
+    --jenkins-run )
+    JENKINS_RUN=true
+    ;;
     -h|--help)
     print_usage
     exit 0
@@ -79,6 +82,14 @@ fail_array=()
 crash_array=()
 unknown_array=()
 
+if [ "$JENKINS_RUN" ]; then
+    rm -rf ./store
+    mkdir ./store
+    mkdir ./store/Couchbase
+    mkdir ./store/Couchbase/pass
+fi
+
+
 while IFS='' read -r line || [[ -n "$line" ]]; do
 
     # ignore commented out tests in conf file
@@ -110,7 +121,6 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
 
     # run test using vagrants or docker
     PREVIOUS_RUN=$(cd ./store/latest; pwd -P)
-
     if [ "$PROVISIONER" == "vagrant" ]; then
         command="$vagrantBaseCommand $vagrantParams $packageParam $testParams"
         echo "Test command: $command"
@@ -127,6 +137,7 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
         EXITCODE=$?
         docker cp jepsen-control:/jepsen/store .
     fi
+
     if [ "$PROVISIONER" == "vmpool" ]; then
         command="$vmpoolBaseCommand $vmpoolParams $packageParam $testParams"
         echo "Test command: $command"
@@ -134,8 +145,6 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
         eval $command
         EXITCODE=$?
     fi
-
-
     if [ $EXITCODE -ne 0 ]; then
         LAST_RUN=$(cd ./store/latest; pwd -P)
         if [ "$PREVIOUS_RUN" != "$LAST_RUN" ] && grep -q -e "^ :valid? false" store/latest/results.edn; then
@@ -143,21 +152,24 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
                 xargs printf "\n\nJepsen exited with failure for workload %s\n\n"
             printf "Test failed!\n\n"
             fail=$(($fail+1))
-            fail_array+=("#$test_num")
+            fail_array+=("#$test_num :: $testParams")
         else
             printf "Jepsen failed with unknown failure \n"
             printf "Test crashed! \n"
             crash=$(($crash+1))
-            crash_array+=("#$test_num")
+            crash_array+=("#$test_num :: $testParams")
         fi
     else
         LAST_RUN=$(cd ./store/latest; pwd -P)
         if tail -n 1 $LAST_RUN/results.edn | grep -q ":valid? true" ; then
             pass=$(($pass+1))
             printf "Test passed!\n"
+            if [ "$JENKINS_RUN" ]; then
+                mv ./store/Couchbase/$(ls ./store/Couchbase/ | grep -v 'latest' | grep -v 'pass' | tail -1) ./store/Couchbase/pass
+            fi
         elif tail -n 1 $LAST_RUN/results.edn | grep -q ":valid? :unknown" ; then
             unknown=$(($unknown+1))
-            unknown_array+=("#$test_num")
+            unknown_array+=("#$test_num :: $testParams")
             printf "Test history could not be validated\n"
         else
             printf "ERROR: Couldn't determine test status\n"
@@ -198,26 +210,33 @@ echo "################################################################"
 
 total=$(($pass+$unknown+$fail+$crash))
 percent=`echo  "scale=2; $pass*100/$total" | bc`
-echo "Jepsen tests complete!"
-echo "###### Final Test Report #########"
-echo "pass: $pass"
-echo "unknown: $unknown"
-echo "fail: $fail"
-echo "crash: $crash"
-echo "$pass/$total = $percent%"
+echo "Jepsen tests complete!" > ./test_report.txt
+echo "###### Final Test Report #########" >> ./test_report.txt
+echo "pass: $pass" >> ./test_report.txt
+echo "unknown: $unknown" >> ./test_report.txt
+echo "fail: $fail" >> ./test_report.txt
+echo "crash: $crash" >> ./test_report.txt
+echo "$pass/$total = $percent%" >> ./test_report.txt
 if [ "$unknown" -gt 0 ]; then
-    echo "###### Unknown Tests ########"
-    printf '%s\n' "${unknown_array[@]}"
+    echo "###### Unknown Tests ########" >> ./test_report.txt
+    printf '%s\n' "${unknown_array[@]}" >> ./test_report.txt
 fi
 if [ "$fail" -gt 0 ];then
-    echo "###### Failed Tests #########"
-    printf '%s\n' "${fail_array[@]}"
+    echo "###### Failed Tests #########" >> ./test_report.txt
+    printf '%s\n' "${fail_array[@]}" >> ./test_report.txt
 fi
 if [ "$crash" -gt 0 ];then
-    echo "###### Crashed Tests ########"
-    printf '%s\n' "${crash_array[@]}"
+    echo "###### Crashed Tests ########" >> ./test_report.txt
+    printf '%s\n' "${crash_array[@]}" >> ./test_report.txt
 fi
-echo "############################"
+echo "############################" >> ./test_report.txt
+cat ./test_report.txt
+if [ "$JENKINS_RUN" ]; then
+    mv ./test_report.txt ./store/Couchbase
+    rm -rf ./store/Couchbase/latest
+    rm -rf ./store/latest
+    rm -rf ./store/current
+fi
 
 if [ "$crash" -gt 0 ]; then
     exit 4
