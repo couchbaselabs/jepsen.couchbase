@@ -451,8 +451,8 @@
         :>> (str install-dir "/var/lib/couchbase/logs/hashdump.txt") (c/lit ";")
         :echo :>> (str install-dir "/var/lib/couchbase/logs/hashdump.txt") (c/lit ";")
         :done)))
-
-    (c/su (c/exec :chmod :-R :a+rx (str install-dir "/var/lib/couchbase")))
+    (c/su (c/exec :chmod :a+rx (str install-dir "/var/lib/couchbase")))
+    (c/su (c/exec :chmod :-R :a+rx (str install-dir "/var/lib/couchbase/logs")))
     (try
       (->> (c/exec :ls (str install-dir "/var/lib/couchbase/logs"))
            (str/split-lines)

@@ -85,9 +85,11 @@
                  (assoc op :value :ok))))
     (teardown! [this test])))
 
-(defn disk-failure
-  "Simulate a disk failure on the data path.
-  This nemesis will not work correctly with docker containers"
+(defn device-mapper
+  "Create a virtual block device using the linux kernel device mapper and mount
+  a filesystem from that device as the couchbase server data directory. This
+  allows for simulated disk issues. This nemesis will not work correctly with
+  docker containers"
   []
   (reify nemesis/Nemesis
     (setup! [this test]
@@ -100,34 +102,42 @@
                 (c/exec :dmsetup :create :cbdata :--table (c/lit "'0 1048576 linear /dev/loop0 0'"))
                 (c/exec :mkfs.ext4 "/dev/mapper/cbdata")
                 (c/exec server-path :-k)
-                (c/exec :mv data-path "/tmp/cbdata")
+                (c/exec :mv :-T data-path "/tmp/cbdata")
                 (c/exec :mkdir data-path)
-                (c/exec :mount "/dev/mapper/cbdata" data-path)
+                (c/exec :mount :-o "noatime" "/dev/mapper/cbdata" data-path)
                 (c/exec :chmod "a+rwx" data-path)
-                (c/exec :mv (c/lit "/tmp/cbdata/*") data-path)
-                (c/exec :rm :-r "/tmp/cbdata"))
+                (c/exec :mv :-t data-path (c/lit "/tmp/cbdata/*") (c/lit "/tmp/cbdata/.[!.]*")))
           (c/ssh* {:cmd (str "nohup " server-path " -- -noinput >> /dev/null 2>&1 &")})
           (util/wait-for-daemon)
           (util/wait-for-warmup))
         this))
     (invoke! [this test op]
       (case (:f op)
-        :start (let [fail (->> test :nodes shuffle (take (op :count)))]
-                 (c/on-many
-                  fail
-                  (c/su (c/exec :dmsetup :wipe_table :cbdata :--noflush :--nolockfs)
-                        ;; Drop buffers. Since most of our tests use little data we can read
-                        ;; everything from the filesystem level buffer despite the block device
-                        ;; returning errors.
-                        (c/exec :echo "3" :> (keyword "/proc/sys/vm/drop_caches"))))
-                 (assoc op :value [:failed fail]))))
+        :fail (let [fail (->> test :nodes shuffle (take (op :count)))]
+                (c/on-many
+                 fail
+                 (c/su (c/exec :dmsetup :wipe_table :cbdata :--noflush :--nolockfs)
+                       ;; Drop buffers. Since most of our tests use little data we can read
+                       ;; everything from the filesystem level buffer despite the block device
+                       ;; returning errors.
+                       (c/exec :echo "3" :> "/proc/sys/vm/drop_caches")))
+                (assoc op :value [:failed fail]))
+        :slow (let [slow (->> test :nodes shuffle (take (op :count)))]
+                (c/on-many
+                 slow
+                 ;; Load a new (inactive) table that delays all disk IO by 25ms.
+                 (c/su (c/exec :dmsetup :load :cbdata :--table
+                               (c/lit "'0 1048576 delay /dev/loop0 0 25 /dev/loop0 0 25'"))
+                       (c/exec :dmsetup :resume :cbdata)))
+                (assoc op :value [:slow slow]))
+        :reset-all (do (c/on-many
+                        (test :nodes)
+                        (c/su (c/exec :dmsetup :load :cbdata :--table
+                                      (c/lit "'0 1048576 linear /dev/loop0 0'"))
+                              (c/exec :dmsetup :resume :cbdata)))
+                       (assoc op :value :ok))))
 
-    (teardown! [this test]
-      (c/with-test-nodes test
-                         (c/su (c/exec :umount :-l "/dev/mapper/cbdata")
-                               (c/exec :dmsetup :remove :-f "/dev/mapper/cbdata")
-                               (c/exec :losetup :-d "/dev/loop0")
-                               (c/exec :rm "/tmp/cbdata.img"))))))
+    (teardown! [this test])))
 
 (defn filter-nodes
   "This function will take in node-state atom and targeter-opts. Target conditions will be extracted from

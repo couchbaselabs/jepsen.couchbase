@@ -430,12 +430,15 @@
   (with-register-base opts
     replicas      (opts :replicas 1)
     disrupt-count (opts :disrupt-count 1)
-    nemesis       (cbnemesis/disk-failure)
+    disrupt-time  (opts :disrupt-time 10)
+    nemesis       (cbnemesis/device-mapper)
     client-generator (client-gen opts doc-threads rate cas)
     generator     (do-n-nemesis-cycles cycles
                                        [(gen/sleep 10)
-                                        {:type :info :f :start :count disrupt-count}
-                                        (gen/sleep 10)]  client-generator)))
+                                        {:type :info :f :fail :count disrupt-count}
+                                        (gen/sleep disrupt-time)
+                                        {:type :info :f :reset-all}]
+                                       client-generator)))
 
 (defn partition-failover-workload
   "Trigger non-linearizable behaviour where successful mutations with replicate-to=1
