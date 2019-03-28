@@ -418,6 +418,7 @@
   "Get a file with the package that can be uploaded to the nodes"
   [package]
   (cond
+    (= "nil" package) nil
     (and (re-matches #".*\.rpm" package)
          (.isFile (io/file package))) {:type :rpm :package (io/file package)}
     (and (re-matches #".*\.deb" package)
