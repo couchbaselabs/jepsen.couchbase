@@ -218,6 +218,14 @@
                (error "Caught exception in nemesis and couldn't abort test, will hard exit.")
                (System/exit 1))))))))
 
+  ;; The default resolution of the perf graphs is tiny, so render something
+  ;; bigger to show more detail
+  (alter-var-root
+   (var jepsen.checker.perf/preamble)
+   (fn [preamble]
+     (fn [output-path]
+       (assoc-in (into [] (preamble output-path)) [1 5 :xs] '(1800 800)))))
+
   ;; Now parse args and run the test
   (let [test        (cli/single-test-cmd {:test-fn  cbtest
                                           :opt-spec extra-cli-options})
