@@ -540,7 +540,11 @@
                               (> disrupt-time autofailover-timeout)
                               (>= (count (:nodes opts)) 3))
    client                (clients/set-client dcpclient)
-   nemesis               (cbnemesis/couchbase)
+   nemesis               (if (= scenario :kill-memcached-on-slow-disk)
+                           (nemesis/compose
+                            {#{:kill-process} (cbnemesis/couchbase)
+                             #{:slow :reset-all} (cbnemesis/device-mapper)})
+                           (cbnemesis/couchbase))
    control-atom          (atom :continue)
    checker               (checker/compose
                           (merge
@@ -556,6 +560,23 @@
                    (gen/seq))
    generator  (gen/phases
                (case scenario
+                 :kill-memcached-on-slow-disk
+                 (do-n-nemesis-cycles cycles
+                                      [(gen/sleep 10)
+                                       {:type :info :f :slow :count (->> opts :nodes count)}
+                                       (gen/sleep 4)
+                                       {:type :info
+                                        :f    :kill-process
+                                        :f-opts {:process :memcached}
+                                        :targeter-opts {:type :random-subset
+                                                        :count disrupt-count
+                                                        :condition {:cluster [:active]
+                                                                    :network [:connected]
+                                                                    :node [:running]}}}
+                                       {:type :info :f :reset-all}
+                                       (gen/sleep 10)]
+                                      client-gen)
+
                  :kill-memcached
                  (do-n-nemesis-cycles cycles
                                       [(gen/sleep 10)
