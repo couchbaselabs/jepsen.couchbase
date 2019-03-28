@@ -93,7 +93,6 @@
         dockey (format "jepsen%04d" rawkey)]
     (try
       (let [opts (doto (UpsertOptions/upsertOptions)
-                   (.timeout (java.time.Duration/ofSeconds 5))
                    (apply-durability-options! op)
                    (apply-observe-options! op))
             upsert-result (.upsert collection dockey opval opts)
@@ -129,10 +128,9 @@
             current-cas (.cas get-current)]
         (if (= current-value swap-from)
           (let [opts (doto (ReplaceOptions/replaceOptions)
-                       (.timeout (java.time.Duration/ofSeconds 2))
-                       (.cas current-cas)
-                       (apply-durability-options! op)
-                       (apply-observe-options! op))
+                         (.cas current-cas)
+                         (apply-durability-options! op)
+                         (apply-observe-options! op))
                 replace-result (.replace collection dockey swap-to opts)
                 mutation-token (.mutationToken replace-result)]
             (assoc op
@@ -189,7 +187,6 @@
 (defn do-set-add [collection op]
   (try
     (let [opts (doto (InsertOptions/insertOptions)
-                 (.timeout (java.time.Duration/ofSeconds 5))
                  (apply-durability-options! op)
                  (apply-observe-options! op))
           dockey (format "jepsen%010d" (:value op))
@@ -218,7 +215,6 @@
 (defn do-set-del [collection op]
   (try
     (let [opts (doto (RemoveOptions/removeOptions)
-                 (.timeout (java.time.Duration/ofSeconds 5))
                  (apply-durability-options! op)
                  (apply-observe-options! op))
           dockey (format "jepsen%010d" (:value op))

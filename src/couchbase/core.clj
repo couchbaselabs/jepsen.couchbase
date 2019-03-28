@@ -144,10 +144,10 @@
     "Number of seconds for which the nemesis will act"
     :parse-fn parse-int
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
-   [nil "--durability-timeout DURABILITY-TIMEOUT"
-    "Durability timeout in seconds"
-    :parse-fn parse-int
-    :validate [#(and (number? %) (pos? %)) "Must be a number"]]
+   [nil "--kv-timeout KV-TIMEOUT"
+    "Timeout for kv operations before aborting with an ambiguous response"
+    :parse-fn #(->> % (Double/parseDouble) (* 1000) (java.time.Duration/ofMillis))
+    :default (java.time.Duration/ofSeconds 10)]
    [nil "--node-count NODE-COUNT"
     "Number of nodes to use for this test"
     :parse-fn parse-int

@@ -4,6 +4,7 @@
   (:import com.couchbase.client.java.Cluster
            com.couchbase.client.java.env.ClusterEnvironment
            com.couchbase.client.core.env.IoConfig
+           com.couchbase.client.core.env.TimeoutConfig
 
            com.couchbase.client.dcp.Client
            com.couchbase.client.dcp.ControlEventHandler
@@ -30,7 +31,10 @@
         ioConfig   (-> (IoConfig/builder)
                        ; (.configPollInterval duration) FOR FUTURE
                        (.mutationTokensEnabled true))
+        timeout    (-> (TimeoutConfig/builder)
+                       (.kvTimeout (:kv-timeout test)))
         env        (-> (ClusterEnvironment/builder node "Administrator" "abc123")
+                       (.timeoutConfig timeout)
                        (.ioConfig ioConfig)
                        (.build))
         cluster    (Cluster/connect env)
@@ -51,6 +55,7 @@
   [test]
   (locking client-pool
     (when-not @client-pool
+      (Thread/sleep 10000)
       (reset! client-pool (->> (partial new-client test)
                                (repeatedly (test :pool-size))
                                (doall)
