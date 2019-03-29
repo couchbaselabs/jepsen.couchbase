@@ -170,7 +170,11 @@
     :validate [#(<= 1 % 1024) "Vbucket count must be between 1 and 1024"]]
    [nil "--cas"
     "Enable CAS operations"
-    :default false]])
+    :default false]
+   [nil "--eviction-policy EVICTION-POLICY"
+    "Eviction policy for the bucket"
+    :parse-fn {"full" "fullEviction" "value" "valueOnly"}
+    :default "fullEviction"]])
 
 (defn -main
   "Run the test specified by the cli arguments"

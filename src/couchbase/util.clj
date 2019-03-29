@@ -135,11 +135,11 @@
 
 (defn create-bucket
   "Create the default bucket"
-  [replicas]
+  [replicas eviction]
   (let [params (str "flushEnabled=1&replicaNumber=" replicas
-                    "&evictionPolicy=fullEviction&ramQuotaMB=100"
-                    "&bucketType=couchbase&name=default"
-                    "&authType=sasl&saslPassword=")]
+                    "&evictionPolicy=" eviction
+                    "&ramQuotaMB=100&bucketType=couchbase"
+                    "&name=default&authType=sasl&saslPassword=")]
     (rest-call "/pools/default/buckets" params)))
 
 (defn set-vbucket-count
@@ -249,14 +249,15 @@
   (info "Creating couchbase cluster from" node)
   (let [nodes (test :nodes)
         other-nodes (remove #(= node %) nodes)
-        num-replicas (test :replicas)]
+        num-replicas (test :replicas)
+        eviction-policy (test :eviction-policy)]
     (initialise test)
     (add-nodes other-nodes)
     (set-vbucket-count test)
     (if (> (count nodes) 1)
       (rebalance nodes))
     (set-autofailover test)
-    (create-bucket num-replicas)
+    (create-bucket num-replicas eviction-policy)
     (info "Waiting for bucket warmup to complete...")
     (wait-for-warmup)
     (if (test :custom-cursor-drop-marks)
