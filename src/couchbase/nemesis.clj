@@ -229,10 +229,12 @@
         (net/heal! (:net test) test)
         (reset! nodes (:nodes test))
         (reset! node-states (reduce #(assoc %1 %2 {:state {:cluster :active :network :connected :node :running}}) {} (:nodes test)))
-        (set-node-server-group-state node-states)
+        (if (:server-groups-enabled test)
+          (set-node-server-group-state node-states))
         this)
 
       (invoke! [this test op]
+        (info "op: " (str op))
         (let [f-opts                (:f-opts op)
               targeter-opts         (:targeter-opts op)
               target-nodes          (if (nil? targeter-opts) @nodes (get-targets @node-states targeter-opts))
@@ -289,6 +291,7 @@
             :partition-network
             (let [partition-type (:partition-type f-opts)
                   grudge (create-grudge partition-type target-nodes @nodes)]
+              (info "Partition grudge: " (str grudge))
               (net/drop-all! test grudge)
               (doseq [target target-nodes]
                 (update-node-state node-states target {:network :partitioned :cluster :inactive}))
@@ -309,10 +312,12 @@
               (assoc op :value :network-healed))
 
             :wait-for-autofailover
-            (let [autofailover-count (atom 0)
-                  target (first target-nodes)
+            (let [target (first target-nodes)
+                  initial-count (util/get-autofailover-info target :count)
+                  final-count (+ initial-count 1)
+                  autofailover-count (atom initial-count)
                   node-info-before (util/get-node-info target)]
-              (util/wait-for #(util/get-autofailover-info target :count) 1 120)
+              (util/wait-for #(util/get-autofailover-info target :count) final-count 120)
               (let [node-info-after (util/get-node-info target)]
                 (doseq [node-info node-info-before]
                   (let [node-key (key node-info)
@@ -321,10 +326,7 @@
                         active-before (= state-before "active")
                         failed-after (= state-after "inactiveFailed")]
                     (if (and active-before failed-after)
-                      (do
-                        (update-node-state node-states node-key {:cluster :failed})
-                        (swap! autofailover-count inc))))))
-              (assert (= @autofailover-count 1) (str "autofailover-count != 1"))
+                      (do (update-node-state node-states node-key {:cluster :failed}))))))
               (info "cluster state: " @node-states)
               (assoc op :value :autofailover-complete))
 
@@ -339,7 +341,8 @@
             (let [nodes-to-eject (vec (set/union (set failed-nodes) (set target-nodes)))]
               (util/rebalance (set cluster-nodes) (set nodes-to-eject))
               (doseq [eject-node nodes-to-eject]
-                (update-node-state node-states eject-node {:cluster :ejected}))
+                (update-node-state node-states eject-node {:cluster :ejected})
+                (update-node-state node-states eject-node {:server-group nil}))
               (info "cluster state: " @node-states)
               (assoc op :value (str "Removed: " nodes-to-eject)))
 
@@ -352,12 +355,19 @@
             ; will catch and exceptions and continue generating ops. Special care should be taken
             ; when using this function in a scenario where nodes are partitioned
             (do
-              (c/on (first healthy-cluster-nodes) (util/add-nodes (set target-nodes)))
+              (c/on
+                (first healthy-cluster-nodes)
+                (util/add-nodes (set target-nodes) (get-in f-opts [:add-opts] nil)))
               (util/rebalance (set/union (set cluster-nodes) (set target-nodes)) (set failed-nodes))
               (doseq [target-node target-nodes]
-                (update-node-state node-states target-node {:cluster :active}))
+                (info "updating target node state in rebalance-in")
+                (update-node-state node-states target-node {:cluster :active})
+                (update-node-state node-states target-node {:server-group (util/get-node-group target-node)})
+                )
               (doseq [failed-node failed-nodes]
-                (update-node-state node-states failed-node {:cluster :ejected}))
+                (info "updating failed node state in rebalance-in")
+                (update-node-state node-states failed-node {:cluster :ejected})
+                (update-node-state node-states failed-node {:server-group nil}))
               (info "cluster state: " @node-states)
               (assoc op :value (str "Added: " target-nodes " Removed: " failed-nodes)))
 

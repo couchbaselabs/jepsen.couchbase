@@ -151,20 +151,25 @@
     disrupt-time   (opts :disrupt-time 20)
     recovery-type  (opts :recovery-type :delta)
     disrupt-count  (opts :disrupt-count 1)
+    sg-enabled     (opts :server-groups-enabled)
+    server-group-count (opts :server-group-count)
+    target-server-groups      (if (opts :target-server-groups) (do (assert sg-enabled) true) false)
     should-autofailover (and autofailover
                              (>= replicas 1)
                              (= disrupt-count 1)
                              (> disrupt-time autofailover-timeout)
                              (>= node-count 3))
     should-server-group-autofailover (and autofailover
+                                          sg-enabled
+                                          target-server-groups
                                           server-group-autofailover
                                           (>= replicas 1)
-                                          (>= (:server-group-count opts) 3)
-                                          (>= disrupt-count
-                                              (Math/ceil (/ node-count
-                                                            (:server-group-count opts))))
+                                          (>= server-group-count 3)
+                                          (>= disrupt-count (Math/ceil (/ node-count server-group-count)))
                                           (> disrupt-time autofailover-timeout)
                                           (>= node-count 3))
+    random-server-group (util/random-server-group server-group-count)
+    complementary-server-group (util/complementary-server-group server-group-count random-server-group)
     nemesis        (cbnemesis/couchbase)
     client-generator (client-gen opts doc-threads rate cas)
     generator       (do-n-nemesis-cycles
@@ -175,25 +180,29 @@
                        :f-opts {:partition-type :isolate-completely}
                        :targeter-opts {:type      :random-subset
                                        :count     disrupt-count
-                                       :condition {:cluster [:active]
-                                                   :network [:connected]
-                                                   :node [:running]
-                                                   :server-group ["Group 1"]}}}
+                                       :condition (merge {:cluster [:active]
+                                                          :network [:connected]
+                                                          :node [:running]}
+                                                         (when-let [target-sq target-server-groups]
+                                                           {:server-group [random-server-group]}))
+                                       }}
 
                       (if (or should-autofailover should-server-group-autofailover)
                         [{:type :info
                           :f    :wait-for-autofailover
                           :targeter-opts {:type      :random
-                                          :condition {:cluster [:active]
-                                                      :network [:connected]
-                                                      :node [:running]}}}
+                                          :condition (merge {:cluster [:active]
+                                                             :network [:connected]
+                                                             :node [:running]}
+                                                            (when-let [target-sq target-server-groups]
+                                                              {:server-group [complementary-server-group]}))}}
                          (gen/sleep (- disrupt-time autofailover-timeout))]
                         (gen/sleep disrupt-time))
 
                       {:type :info :f :heal-network}
 
                       (if (or should-autofailover should-server-group-autofailover)
-                        [(gen/sleep (if should-server-group-autofailover 20 10))
+                        [(gen/sleep 10)
                          {:type   :info
                           :f      :recover
                           :f-opts {:recovery-type recovery-type}
@@ -202,7 +211,7 @@
                                                       :network [:connected]
                                                       :node [:running]}}}
                          (gen/sleep 5)]
-                        [])]
+                        [(gen/sleep 10)])]
                      client-generator)))
 
 (defn rebalance-workload
@@ -233,6 +242,12 @@
                       (assert (<= disrupt-count max-disrupt-count))
                       disrupt-count))
     autofailover  (opts :autofailover false)
+    server-group-autofailover (opts :server-group-autofailover false)
+    sg-enabled     (opts :server-groups-enabled)
+    server-group-count (opts :server-group-count)
+    target-server-groups      (if (opts :target-server-groups) (do (assert sg-enabled) true) false)
+    random-server-group (util/random-server-group server-group-count)
+    complementary-server-group (util/complementary-server-group server-group-count random-server-group)
     nemesis       (cbnemesis/couchbase)
     client-generator (client-gen opts doc-threads rate cas)
     generator     (case scenario
@@ -245,14 +260,17 @@
                              {:type :info :f :rebalance-out
                               :targeter-opts
                               {:type :random
-                               :condition {:cluster [:active :failed]
-                                           :network [:connected]
-                                           :node [:running]}}}]))
+                               :condition (merge {:cluster [:active :failed]
+                                                  :network [:connected]
+                                                  :node [:running]}
+                                                 (when-let [target-sq target-server-groups]
+                                                   {:server-group [random-server-group]}))}}]))
                       (gen/sleep 5)
                       (repeatedly
                        disrupt-count
                        #(do [(gen/sleep 5)
                              {:type :info :f :rebalance-in
+                              :f-opts {:add-opts {:group-name random-server-group}}
                               :targeter-opts
                               {:type :random
                                :condition {:cluster [:ejected]
@@ -269,11 +287,14 @@
                        :targeter-opts
                        {:type :random-subset
                         :count disrupt-count
-                        :condition {:cluster [:active :failed]
-                                    :network [:connected]
-                                    :node [:running]}}}
+                        :condition (merge {:cluster [:active :failed]
+                                           :network [:connected]
+                                           :node [:running]}
+                                          (when-let [target-sq target-server-groups]
+                                            {:server-group [random-server-group]}))}}
                       (gen/sleep 5)
                       {:type :info :f :rebalance-in
+                       :f-opts {:add-opts {:group-name random-server-group}}
                        :targeter-opts
                        {:type :random-subset
                         :count disrupt-count
@@ -314,6 +335,10 @@
     recovery-type (opts :recovery-type :delta)
     failover-type (opts :failover-type :hard)
     disrupt-count (opts :disrupt-count 1)
+    sg-enabled     (opts :server-groups-enabled)
+    server-group-count (opts :server-group-count)
+    target-server-groups      (if (opts :target-server-groups) (do (assert sg-enabled) true) false)
+    random-server-group (util/random-server-group server-group-count)
     nemesis   (cbnemesis/couchbase)
     client-generator (client-gen opts doc-threads rate cas)
     generator (do-n-nemesis-cycles cycles
@@ -323,16 +348,21 @@
                                      :f-opts {:failover-type failover-type}
                                      :targeter-opts {:type :random-subset
                                                      :count disrupt-count
-                                                     :condition {:cluster [:active :inactive]
-                                                                 :network [:connected]}}}
+                                                     :condition (merge {:cluster [:active :failed]
+                                                                        :network [:connected]
+                                                                        :node [:running]}
+                                                                       (when-let [target-sq target-server-groups]
+                                                                         {:server-group [random-server-group]}))}}
                                     (gen/sleep 10)
                                     {:type :info
                                      :f    :recover
                                      :f-opts {:recovery-type recovery-type}
                                      :targeter-opts {:type :all
-                                                     :condition {:cluster [:failed]
-                                                                 :network [:connected]
-                                                                 :node [:running]}}}
+                                                     :condition (merge {:cluster [:failed]
+                                                                        :network [:connected]
+                                                                        :node [:running]}
+                                                                       (when-let [target-sq target-server-groups]
+                                                                         {:server-group [random-server-group]}))}}
                                     (gen/sleep 5)] client-generator)))
 
 (defn kill-workload
@@ -347,11 +377,26 @@
     autofailover          (opts :autofailover false)
     disrupt-count         (opts :disrupt-count 1)
     disrupt-time          (opts :disrupt-time 20)
+    sg-enabled     (opts :server-groups-enabled)
+    server-group-autofailover (opts :server-group-autofailover false)
+    server-group-count (opts :server-group-count)
+    target-server-groups      (if (opts :target-server-groups) (do (assert sg-enabled) true) false)
+    random-server-group (util/random-server-group server-group-count)
+    complementary-server-group (util/complementary-server-group server-group-count random-server-group)
     should-autofailover   (and autofailover
                                (>= replicas 1)
                                (= disrupt-count 1)
                                (> disrupt-time autofailover-timeout)
                                (>= node-count 3))
+    should-server-group-autofailover (and autofailover
+                                          sg-enabled
+                                          target-server-groups
+                                          server-group-autofailover
+                                          (>= replicas 1)
+                                          (>= server-group-count 3)
+                                          (>= disrupt-count (Math/ceil (/ node-count server-group-count)))
+                                          (> disrupt-time autofailover-timeout)
+                                          (>= node-count 3))
     nemesis               (cbnemesis/couchbase)
     client-generator      (client-gen opts doc-threads rate cas)
     generator (case scenario
@@ -363,9 +408,11 @@
                                        :f-opts {:process :memcached}
                                        :targeter-opts {:type :random-subset
                                                        :count disrupt-count
-                                                       :condition {:cluster [:active]
-                                                                   :network [:connected]
-                                                                   :node [:running]}}}
+                                                       :condition (merge {:cluster [:active]
+                                                                          :network [:connected]
+                                                                          :node [:running]}
+                                                                         (when-let [target-sq target-server-groups]
+                                                                           {:server-group [random-server-group]}))}}
                                       (gen/sleep 20)]
                                      client-generator)
 
@@ -377,9 +424,11 @@
                                        :f-opts {:process :ns-server}
                                        :targeter-opts {:type :random-subset
                                                        :count disrupt-count
-                                                       :condition {:cluster [:active]
-                                                                   :network [:connected]
-                                                                   :node [:running]}}}
+                                                       :condition (merge {:cluster [:active]
+                                                                          :network [:connected]
+                                                                          :node [:running]}
+                                                                         (when-let [target-sq target-server-groups]
+                                                                           {:server-group [random-server-group]}))}}
                                       (gen/sleep 20)]
                                      client-generator)
 
@@ -391,16 +440,20 @@
                                        :f-opts {:process :babysitter}
                                        :targeter-opts {:type :random-subset
                                                        :count disrupt-count
-                                                       :condition {:cluster [:active]
-                                                                   :network [:connected]
-                                                                   :node [:running]}}}
-                                      (if should-autofailover
+                                                       :condition (merge {:cluster [:active]
+                                                                          :network [:connected]
+                                                                          :node [:running]}
+                                                                         (when-let [target-sq target-server-groups]
+                                                                           {:server-group [random-server-group]}))}}
+                                      (if (or should-autofailover should-server-group-autofailover)
                                         [{:type :info
                                           :f    :wait-for-autofailover
                                           :targeter-opts {:type      :random
-                                                          :condition {:cluster [:active]
-                                                                      :network [:connected]
-                                                                      :node [:running]}}}
+                                                          :condition (merge {:cluster [:active]
+                                                                             :network [:connected]
+                                                                             :node [:running]}
+                                                                            (when-let [target-sq target-server-groups]
+                                                                              {:server-group [complementary-server-group]}))}}
                                          (gen/sleep (- disrupt-time autofailover-timeout))]
                                         [(gen/sleep disrupt-time)])
 
@@ -412,7 +465,7 @@
                                                                    :network [:connected]
                                                                    :node [:killed]}}}
                                       (gen/sleep 5)
-                                      (if should-autofailover
+                                      (if (or should-autofailover should-server-group-autofailover)
                                         [{:type   :info
                                           :f      :recover
                                           :f-opts {:recovery-type recovery-type}

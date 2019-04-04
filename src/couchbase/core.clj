@@ -136,6 +136,12 @@
    [nil "--skip-teardown"
     "Skip teardown of Couchbase server"
     :default false]
+   [nil "--server-groups-enabled"
+    "Turn on server groups"
+    :default false]
+   [nil "--target-server-groups"
+    "Nemesis will target server groups"
+    :default false]
    [nil "--cycles CYCLES"
     "Number of nemesis cycles to run"
     :parse-fn parse-int
@@ -154,6 +160,7 @@
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
    [nil "--server-group-count SERVER-GROUP-COUNT"
     "Number of nodes to use for this test"
+    :default 1
     :parse-fn parse-int
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
    [nil "--scenario SCENARIO"

@@ -60,19 +60,42 @@
     (rest-call "/settings/web" "username=Administrator&password=abc123&port=SAME")
     (rest-call "/pools/default" "memoryQuota=256")))
 
+(defn get-group-uuid
+  "Get id of group based on group name"
+  [group-name]
+  (let [server-group-info (rest-call "/pools/default/serverGroups" nil)
+        server-group-json (parse-string server-group-info true)
+        server-groups (:groups server-group-json)]
+    (loop [groups server-groups]
+      (if (empty? groups) (throw (RuntimeException. (str group-name " not found in list of groups"))))
+      (if (= (:name (first groups)) group-name)
+        (last (str/split (:uri (first groups)) #"/"))
+        (recur (rest groups))))))
+
 (defn add-nodes
   "Add nodes to the cluster"
-  [nodes-to-add]
-  (doseq [node nodes-to-add]
-    (let [params (str "hostname=" node
-                      "&user=Administrator"
-                      "&password=abc123"
-                      "&services=kv")]
-      (info "Adding node" node "to cluster")
-      (rest-call "/controller/addNode" params))))
+  ([nodes-to-add] (add-nodes nodes-to-add nil))
+  ([nodes-to-add add-opts]
+   (if (nil? add-opts)
+   (doseq [node nodes-to-add]
+     (let [params (str "hostname=" node
+                       "&user=Administrator"
+                       "&password=abc123"
+                       "&services=kv")]
+       (info "Adding node" node "to cluster")
+       (rest-call "/controller/addNode" params)))
+   (if (contains? add-opts :group-name)
+     (let [group-uuid (get-group-uuid (:group-name add-opts))]
+       (doseq [node nodes-to-add]
+         (let [params (str "hostname=" node
+                           "&user=Administrator"
+                           "&password=abc123"
+                           "&services=kv")]
+           (info "Adding node" node "to cluster")
+           (rest-call (format "/pools/default/serverGroups/%s/addNode" group-uuid)  params))))))))
 
 (defn wait-for
-  ([call-function desired-state] (wait-for call-function desired-state 120))
+  ([call-function desired-state] (wait-for call-function desired-state 60))
   ([call-function desired-state retries]
    (loop [state (call-function)
           attempts 0]
@@ -80,6 +103,7 @@
        (throw (RuntimeException. (str "Desired state not achieved in " (str retries) " retries"))))
      (if (not= state desired-state)
        (do
+         (info "waiting for " (str desired-state) " but have " (str state))
          (Thread/sleep 1000)
          (recur (call-function) (+ attempts 1)))))))
 
@@ -224,7 +248,7 @@
             current-group-nodes (vec (get-in @groups [group-index :nodes]))
             updated-group-nodes (vec (assoc current-group-nodes node-index node-to-add))
             updated-groups (assoc-in @groups [group-index :nodes] updated-group-nodes)]
-        ; after adding the node to cooresponding group, we remove the node from nodes atom
+        ; after adding the node to corresponding group, we remove the node from nodes atom
         (reset! nodes (set (remove #{node-to-add} @nodes)))
         (reset! groups updated-groups)))
     (client/put endpoint
@@ -235,6 +259,25 @@
                  :socket-timeout 1000
                  :conn-timeout 1000
                  :accept :json})))
+
+(defn get-node-group
+  "Get the group name for a given node"
+  [node]
+  (let [server-group-info (rest-call node "/pools/default/serverGroups" nil)
+        server-group-json (parse-string server-group-info true)
+        server-groups (:groups server-group-json)]
+    (loop [groups server-groups]
+      (info "checking node group for " (str node))
+      (if (empty? groups) (throw (RuntimeException. (str node " not found in list of groups")))
+        (let [group-name (:name (first groups))
+              group-nodes (:nodes (first groups))
+              node-found (atom false)]
+          (loop [nodes group-nodes]
+            (if (not-empty nodes)
+              (if (str/includes? (:hostname (first nodes)) node)
+                (reset! node-found true)
+                (recur (rest nodes)))))
+          (if @node-found group-name (recur (rest groups))))))))
 
 (defn setup-server-groups
   [test]
@@ -262,8 +305,7 @@
     (wait-for-warmup)
     (if (test :custom-cursor-drop-marks)
       (set-custom-cursor-drop-marks test))
-    (if (and (:server-group-count test)
-             (> (:server-group-count test) 1))
+    (if (:server-groups-enabled test)
       (setup-server-groups test))
     (info "Setup complete")))
 
@@ -498,3 +540,16 @@
     (->> (reductions + (:durability opts))
          (keep-indexed #(if (<= rand-seed %2) %1))
          (first))))
+
+(defn random-server-group
+  "Get a random server group name string given a server group count"
+  [server-group-count]
+  (str "Group " (str (+ (rand-int server-group-count) 1))))
+
+(defn complementary-server-group
+  "Get a random server group name string given a server group count"
+  [server-group-count exclude-group-name]
+  (loop [group-name (random-server-group server-group-count)]
+    (if (= group-name exclude-group-name)
+      (recur (random-server-group server-group-count))
+      group-name)))

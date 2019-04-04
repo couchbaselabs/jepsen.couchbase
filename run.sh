@@ -165,7 +165,9 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
             pass=$(($pass+1))
             printf "Test passed!\n"
             if [ "$JENKINS_RUN" ]; then
-                mv ./store/Couchbase/$(ls ./store/Couchbase/ | grep -v 'latest' | grep -v 'pass' | tail -1) ./store/Couchbase/pass
+                lastrundir=$(ls ./store/Couchbase/ | grep -v 'latest' | grep -v 'pass' | tail -1)
+                mv ./store/Couchbase/$lastrundir ./store/Couchbase/pass
+                ln -s ./store/Couchbase/pass/$lastrundir ./store/latest
             fi
         elif tail -n 1 $LAST_RUN/results.edn | grep -q ":valid? :unknown" ; then
             unknown=$(($unknown+1))
