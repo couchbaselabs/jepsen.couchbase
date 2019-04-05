@@ -520,19 +520,70 @@
   are lost due to promotion of the 'wrong' replica upon failover of the active"
   [opts]
   (with-register-base opts
-    replicas     (opts :replicas 1)
-    autofailover (opts :autofailover false)
-    nemesis      (cbnemesis/partition-then-failover)
+    replicas       (opts :replicas 1)
+    autofailover   (opts :autofailover false)
+    server-group-autofailover (opts :server-group-autofailover false)
+    disrupt-time   (opts :disrupt-time 20)
+    recovery-type (opts :recovery-type :delta)
+    failover-type (opts :failover-type :hard)
+    disrupt-count  (opts :disrupt-count 1)
+    sg-enabled     (opts :server-groups-enabled)
+    server-group-count (if sg-enabled (opts :server-group-count))
+    target-server-groups      (if (opts :target-server-groups) (do (assert sg-enabled) true) false)
+    should-autofailover (and autofailover
+                             (>= replicas 1)
+                             (= disrupt-count 1)
+                             (> disrupt-time autofailover-timeout)
+                             (>= node-count 3))
+    should-server-group-autofailover (and autofailover
+                                          sg-enabled
+                                          target-server-groups
+                                          server-group-autofailover
+                                          (>= replicas 1)
+                                          (>= server-group-count 3)
+                                          (>= disrupt-count (Math/ceil (/ node-count server-group-count)))
+                                          (> disrupt-time autofailover-timeout)
+                                          (>= node-count 3))
+    random-server-group (if sg-enabled (util/random-server-group server-group-count))
+    complementary-server-group (if sg-enabled (util/complementary-server-group server-group-count random-server-group))
+    nemesis        (cbnemesis/couchbase)
     client-generator (client-gen opts doc-threads rate cas)
     generator (do-n-nemesis-cycles cycles
-                                   [(gen/sleep 10)
-                                    {:type :info :f :start-partition}
+                                   [(gen/sleep 5)
+                                    {:type   :info
+                                     :f      :partition-network
+                                     :f-opts {:partition-type :isolate-completely}
+                                     :targeter-opts {:type      :random-subset
+                                                     :count     disrupt-count
+                                                     :condition (merge {:cluster [:active]
+                                                                        :network [:connected]
+                                                                        :node [:running]}
+                                                                       (when-let [target-sq target-server-groups]
+                                                                         {:server-group [random-server-group]}))
+                                                     }}
                                     (gen/sleep 5)
-                                    {:type :info :f :start-failover}
+                                    {:type :info
+                                     :f    :failover
+                                     :f-opts {:failover-type failover-type}
+                                     :targeter-opts {:type :random-subset
+                                                     :count disrupt-count
+                                                     :condition (merge {:cluster [:inactive]
+                                                                        :network [:partitioned]
+                                                                        :node [:running]}
+                                                                       (when-let [target-sq target-server-groups]
+                                                                         {:server-group [random-server-group]}))}}
+                                    (gen/sleep 5)
+                                    {:type :info :f :heal-network}
                                     (gen/sleep 10)
-                                    {:type :info :f :stop-partition}
-                                    (gen/sleep 5)
-                                    {:type :info :f :recover}
+                                    {:type :info
+                                     :f    :recover
+                                     :f-opts {:recovery-type recovery-type}
+                                     :targeter-opts {:type :all
+                                                     :condition (merge {:cluster [:failed]
+                                                                        :network [:connected]
+                                                                        :node [:running]}
+                                                                       (when-let [target-sq target-server-groups]
+                                                                         {:server-group [random-server-group]}))}}
                                     (gen/sleep 5)]  client-generator)))
 
 ;; =============
