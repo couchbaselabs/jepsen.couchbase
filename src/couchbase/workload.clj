@@ -152,7 +152,7 @@
     recovery-type  (opts :recovery-type :delta)
     disrupt-count  (opts :disrupt-count 1)
     sg-enabled     (opts :server-groups-enabled)
-    server-group-count (opts :server-group-count)
+    server-group-count (if sg-enabled (opts :server-group-count))
     target-server-groups      (if (opts :target-server-groups) (do (assert sg-enabled) true) false)
     should-autofailover (and autofailover
                              (>= replicas 1)
@@ -168,8 +168,8 @@
                                           (>= disrupt-count (Math/ceil (/ node-count server-group-count)))
                                           (> disrupt-time autofailover-timeout)
                                           (>= node-count 3))
-    random-server-group (util/random-server-group server-group-count)
-    complementary-server-group (util/complementary-server-group server-group-count random-server-group)
+    random-server-group (if sg-enabled (util/random-server-group server-group-count))
+    complementary-server-group (if sg-enabled (util/complementary-server-group server-group-count random-server-group))
     nemesis        (cbnemesis/couchbase)
     client-generator (client-gen opts doc-threads rate cas)
     generator       (do-n-nemesis-cycles
@@ -244,10 +244,10 @@
     autofailover  (opts :autofailover false)
     server-group-autofailover (opts :server-group-autofailover false)
     sg-enabled     (opts :server-groups-enabled)
-    server-group-count (opts :server-group-count)
+    server-group-count (if sg-enabled (opts :server-group-count) 0)
     target-server-groups      (if (opts :target-server-groups) (do (assert sg-enabled) true) false)
-    random-server-group (util/random-server-group server-group-count)
-    complementary-server-group (util/complementary-server-group server-group-count random-server-group)
+    random-server-group (if sg-enabled (util/random-server-group server-group-count))
+    complementary-server-group (if sg-enabled (util/complementary-server-group server-group-count random-server-group))
     nemesis       (cbnemesis/couchbase)
     client-generator (client-gen opts doc-threads rate cas)
     generator     (case scenario
@@ -325,7 +325,27 @@
                                     :node [:running]}}}
                       (gen/sleep 5)]
                      []
-                     client-generator))))
+                     client-generator)
+
+                    :fail-rebalance
+                    (do-n-nemesis-cycles
+                      cycles
+                      [(gen/sleep 5)
+                       {:type :info :f :fail-rebalance
+                        :f-opts {:kill-target :same-nodes}
+                        :targeter-opts
+                              {:type :random-subset
+                               :count disrupt-count
+                               :condition (merge {:cluster [:active :failed]
+                                                  :network [:connected]
+                                                  :node [:running]}
+                                                 (when-let [target-sq target-server-groups]
+                                                   {:server-group [random-server-group]}))}}
+                       (gen/sleep 5)]
+                      client-generator)
+
+
+                    )))
 
 (defn failover-workload
   "Failover and recover"
@@ -336,9 +356,9 @@
     failover-type (opts :failover-type :hard)
     disrupt-count (opts :disrupt-count 1)
     sg-enabled     (opts :server-groups-enabled)
-    server-group-count (opts :server-group-count)
+    server-group-count (if sg-enabled (opts :server-group-count))
     target-server-groups      (if (opts :target-server-groups) (do (assert sg-enabled) true) false)
-    random-server-group (util/random-server-group server-group-count)
+    random-server-group (if sg-enabled (util/random-server-group server-group-count))
     nemesis   (cbnemesis/couchbase)
     client-generator (client-gen opts doc-threads rate cas)
     generator (do-n-nemesis-cycles cycles
@@ -379,10 +399,10 @@
     disrupt-time          (opts :disrupt-time 20)
     sg-enabled     (opts :server-groups-enabled)
     server-group-autofailover (opts :server-group-autofailover false)
-    server-group-count (opts :server-group-count)
+    server-group-count (if sg-enabled (opts :server-group-count))
     target-server-groups      (if (opts :target-server-groups) (do (assert sg-enabled) true) false)
-    random-server-group (util/random-server-group server-group-count)
-    complementary-server-group (util/complementary-server-group server-group-count random-server-group)
+    random-server-group (if sg-enabled (util/random-server-group server-group-count))
+    complementary-server-group (if sg-enabled (util/complementary-server-group server-group-count random-server-group))
     should-autofailover   (and autofailover
                                (>= replicas 1)
                                (= disrupt-count 1)
@@ -475,7 +495,9 @@
                                                                       :node [:running]}}}
                                          (gen/sleep 5)]
                                         [(gen/sleep 5)])]
-                                     client-generator))))
+                                     client-generator)
+
+                )))
 
 (defn disk-failure-workload
   "Simulate a disk failure. This workload will not function correctly with docker containers."
@@ -512,20 +534,6 @@
                                     (gen/sleep 5)
                                     {:type :info :f :recover}
                                     (gen/sleep 5)]  client-generator)))
-
-(defn fail-rebalance-workload
-  "Kill memcached during a rebalance"
-  [opts]
-  (with-register-base opts
-    replicas      (opts :replicas 1)
-    disrupt-count (opts :disrupt-count 1)
-    autofailover  (opts :autofailover false)
-    nemesis       (cbnemesis/fail-rebalance)
-    client-generator (client-gen opts doc-threads rate cas)
-    generator (do-n-nemesis-cycles cycles
-                                   [(gen/sleep 5)
-                                    {:type :info :f :start :count disrupt-count}
-                                    (gen/sleep 5)] client-generator)))
 
 ;; =============
 ;; Set Workloads

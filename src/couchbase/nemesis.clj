@@ -63,28 +63,6 @@
     (invoke! [this test op])
     (teardown! [this test] this)))
 
-(defn fail-rebalance
-  "Start a rebalance, then cause it to fail by killing memcached on some nodes.
-  Since we ensure the rebalance fails, no nodes should ever actually leave the
-  cluster, so we don't need to keep track of the cluster status."
-  []
-  (reify nemesis/Nemesis
-    (setup! [this test] this)
-    (invoke! [thid test op]
-      (case (:f op)
-        :start (let [count      (or (op :count) 1)
-                     eject      (->> test :nodes shuffle (take count))
-                     rebalance  (future (util/rebalance (:nodes test) eject))]
-                 ;; Sleep between 2 and 4 seconds to allow the rebalance to start
-                 (Thread/sleep (+ (* (rand) 2000) 2000))
-                 ;; Kill memcached on a different random collection of nodes
-                 (c/on-many (->> test :nodes shuffle (take count))
-                            (c/su (c/exec :pkill :-9 :memcached)))
-                 ;; Wait for rebalance to quit, swallowing rebalance failure
-                 (try @rebalance (catch Exception e (warn "Rebalance failed")))
-                 (assoc op :value :ok))))
-    (teardown! [this test])))
-
 (defn device-mapper
   "Create a virtual block device using the linux kernel device mapper and mount
   a filesystem from that device as the couchbase server data directory. This
@@ -390,6 +368,21 @@
                 (update-node-state node-states remove-node {:cluster :ejected}))
               (info "cluster state: " @node-states)
               (assoc op :value (str "Added: " target-nodes " Removed: " (vec nodes-to-remove))))
+
+            :fail-rebalance
+            (let [kill-target (if (nil? (:kill-target f-opts))
+                                (throw (RuntimeException. (str "kill-target not found in f-opts")))
+                                (:kill-target f-opts))
+                  rebalance  (future (util/rebalance cluster-nodes target-nodes))]
+              ;; Sleep between 2 and 4 seconds to allow the rebalance to start
+              (Thread/sleep (+ (* (rand) 2000) 2000))
+              ;; Kill memcached on a different random collection of nodes
+              (case kill-target
+                :same-nodes
+                (c/on-many target-nodes (c/su (c/exec :pkill :-9 :memcached))))
+              ;; Wait for rebalance to quit, swallowing rebalance failure
+              (try @rebalance (catch Exception e (warn "Rebalance failed")))
+              (assoc op :value (str "Rebalance failed for nodes: " (str target-nodes))))
 
             :kill-process
             (let [process (:process f-opts)]

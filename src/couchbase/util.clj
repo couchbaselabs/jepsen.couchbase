@@ -549,7 +549,10 @@
 (defn complementary-server-group
   "Get a random server group name string given a server group count"
   [server-group-count exclude-group-name]
-  (loop [group-name (random-server-group server-group-count)]
-    (if (= group-name exclude-group-name)
-      (recur (random-server-group server-group-count))
-      group-name)))
+  (if (= server-group-count 0)
+    "Group 0"
+    (loop [group-name (random-server-group server-group-count)]
+      (info group-name)
+      (if (= group-name exclude-group-name)
+        (recur (random-server-group server-group-count))
+        group-name))))
