@@ -505,15 +505,89 @@
   (with-register-base opts
     replicas      (opts :replicas 1)
     disrupt-count (opts :disrupt-count 1)
-    disrupt-time  (opts :disrupt-time 10)
-    nemesis       (cbnemesis/device-mapper)
+    disrupt-time   (opts :disrupt-time 10)
+    recovery-type  (opts :recovery-type :delta)
+    manipulate-disks (do (assert (opts :manipulate-disks) true) (opts :manipulate-disks))
+    sg-enabled     (opts :server-groups-enabled)
+    server-group-count (if sg-enabled (opts :server-group-count))
+    target-server-groups      (if (opts :target-server-groups) (do (assert sg-enabled) true) false)
+    autofailover  (opts :autofailover false)
+    server-group-autofailover (opts :server-group-autofailover false)
+    should-autofailover (and autofailover
+                             (>= replicas 1)
+                             (= disrupt-count 1)
+                             (> disrupt-time autofailover-timeout)
+                             (>= node-count 3))
+    should-server-group-autofailover (and autofailover
+                                          sg-enabled
+                                          target-server-groups
+                                          server-group-autofailover
+                                          (>= replicas 1)
+                                          (>= server-group-count 3)
+                                          (>= disrupt-count (Math/ceil (/ node-count server-group-count)))
+                                          (> disrupt-time autofailover-timeout)
+                                          (>= node-count 3))
+    random-server-group (if sg-enabled (util/random-server-group server-group-count))
+    complementary-server-group (if sg-enabled (util/complementary-server-group server-group-count random-server-group))
+    nemesis   (cbnemesis/couchbase)
     client-generator (client-gen opts doc-threads rate cas)
-    generator     (do-n-nemesis-cycles cycles
-                                       [(gen/sleep 10)
-                                        {:type :info :f :fail :count disrupt-count}
-                                        (gen/sleep disrupt-time)
-                                        {:type :info :f :reset-all}]
-                                       client-generator)))
+
+                      generator       (do-n-nemesis-cycles
+                                        cycles
+                                        [(gen/sleep 10)
+                                         {:type   :info
+                                          :f      :fail-disk
+                                          :targeter-opts {:type      :random-subset
+                                                          :count     disrupt-count
+                                                          :condition (merge {:cluster [:active]
+                                                                             :network [:connected]
+                                                                             :node [:running]
+                                                                             :disk [:normal]}
+                                                                            (when-let [target-sq target-server-groups]
+                                                                              {:server-group [random-server-group]}))
+                                                          }}
+
+                                         (if (or should-autofailover should-server-group-autofailover)
+                                           [{:type :info
+                                             :f    :wait-for-autofailover
+                                             :targeter-opts {:type      :random
+                                                             :condition (merge {:cluster [:active]
+                                                                                :network [:connected]
+                                                                                :node [:running]
+                                                                                :disk [:normal]}
+                                                                               (when-let [target-sq target-server-groups]
+                                                                                 {:server-group [complementary-server-group]}))}}
+                                            (gen/sleep (- disrupt-time autofailover-timeout))]
+                                           (gen/sleep disrupt-time))
+
+                                         {:type   :info
+                                          :f      :reset-disk
+                                          :targeter-opts {:type      :all
+                                                          :condition (merge {:cluster (if (or should-autofailover should-server-group-autofailover)
+                                                                                        [:failed]
+                                                                                        [:active])
+                                                                             :network [:connected]
+                                                                             :node [:running]
+                                                                             :disk [:killed]}
+                                                                            (when-let [target-sq target-server-groups]
+                                                                              {:server-group [random-server-group]}))
+                                                          }}
+
+                                         (if (or should-autofailover should-server-group-autofailover)
+                                           [(gen/sleep 10)
+                                            {:type   :info
+                                             :f      :recover
+                                             :f-opts {:recovery-type recovery-type}
+                                             :targeter-opts {:type      :all
+                                                             :condition {:cluster [:failed]
+                                                                         :network [:connected]
+                                                                         :node [:running]
+                                                                         :disk [:killed]}}}
+                                            (gen/sleep 5)]
+                                           [(gen/sleep 10)])]
+                                        client-generator)
+
+                      ))
 
 (defn partition-failover-workload
   "Trigger non-linearizable behaviour where successful mutations with replicate-to=1
@@ -652,11 +726,7 @@
                               (> disrupt-time autofailover-timeout)
                               (>= (count (:nodes opts)) 3))
    client                (clients/set-client dcpclient)
-   nemesis               (if (= scenario :kill-memcached-on-slow-disk)
-                           (nemesis/compose
-                            {#{:kill-process} (cbnemesis/couchbase)
-                             #{:slow :reset-all} (cbnemesis/device-mapper)})
-                           (cbnemesis/couchbase))
+   nemesis               (cbnemesis/couchbase)
    control-atom          (atom :continue)
    checker               (checker/compose
                           (merge
@@ -675,7 +745,13 @@
                  :kill-memcached-on-slow-disk
                  (do-n-nemesis-cycles cycles
                                       [(gen/sleep 10)
-                                       {:type :info :f :slow :count (->> opts :nodes count)}
+                                       {:type   :info
+                                        :f      :slow-disk
+                                        :targeter-opts {:type      :all
+                                                        :condition [:active]
+                                                        :network [:connected]
+                                                        :node [:running]
+                                                        :disk [:normal]}}
                                        (gen/sleep 4)
                                        {:type :info
                                         :f    :kill-process
@@ -685,7 +761,13 @@
                                                         :condition {:cluster [:active]
                                                                     :network [:connected]
                                                                     :node [:running]}}}
-                                       {:type :info :f :reset-all}
+                                       {:type   :info
+                                        :f      :reset-disk
+                                        :targeter-opts {:type      :all
+                                                        :condition [:active]
+                                                        :network [:connected]
+                                                        :node [:running]
+                                                        :disk [:slowed]}}
                                        (gen/sleep 10)]
                                       client-gen)
 

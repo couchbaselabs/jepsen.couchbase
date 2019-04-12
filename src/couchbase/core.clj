@@ -107,7 +107,13 @@
     "Enable autofailover?"]
    [nil "--[no-]server-group-autofailover"
     "Enable server group autofailover"]
+   [nil "--[no-]disk-autofailover"
+    "Enable disk autofailover?"]
    [nil "--autofailover-timeout AUTOFAILOVER-TIMEOUT"
+    "Autofailover timeout if autofailover is enabled"
+    :parse-fn parse-int
+    :validate [#(> % 5) "Must be greater than 5 seconds"]]
+   [nil "--disk-autofailover-timeout DISK-AUTOFAILOVER-TIMEOUT"
     "Autofailover timeout if autofailover is enabled"
     :parse-fn parse-int
     :validate [#(> % 5) "Must be greater than 5 seconds"]]
@@ -181,7 +187,10 @@
    [nil "--eviction-policy EVICTION-POLICY"
     "Eviction policy for the bucket"
     :parse-fn {"full" "fullEviction" "value" "valueOnly"}
-    :default "fullEviction"]])
+    :default "fullEviction"]
+   [nil "--manipulate-disks"
+    "Turn on the ability to inject disk failures"
+    :default false]])
 
 (defn -main
   "Run the test specified by the cli arguments"

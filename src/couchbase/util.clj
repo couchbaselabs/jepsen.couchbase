@@ -179,11 +179,13 @@
   [test]
   (let [enabled (boolean (test :autofailover))
         sg-enabled (boolean (test :server-group-autofailover))
+        disk-enabled (boolean (test :disk-autofailover))
         timeout (or (test :autofailover-timeout) 6)
+        disk-timeout (or (test :disk-autofailover-timeout) 6)
         maxcount (or (test :autofailover-maxcount) 3)]
     (rest-call "/settings/autoFailover"
-               (format "enabled=%s&timeout=%s&maxCount=%s&failoverServerGroup=%s"
-                       enabled timeout maxcount sg-enabled))))
+               (format "enabled=%s&timeout=%s&maxCount=%s&failoverServerGroup=%s&failoverOnDataDiskIssues[enabled]=%s&failoverOnDataDiskIssues[timePeriod]=%s"
+                       enabled timeout maxcount sg-enabled disk-enabled disk-timeout))))
 
 (defn wait-for-warmup
   "Wait for warmup to complete"

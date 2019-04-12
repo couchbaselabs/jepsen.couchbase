@@ -10,60 +10,6 @@
             [cheshire.core :refer :all]
             [slingshot.slingshot :refer [try+ throw+]]))
 
-(defn device-mapper
-  "Create a virtual block device using the linux kernel device mapper and mount
-  a filesystem from that device as the couchbase server data directory. This
-  allows for simulated disk issues. This nemesis will not work correctly with
-  docker containers"
-  []
-  (reify nemesis/Nemesis
-    (setup! [this test]
-      (let [path        (:install-path test)
-            server-path (str path "/bin/couchbase-server")
-            data-path   (str path "/var/lib/couchbase/data")]
-        (c/with-test-nodes test
-          (c/su (c/exec :dd "if=/dev/zero" "of=/tmp/cbdata.img" "bs=1M" "count=512")
-                (c/exec :losetup "/dev/loop0" "/tmp/cbdata.img")
-                (c/exec :dmsetup :create :cbdata :--table (c/lit "'0 1048576 linear /dev/loop0 0'"))
-                (c/exec :mkfs.ext4 "/dev/mapper/cbdata")
-                (c/exec server-path :-k)
-                (c/exec :mv :-T data-path "/tmp/cbdata")
-                (c/exec :mkdir data-path)
-                (c/exec :mount :-o "noatime" "/dev/mapper/cbdata" data-path)
-                (c/exec :chmod "a+rwx" data-path)
-                (c/exec :mv :-t data-path (c/lit "/tmp/cbdata/*") (c/lit "/tmp/cbdata/.[!.]*")))
-          (c/ssh* {:cmd (str "nohup " server-path " -- -noinput >> /dev/null 2>&1 &")})
-          (util/wait-for-daemon)
-          (util/wait-for-warmup))
-        this))
-    (invoke! [this test op]
-      (case (:f op)
-        :fail (let [fail (->> test :nodes shuffle (take (op :count)))]
-                (c/on-many
-                 fail
-                 (c/su (c/exec :dmsetup :wipe_table :cbdata :--noflush :--nolockfs)
-                       ;; Drop buffers. Since most of our tests use little data we can read
-                       ;; everything from the filesystem level buffer despite the block device
-                       ;; returning errors.
-                       (c/exec :echo "3" :> "/proc/sys/vm/drop_caches")))
-                (assoc op :value [:failed fail]))
-        :slow (let [slow (->> test :nodes shuffle (take (op :count)))]
-                (c/on-many
-                 slow
-                 ;; Load a new (inactive) table that delays all disk IO by 25ms.
-                 (c/su (c/exec :dmsetup :load :cbdata :--table
-                               (c/lit "'0 1048576 delay /dev/loop0 0 25 /dev/loop0 0 25'"))
-                       (c/exec :dmsetup :resume :cbdata)))
-                (assoc op :value [:slow slow]))
-        :reset-all (do (c/on-many
-                        (test :nodes)
-                        (c/su (c/exec :dmsetup :load :cbdata :--table
-                                      (c/lit "'0 1048576 linear /dev/loop0 0'"))
-                              (c/exec :dmsetup :resume :cbdata)))
-                       (assoc op :value :ok))))
-
-    (teardown! [this test])))
-
 (defn filter-nodes
   "This function will take in node-state atom and targeter-opts. Target conditions will be extracted from
   targeter-opts and used to filter nodes represented in node-states. Targeter conditions should be passed in as
@@ -78,12 +24,14 @@
         cluster-condition (if (nil? (:cluster filter-conditions)) (set [:active :failed :inactive :ejected]) (set (:cluster filter-conditions)))
         network-condition (if (nil? (:network filter-conditions)) (set [:connected :partitioned]) (set (:network filter-conditions)))
         node-condition    (if (nil? (:node filter-conditions)) (set [:running :killed]) (set (:node filter-conditions)))
+        disk-condition    (if (nil? (:disk filter-conditions)) (set [:normal :killed :slowed]) (set (:disk filter-conditions)))
         server-group-condition (set (:server-group filter-conditions))
         cluster-match-nodes (select-keys node-states (for [[k v] node-states :when (contains? cluster-condition (get-in v [:state :cluster]))] k))
         network-match-nodes (select-keys node-states (for [[k v] node-states :when (contains? network-condition (get-in v [:state :network]))] k))
         node-match-nodes (select-keys node-states (for [[k v] node-states :when (contains? node-condition (get-in v [:state :node]))] k))
+        disk-match-nodes (select-keys node-states (for [[k v] node-states :when (contains? disk-condition (get-in v [:state :disk]))] k))
         server-group-match-nodes (select-keys node-states (for [[k v] node-states :when (contains? server-group-condition (get-in v [:state :server-group]))] k))
-        matching-nodes (set/intersection (set (keys cluster-match-nodes)) (set (keys network-match-nodes)) (set (keys node-match-nodes)))
+        matching-nodes (set/intersection (set (keys cluster-match-nodes)) (set (keys network-match-nodes)) (set (keys node-match-nodes)) (set (keys disk-match-nodes)))
         sg-matching-nodes (if (nil? (:server-group filter-conditions)) matching-nodes (set/intersection matching-nodes (set (keys server-group-match-nodes))))]
     (vec sg-matching-nodes)))
 
@@ -151,11 +99,32 @@
         node-states (atom {})]
     (reify nemesis/Nemesis
       (setup! [this test]
+        (info "Nemesis setup has started...")
         (net/heal! (:net test) test)
         (reset! nodes (:nodes test))
-        (reset! node-states (reduce #(assoc %1 %2 {:state {:cluster :active :network :connected :node :running}}) {} (:nodes test)))
-        (if (:server-groups-enabled test)
+        (reset! node-states (reduce #(assoc %1 %2 {:state {:cluster :active :network :connected :node :running :disk :normal}}) {} (:nodes test)))
+        (when (:server-groups-enabled test)
+          (info "inspecting server groups...")
           (set-node-server-group-state node-states))
+        (when (:manipulate-disks test)
+          (info "setting up disks")
+          (let [path        (:install-path test)
+                server-path (str path "/bin/couchbase-server")
+                data-path   (str path "/var/lib/couchbase/data")]
+            (c/with-test-nodes test
+                               (c/su (c/exec :dd "if=/dev/zero" "of=/tmp/cbdata.img" "bs=1M" "count=512")
+                                     (c/exec :losetup "/dev/loop0" "/tmp/cbdata.img")
+                                     (c/exec :dmsetup :create :cbdata :--table (c/lit "'0 1048576 linear /dev/loop0 0'"))
+                                     (c/exec :mkfs.ext4 "/dev/mapper/cbdata")
+                                     (c/exec server-path :-k)
+                                     (c/exec :mv :-T data-path "/tmp/cbdata")
+                                     (c/exec :mkdir data-path)
+                                     (c/exec :mount :-o "noatime" "/dev/mapper/cbdata" data-path)
+                                     (c/exec :chmod "a+rwx" data-path)
+                                     (c/exec :mv :-t data-path (c/lit "/tmp/cbdata/*") (c/lit "/tmp/cbdata/.[!.]*")))
+                               (c/ssh* {:cmd (str "nohup " server-path " -- -noinput >> /dev/null 2>&1 &")})
+                               (util/wait-for-daemon)
+                               (util/wait-for-warmup))))
         this)
 
       (invoke! [this test op]
@@ -399,6 +368,45 @@
               (util/rest-call (rand-nth (test :nodes)) "/pools/default/buckets/default/controller/compactBucket" "")
               (info "cluster state: " @node-states)
               op)
+
+            :fail-disk
+            (do
+              (c/on-many
+                target-nodes
+                (c/su (c/exec :dmsetup :wipe_table :cbdata :--noflush :--nolockfs)
+                      ;; Drop buffers. Since most of our tests use little data we can read
+                      ;; everything from the filesystem level buffer despite the block device
+                      ;; returning errors.
+                      (c/exec :echo "3" :> "/proc/sys/vm/drop_caches")))
+              (doseq [target target-nodes]
+                (update-node-state node-states target {:disk :killed}))
+              (info "cluster state: " @node-states)
+              (assoc op :value [:disk-failed target-nodes]))
+
+            :slow-disk
+            (do
+              (c/on-many
+                target-nodes
+                ;; Load a new (inactive) table that delays all disk IO by 25ms.
+                (c/su (c/exec :dmsetup :load :cbdata :--table
+                              (c/lit "'0 1048576 delay /dev/loop0 0 25 /dev/loop0 0 25'"))
+                      (c/exec :dmsetup :resume :cbdata)))
+              (doseq [target target-nodes]
+                (update-node-state node-states target {:disk :slowed}))
+              (info "cluster state: " @node-states)
+              (assoc op :value [:disk-slowed target-nodes]))
+
+            :reset-disk
+            (do
+              (c/on-many
+                target-nodes
+                (c/su (c/exec :dmsetup :load :cbdata :--table
+                              (c/lit "'0 1048576 linear /dev/loop0 0'"))
+                      (c/exec :dmsetup :resume :cbdata)))
+              (doseq [target target-nodes]
+                (update-node-state node-states target {:disk :normal}))
+              (info "cluster state: " @node-states)
+              (assoc op :value [:disk-reset target-nodes]))
 
             :noop
             (do
