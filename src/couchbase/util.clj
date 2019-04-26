@@ -77,22 +77,22 @@
   ([nodes-to-add] (add-nodes nodes-to-add nil))
   ([nodes-to-add add-opts]
    (if (nil? add-opts)
-   (doseq [node nodes-to-add]
-     (let [params (str "hostname=" node
-                       "&user=Administrator"
-                       "&password=abc123"
-                       "&services=kv")]
-       (info "Adding node" node "to cluster")
-       (rest-call "/controller/addNode" params)))
-   (if (contains? add-opts :group-name)
-     (let [group-uuid (get-group-uuid (:group-name add-opts))]
-       (doseq [node nodes-to-add]
-         (let [params (str "hostname=" node
-                           "&user=Administrator"
-                           "&password=abc123"
-                           "&services=kv")]
-           (info "Adding node" node "to cluster")
-           (rest-call (format "/pools/default/serverGroups/%s/addNode" group-uuid)  params))))))))
+     (doseq [node nodes-to-add]
+       (let [params (str "hostname=" node
+                         "&user=Administrator"
+                         "&password=abc123"
+                         "&services=kv")]
+         (info "Adding node" node "to cluster")
+         (rest-call "/controller/addNode" params)))
+     (if (contains? add-opts :group-name)
+       (let [group-uuid (get-group-uuid (:group-name add-opts))]
+         (doseq [node nodes-to-add]
+           (let [params (str "hostname=" node
+                             "&user=Administrator"
+                             "&password=abc123"
+                             "&services=kv")]
+             (info "Adding node" node "to cluster")
+             (rest-call (format "/pools/default/serverGroups/%s/addNode" group-uuid)  params))))))))
 
 (defn wait-for
   ([call-function desired-state] (wait-for call-function desired-state 60))
@@ -271,15 +271,15 @@
     (loop [groups server-groups]
       (info "checking node group for " (str node))
       (if (empty? groups) (throw (RuntimeException. (str node " not found in list of groups")))
-        (let [group-name (:name (first groups))
-              group-nodes (:nodes (first groups))
-              node-found (atom false)]
-          (loop [nodes group-nodes]
-            (if (not-empty nodes)
-              (if (str/includes? (:hostname (first nodes)) node)
-                (reset! node-found true)
-                (recur (rest nodes)))))
-          (if @node-found group-name (recur (rest groups))))))))
+          (let [group-name (:name (first groups))
+                group-nodes (:nodes (first groups))
+                node-found (atom false)]
+            (loop [nodes group-nodes]
+              (if (not-empty nodes)
+                (if (str/includes? (:hostname (first nodes)) node)
+                  (reset! node-found true)
+                  (recur (rest nodes)))))
+            (if @node-found group-name (recur (rest groups))))))))
 
 (defn setup-server-groups
   [test]
@@ -537,9 +537,9 @@
 
 (defn random-durability-level
   "Get a random durability level following the probability distribution in (:durability opts)"
-  [opts]
+  [durability]
   (let [rand-seed  (rand 100)]
-    (->> (reductions + (:durability opts))
+    (->> (reductions + durability)
          (keep-indexed #(if (<= rand-seed %2) %1))
          (first))))
 

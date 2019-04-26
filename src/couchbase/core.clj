@@ -123,6 +123,7 @@
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
    [nil "--doc-count DOC-COUNT"
     "Number of documents"
+    :default 30
     :parse-fn parse-int
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
    [nil "--doc-threads DOC-THREADS"
@@ -190,6 +191,12 @@
     :default "fullEviction"]
    [nil "--manipulate-disks"
     "Turn on the ability to inject disk failures"
+    :default false]
+   [nil "--transactions"
+    "Turn on the multi-document transactions"
+    :default false]
+   [nil "--mixed-txns"
+    "Allow individual transactions to contain both reads and write"
     :default false]])
 
 (defn -main

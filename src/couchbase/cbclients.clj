@@ -5,7 +5,6 @@
            com.couchbase.client.java.env.ClusterEnvironment
            com.couchbase.client.core.env.IoConfig
            com.couchbase.client.core.env.TimeoutConfig
-
            com.couchbase.client.dcp.Client
            com.couchbase.client.dcp.ControlEventHandler
            com.couchbase.client.dcp.DataEventHandler
@@ -18,7 +17,10 @@
            com.couchbase.client.dcp.message.DcpSnapshotMarkerRequest
            com.couchbase.client.dcp.message.MessageUtil
            com.couchbase.client.dcp.message.RollbackMessage
-           com.couchbase.client.dcp.state.StateFormat))
+           com.couchbase.client.dcp.state.StateFormat
+           com.couchbase.transactions.Transactions
+           com.couchbase.transactions.config.TransactionConfigBuilder
+           com.couchbase.transactions.TransactionDurabilityLevel))
 
 ;; Couchbase Java SDK setup
 
@@ -39,8 +41,13 @@
                        (.build))
         cluster    (Cluster/connect env)
         bucket     (.bucket cluster "default")
-        collection (.defaultCollection bucket)]
-    {:cluster cluster :bucket bucket :collection collection :env env}))
+        collection (.defaultCollection bucket)
+        txn-config (if (:transactions test)
+                     (-> (TransactionConfigBuilder/create)
+                         (.build)))
+        txn        (if (:transactions test)
+                     (-> (Transactions/create cluster txn-config)))]
+    {:cluster cluster :bucket bucket :collection collection :env env :txn txn}))
 
 ;; We want to operate with a large amount of jepsen clients in order to test
 ;; lots of keys simultaneously. However, couchbase server connections are
@@ -68,14 +75,14 @@
   (locking client-pool
     (when client-pool
       (doseq [client (take (test :pool-size) @client-pool)]
-        (.shutdown (:cluster client)))
+        (if (some? (:txn client)) (.close (:txn client))))
       (doseq [client (take (test :pool-size) @client-pool)]
-        (.shutdown (:env client)))
+        (if (some? (:cluster client)) (.shutdown (:cluster client))))
+      (doseq [client (take (test :pool-size) @client-pool)]
+        (if (some? (:env client)) (.shutdown (:env client))))
       (reset! client-pool nil))))
 
-
 ;; DCP client logic
-
 
 (defn dcpRollbackHandler [{:keys [client store]} event]
   (let [descr (RollbackMessage/toString event)

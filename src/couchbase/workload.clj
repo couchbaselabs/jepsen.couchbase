@@ -83,15 +83,23 @@
                                (vec (take ~'node-count (~opts :nodes)))
                                (assert false "node-count greater than available nodes"))
      ~'server-group-count    (~opts :server-group-count 1)
+     ~'transactions          (~opts :transactions false)
+     ~'mixed-txns            (~opts :mixed-txns false)
+     ~'max-txn-size          (~opts :max-txn-size 3)
      ~'rate                  (~opts :rate 1/3)
-     ~'doc-count             (~opts :doc-count 40)
-     ~'doc-threads           (~opts :doc-threads 3)
+     ~'txn-bucket-count      (~opts :txn-bucket-count 1)
+     ~'txn-doc-count         (~opts :txn-doc-count 3)
+     ~'doc-count             (if ~'transactions ~'txn-bucket-count  (~opts :doc-count 40))
+     ~'doc-threads           (if ~'transactions (~opts :doc-threads (* ~'txn-doc-count 2)) (~opts :doc-threads 3))
      ~'concurrency           (* ~'doc-count ~'doc-threads)
      ~'pool-size             (~opts :pool-size 6)
      ~'autofailover-timeout  (~opts :autofailover-timeout 6)
      ~'autofailover-maxcount (~opts :autofailover-maxcount 3)
+     ~'durability            (~opts :durability [100 0 0 0])
      ~'client                (clients/register-client)
-     ~'model                 (model/cas-register :nil)
+     ~'model                 (if ~'transactions
+                               (model/multi-register (zipmap (range ~'txn-doc-count) (repeat :nil)))
+                               (model/cas-register :nil))
      ~'control-atom          (atom :continue)
      ~'checker               (checker/compose
                               (merge
@@ -108,23 +116,78 @@
 ;; HELPER FUNCTIONS
 ;; =================
 
+(defn random-sample-from-n
+  "Returns a random subset of sequence from 0 - n-1"
+  [n]
+  (let [n-vec (vec (range n))]
+    (take (inc (rand-int n)) (shuffle n-vec))))
+
 (defn client-gen
-  [opts doc-threads rate cas]
-  (let [read-gen  (fn [_ _] {:type :invoke :f :read  :value nil})
-        write-gen (fn [_ _]
-                    {:type :invoke
-                     :f :write
-                     :value (rand-int 50)
-                     :durability-level (util/random-durability-level opts)})
-        cas-gen   (fn [_ _]
-                    {:type :invoke
-                     :f :cas
-                     :value [(rand-int 50) (rand-int 50)]
-                     :durability-level (util/random-durability-level opts)})
-        combined-gen (if cas [read-gen write-gen cas-gen] [read-gen write-gen])]
+  [durability doc-threads rate cas transactions txn-doc-count max-txn-size mixed-txns]
+  (let [read-gen (atom nil)
+        write-gen (atom nil)
+        cas-gen (atom nil)
+        mixed-txn-gen (atom nil)
+        combined-gen (atom nil)]
+    (if transactions
+      (if mixed-txns
+        (do
+          (reset! mixed-txn-gen
+                  (fn [_ _]
+                    (->> (random-sample-from-n txn-doc-count)
+                         (take max-txn-size)
+                         (mapv (fn [k] (let [op-type (first (shuffle [:read :write]))
+                                             key k
+                                             val (if (= op-type :write) (rand-int 50) nil)]
+                                         [op-type key val])))
+                         (array-map :type :invoke,
+                                    :f :txn,
+                                    :durability-level (util/random-durability-level durability),
+                                    :value))))
+          (reset! combined-gen [@mixed-txn-gen]))
+        (do
+          (reset! read-gen
+                  (fn [_ _]
+                    (->> (random-sample-from-n txn-doc-count)
+                         (take max-txn-size)
+                         (mapv (fn [k] [:read k nil]))
+                         (array-map :type :invoke,
+                                    :f :txn,
+                                    :durability-level (util/random-durability-level durability),
+                                    :value))))
+          (reset! write-gen
+                  (fn [_ _]
+                    (->> (random-sample-from-n txn-doc-count)
+                         (take max-txn-size)
+                         (mapv (fn [k] [:write k (rand-int 50)]))
+                         (array-map :type :invoke,
+                                    :f :txn,
+                                    :durability-level (util/random-durability-level durability),
+                                    :value))))
+          (reset! combined-gen [@read-gen @write-gen])))
+      (do
+        (reset! read-gen
+                (fn [_ _]
+                  {:type :invoke,
+                   :f :read,
+                   :value nil}))
+        (reset! write-gen
+                (fn [_ _]
+                  {:type :invoke,
+                   :f :write,
+                   :value (rand-int 50)
+                   :durability-level (util/random-durability-level durability)}))
+        (reset! cas-gen
+                (fn [_ _]
+                  {:type :invoke,
+                   :f :cas,
+                   :value [(rand-int 50) (rand-int 50)]
+                   :durability-level (util/random-durability-level durability)}))
+        (reset! combined-gen (if cas [@read-gen @write-gen @cas-gen] [@read-gen @write-gen]))))
     (independent/concurrent-generator
-     doc-threads (range)
-     (fn [k] (->> (gen/mix combined-gen)
+     doc-threads
+     (range)
+     (fn [k] (->> (gen/mix @combined-gen)
                   (rate-limit rate))))))
 
 ;; ==================
@@ -137,7 +200,7 @@
   (with-register-base opts
     replicas      (opts :replicas 1)
     nemesis       nemesis/noop
-    client-generator      (client-gen opts doc-threads rate cas)
+    client-generator      (client-gen durability doc-threads rate cas transactions txn-doc-count max-txn-size mixed-txns)
     generator (do-n-nemesis-cycles cycles [(gen/sleep 20)] client-generator)))
 
 (defn partition-workload
@@ -171,7 +234,7 @@
     random-server-group (if sg-enabled (util/random-server-group server-group-count))
     complementary-server-group (if sg-enabled (util/complementary-server-group server-group-count random-server-group))
     nemesis        (cbnemesis/couchbase)
-    client-generator (client-gen opts doc-threads rate cas)
+    client-generator (client-gen durability doc-threads rate cas transactions txn-doc-count max-txn-size mixed-txns)
     generator       (do-n-nemesis-cycles
                      cycles
                      [(gen/sleep 5)
@@ -184,8 +247,7 @@
                                                           :network [:connected]
                                                           :node [:running]}
                                                          (when-let [target-sq target-server-groups]
-                                                           {:server-group [random-server-group]}))
-                                       }}
+                                                           {:server-group [random-server-group]}))}}
 
                       (if (or should-autofailover should-server-group-autofailover)
                         [{:type :info
@@ -249,7 +311,7 @@
     random-server-group (if sg-enabled (util/random-server-group server-group-count))
     complementary-server-group (if sg-enabled (util/complementary-server-group server-group-count random-server-group))
     nemesis       (cbnemesis/couchbase)
-    client-generator (client-gen opts doc-threads rate cas)
+    client-generator (client-gen durability doc-threads rate cas transactions txn-doc-count max-txn-size mixed-txns)
     generator     (case scenario
                     :sequential-rebalance-out-in
                     (do-n-nemesis-cycles
@@ -329,23 +391,20 @@
 
                     :fail-rebalance
                     (do-n-nemesis-cycles
-                      cycles
-                      [(gen/sleep 5)
-                       {:type :info :f :fail-rebalance
-                        :f-opts {:kill-target :same-nodes}
-                        :targeter-opts
-                              {:type :random-subset
-                               :count disrupt-count
-                               :condition (merge {:cluster [:active :failed]
-                                                  :network [:connected]
-                                                  :node [:running]}
-                                                 (when-let [target-sq target-server-groups]
-                                                   {:server-group [random-server-group]}))}}
-                       (gen/sleep 5)]
-                      client-generator)
-
-
-                    )))
+                     cycles
+                     [(gen/sleep 5)
+                      {:type :info :f :fail-rebalance
+                       :f-opts {:kill-target :same-nodes}
+                       :targeter-opts
+                       {:type :random-subset
+                        :count disrupt-count
+                        :condition (merge {:cluster [:active :failed]
+                                           :network [:connected]
+                                           :node [:running]}
+                                          (when-let [target-sq target-server-groups]
+                                            {:server-group [random-server-group]}))}}
+                      (gen/sleep 5)]
+                     client-generator))))
 
 (defn failover-workload
   "Failover and recover"
@@ -360,7 +419,7 @@
     target-server-groups      (if (opts :target-server-groups) (do (assert sg-enabled) true) false)
     random-server-group (if sg-enabled (util/random-server-group server-group-count))
     nemesis   (cbnemesis/couchbase)
-    client-generator (client-gen opts doc-threads rate cas)
+    client-generator (client-gen durability doc-threads rate cas transactions txn-doc-count max-txn-size mixed-txns)
     generator (do-n-nemesis-cycles cycles
                                    [(gen/sleep 5)
                                     {:type :info
@@ -418,7 +477,7 @@
                                           (> disrupt-time autofailover-timeout)
                                           (>= node-count 3))
     nemesis               (cbnemesis/couchbase)
-    client-generator      (client-gen opts doc-threads rate cas)
+    client-generator      (client-gen durability doc-threads rate cas transactions txn-doc-count max-txn-size mixed-txns)
     generator (case scenario
                 :kill-memcached
                 (do-n-nemesis-cycles cycles
@@ -495,9 +554,7 @@
                                                                       :node [:running]}}}
                                          (gen/sleep 5)]
                                         [(gen/sleep 5)])]
-                                     client-generator)
-
-                )))
+                                     client-generator))))
 
 (defn disk-failure-workload
   "Simulate a disk failure. This workload will not function correctly with docker containers."
@@ -530,64 +587,60 @@
     random-server-group (if sg-enabled (util/random-server-group server-group-count))
     complementary-server-group (if sg-enabled (util/complementary-server-group server-group-count random-server-group))
     nemesis   (cbnemesis/couchbase)
-    client-generator (client-gen opts doc-threads rate cas)
+    client-generator (client-gen durability doc-threads rate cas transactions txn-doc-count max-txn-size mixed-txns)
 
-                      generator       (do-n-nemesis-cycles
-                                        cycles
-                                        [(gen/sleep 10)
-                                         {:type   :info
-                                          :f      :fail-disk
-                                          :targeter-opts {:type      :random-subset
-                                                          :count     disrupt-count
-                                                          :condition (merge {:cluster [:active]
-                                                                             :network [:connected]
-                                                                             :node [:running]
-                                                                             :disk [:normal]}
-                                                                            (when-let [target-sq target-server-groups]
-                                                                              {:server-group [random-server-group]}))
-                                                          }}
+    generator       (do-n-nemesis-cycles
+                     cycles
+                     [(gen/sleep 10)
+                      {:type   :info
+                       :f      :fail-disk
+                       :targeter-opts {:type      :random-subset
+                                       :count     disrupt-count
+                                       :condition (merge {:cluster [:active]
+                                                          :network [:connected]
+                                                          :node [:running]
+                                                          :disk [:normal]}
+                                                         (when-let [target-sq target-server-groups]
+                                                           {:server-group [random-server-group]}))}}
 
-                                         (if (or should-autofailover should-server-group-autofailover)
-                                           [{:type :info
-                                             :f    :wait-for-autofailover
-                                             :targeter-opts {:type      :random
-                                                             :condition (merge {:cluster [:active]
-                                                                                :network [:connected]
-                                                                                :node [:running]
-                                                                                :disk [:normal]}
-                                                                               (when-let [target-sq target-server-groups]
-                                                                                 {:server-group [complementary-server-group]}))}}
-                                            (gen/sleep (- disrupt-time autofailover-timeout))]
-                                           (gen/sleep disrupt-time))
+                      (if (or should-autofailover should-server-group-autofailover)
+                        [{:type :info
+                          :f    :wait-for-autofailover
+                          :targeter-opts {:type      :random
+                                          :condition (merge {:cluster [:active]
+                                                             :network [:connected]
+                                                             :node [:running]
+                                                             :disk [:normal]}
+                                                            (when-let [target-sq target-server-groups]
+                                                              {:server-group [complementary-server-group]}))}}
+                         (gen/sleep (- disrupt-time autofailover-timeout))]
+                        (gen/sleep disrupt-time))
 
-                                         {:type   :info
-                                          :f      :reset-disk
-                                          :targeter-opts {:type      :all
-                                                          :condition (merge {:cluster (if (or should-autofailover should-server-group-autofailover)
-                                                                                        [:failed]
-                                                                                        [:active])
-                                                                             :network [:connected]
-                                                                             :node [:running]
-                                                                             :disk [:killed]}
-                                                                            (when-let [target-sq target-server-groups]
-                                                                              {:server-group [random-server-group]}))
-                                                          }}
+                      {:type   :info
+                       :f      :reset-disk
+                       :targeter-opts {:type      :all
+                                       :condition (merge {:cluster (if (or should-autofailover should-server-group-autofailover)
+                                                                     [:failed]
+                                                                     [:active])
+                                                          :network [:connected]
+                                                          :node [:running]
+                                                          :disk [:killed]}
+                                                         (when-let [target-sq target-server-groups]
+                                                           {:server-group [random-server-group]}))}}
 
-                                         (if (or should-autofailover should-server-group-autofailover)
-                                           [(gen/sleep 10)
-                                            {:type   :info
-                                             :f      :recover
-                                             :f-opts {:recovery-type recovery-type}
-                                             :targeter-opts {:type      :all
-                                                             :condition {:cluster [:failed]
-                                                                         :network [:connected]
-                                                                         :node [:running]
-                                                                         :disk [:killed]}}}
-                                            (gen/sleep 5)]
-                                           [(gen/sleep 10)])]
-                                        client-generator)
-
-                      ))
+                      (if (or should-autofailover should-server-group-autofailover)
+                        [(gen/sleep 10)
+                         {:type   :info
+                          :f      :recover
+                          :f-opts {:recovery-type recovery-type}
+                          :targeter-opts {:type      :all
+                                          :condition {:cluster [:failed]
+                                                      :network [:connected]
+                                                      :node [:running]
+                                                      :disk [:killed]}}}
+                         (gen/sleep 5)]
+                        [(gen/sleep 10)])]
+                     client-generator)))
 
 (defn partition-failover-workload
   "Trigger non-linearizable behaviour where successful mutations with replicate-to=1
@@ -621,7 +674,7 @@
     random-server-group (if sg-enabled (util/random-server-group server-group-count))
     complementary-server-group (if sg-enabled (util/complementary-server-group server-group-count random-server-group))
     nemesis        (cbnemesis/couchbase)
-    client-generator (client-gen opts doc-threads rate cas)
+    client-generator (client-gen durability doc-threads rate cas transactions txn-doc-count max-txn-size mixed-txns)
     generator (do-n-nemesis-cycles cycles
                                    [(gen/sleep 5)
                                     {:type   :info
@@ -633,8 +686,7 @@
                                                                         :network [:connected]
                                                                         :node [:running]}
                                                                        (when-let [target-sq target-server-groups]
-                                                                         {:server-group [random-server-group]}))
-                                                     }}
+                                                                         {:server-group [random-server-group]}))}}
                                     (gen/sleep 5)
                                     {:type :info
                                      :f    :failover

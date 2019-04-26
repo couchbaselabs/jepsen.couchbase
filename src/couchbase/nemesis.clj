@@ -112,19 +112,19 @@
                 server-path (str path "/bin/couchbase-server")
                 data-path   (str path "/var/lib/couchbase/data")]
             (c/with-test-nodes test
-                               (c/su (c/exec :dd "if=/dev/zero" "of=/tmp/cbdata.img" "bs=1M" "count=512")
-                                     (c/exec :losetup "/dev/loop0" "/tmp/cbdata.img")
-                                     (c/exec :dmsetup :create :cbdata :--table (c/lit "'0 1048576 linear /dev/loop0 0'"))
-                                     (c/exec :mkfs.ext4 "/dev/mapper/cbdata")
-                                     (c/exec server-path :-k)
-                                     (c/exec :mv :-T data-path "/tmp/cbdata")
-                                     (c/exec :mkdir data-path)
-                                     (c/exec :mount :-o "noatime" "/dev/mapper/cbdata" data-path)
-                                     (c/exec :chmod "a+rwx" data-path)
-                                     (c/exec :mv :-t data-path (c/lit "/tmp/cbdata/*") (c/lit "/tmp/cbdata/.[!.]*")))
-                               (c/ssh* {:cmd (str "nohup " server-path " -- -noinput >> /dev/null 2>&1 &")})
-                               (util/wait-for-daemon)
-                               (util/wait-for-warmup))))
+              (c/su (c/exec :dd "if=/dev/zero" "of=/tmp/cbdata.img" "bs=1M" "count=512")
+                    (c/exec :losetup "/dev/loop0" "/tmp/cbdata.img")
+                    (c/exec :dmsetup :create :cbdata :--table (c/lit "'0 1048576 linear /dev/loop0 0'"))
+                    (c/exec :mkfs.ext4 "/dev/mapper/cbdata")
+                    (c/exec server-path :-k)
+                    (c/exec :mv :-T data-path "/tmp/cbdata")
+                    (c/exec :mkdir data-path)
+                    (c/exec :mount :-o "noatime" "/dev/mapper/cbdata" data-path)
+                    (c/exec :chmod "a+rwx" data-path)
+                    (c/exec :mv :-t data-path (c/lit "/tmp/cbdata/*") (c/lit "/tmp/cbdata/.[!.]*")))
+              (c/ssh* {:cmd (str "nohup " server-path " -- -noinput >> /dev/null 2>&1 &")})
+              (util/wait-for-daemon)
+              (util/wait-for-warmup))))
         this)
 
       (invoke! [this test op]
@@ -254,14 +254,13 @@
             ; when using this function in a scenario where nodes are partitioned
             (do
               (c/on
-                (first healthy-cluster-nodes)
-                (util/add-nodes (set target-nodes) (get-in f-opts [:add-opts] nil)))
+               (first healthy-cluster-nodes)
+               (util/add-nodes (set target-nodes) (get-in f-opts [:add-opts] nil)))
               (util/rebalance (set/union (set cluster-nodes) (set target-nodes)) (set failed-nodes))
               (doseq [target-node target-nodes]
                 (info "updating target node state in rebalance-in")
                 (update-node-state node-states target-node {:cluster :active})
-                (update-node-state node-states target-node {:server-group (util/get-node-group target-node)})
-                )
+                (update-node-state node-states target-node {:server-group (util/get-node-group target-node)}))
               (doseq [failed-node failed-nodes]
                 (info "updating failed node state in rebalance-in")
                 (update-node-state node-states failed-node {:cluster :ejected})
@@ -372,12 +371,12 @@
             :fail-disk
             (do
               (c/on-many
-                target-nodes
-                (c/su (c/exec :dmsetup :wipe_table :cbdata :--noflush :--nolockfs)
+               target-nodes
+               (c/su (c/exec :dmsetup :wipe_table :cbdata :--noflush :--nolockfs)
                       ;; Drop buffers. Since most of our tests use little data we can read
                       ;; everything from the filesystem level buffer despite the block device
                       ;; returning errors.
-                      (c/exec :echo "3" :> "/proc/sys/vm/drop_caches")))
+                     (c/exec :echo "3" :> "/proc/sys/vm/drop_caches")))
               (doseq [target target-nodes]
                 (update-node-state node-states target {:disk :killed}))
               (info "cluster state: " @node-states)
@@ -386,11 +385,11 @@
             :slow-disk
             (do
               (c/on-many
-                target-nodes
+               target-nodes
                 ;; Load a new (inactive) table that delays all disk IO by 25ms.
-                (c/su (c/exec :dmsetup :load :cbdata :--table
-                              (c/lit "'0 1048576 delay /dev/loop0 0 25 /dev/loop0 0 25'"))
-                      (c/exec :dmsetup :resume :cbdata)))
+               (c/su (c/exec :dmsetup :load :cbdata :--table
+                             (c/lit "'0 1048576 delay /dev/loop0 0 25 /dev/loop0 0 25'"))
+                     (c/exec :dmsetup :resume :cbdata)))
               (doseq [target target-nodes]
                 (update-node-state node-states target {:disk :slowed}))
               (info "cluster state: " @node-states)
@@ -399,10 +398,10 @@
             :reset-disk
             (do
               (c/on-many
-                target-nodes
-                (c/su (c/exec :dmsetup :load :cbdata :--table
-                              (c/lit "'0 1048576 linear /dev/loop0 0'"))
-                      (c/exec :dmsetup :resume :cbdata)))
+               target-nodes
+               (c/su (c/exec :dmsetup :load :cbdata :--table
+                             (c/lit "'0 1048576 linear /dev/loop0 0'"))
+                     (c/exec :dmsetup :resume :cbdata)))
               (doseq [target target-nodes]
                 (update-node-state node-states target {:disk :normal}))
               (info "cluster state: " @node-states)
