@@ -41,7 +41,7 @@
     ;; Due to java bug JDK-4283544 we can't call withDurabilityLevel from clojure
     ;; in the usual fashion, we need to use the following workaround:
     (let [parameters (into-array java.lang.Class [DurabilityLevel])
-          method     (.getDeclaredMethod CommonDurabilityOptions "withDurabilityLevel" parameters)
+          method     (.getDeclaredMethod CommonDurabilityOptions "durabilityLevel" parameters)
           arguments  (into-array java.lang.Object [level])]
       (.setAccessible method true)
       (.invoke method mutation-options arguments))))
@@ -63,7 +63,7 @@
         ;; Again due to java bug JDK-4283544 we can't just call withDurability
         ;; in the usual fashion, we need the following workaround:
       (let [parameters (into-array java.lang.Class [PersistTo ReplicateTo])
-            method (.getDeclaredMethod CommonDurabilityOptions "withDurability" parameters)
+            method (.getDeclaredMethod CommonDurabilityOptions "durability" parameters)
             arguments (into-array java.lang.Object [persist-to replicate-to])]
         (.setAccessible method true)
         (.invoke method mutation-options arguments)))))
