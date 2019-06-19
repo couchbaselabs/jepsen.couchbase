@@ -746,7 +746,7 @@
                        (map (fn [x] {:type :invoke
                                      :f :add
                                      :value x
-                                     :durability-level (util/random-durability-level opts)}))
+                                     :durability-level (util/random-durability-level (:durability opts))}))
                        (gen/seq)
                        (do-n-nemesis-cycles cycles
                                             [(gen/sleep 20)]))
@@ -790,7 +790,7 @@
                    (map (fn [x] {:type :invoke
                                  :f :add
                                  :value x
-                                 :durability-level (util/random-durability-level opts)}))
+                                 :durability-level (util/random-durability-level (:durability opts))}))
                    (gen/seq))
    generator  (gen/phases
                (case scenario
@@ -924,7 +924,7 @@
                                       {:type :invoke
                                        :f :add
                                        :value x
-                                       :durability-level (util/random-durability-level opts)}))
+                                       :durability-level (util/random-durability-level (:durability opts))}))
                                (gen/seq)
                                (do-n-nemesis-cycles cycles
                                                     [(gen/sleep 5)
