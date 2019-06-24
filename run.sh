@@ -30,6 +30,9 @@ case $i in
     --jenkins-run )
     JENKINS_RUN=true
     ;;
+    --kv-cv-jenkins-run )
+    KV_CV_RUN=true
+    ;;
     -h|--help)
     print_usage
     exit 0
@@ -89,6 +92,18 @@ if [ "$JENKINS_RUN" ]; then
     mkdir ./store/Couchbase/pass
 fi
 
+suiteConfigName=$(basename $SUITE)
+suiteName=${suiteConfigName%.*}
+
+if [ -z $BUILD_TAG ] ; then
+    testStoreName=$suiteName
+else
+    testStoreName=$BUILD_TAG
+fi
+
+if [[ -f "jepsen-output.log" && $KV_CV_RUN ]]; then
+    rm -f ./jepsen-output.log
+fi
 
 while IFS='' read -r line || [[ -n "$line" ]]; do
 
@@ -122,7 +137,7 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
     # run test using vagrants or docker
     PREVIOUS_RUN=$(cd ./store/latest; pwd -P)
     if [ "$PROVISIONER" == "vagrant" ]; then
-        command="$vagrantBaseCommand $vagrantParams $packageParam $testParams"
+        command="$vagrantBaseCommand $vagrantParams $packageParam $testParams &>> jepsen-output.log"
         echo "Test command: $command"
         echo ""
         eval $command
@@ -130,7 +145,7 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
     fi
     if [ "$PROVISIONER" == "docker" ]; then
         docker exec -it jepsen-control bash -c "rm -rf /jepsen/store"
-        command="$dockerBaseCommand $dockerParams $packageParam $testParams"
+        command="$dockerBaseCommand $dockerParams $packageParam $testParams &>> jepsen-output.log"
         echo "Test command: $command"
         echo ""
         eval $command
@@ -139,7 +154,7 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
     fi
 
     if [ "$PROVISIONER" == "vmpool" ]; then
-        command="$vmpoolBaseCommand $vmpoolParams $packageParam $testParams"
+        command="$vmpoolBaseCommand $vmpoolParams $packageParam $testParams &>> jepsen-output.log"
         echo "Test command: $command"
         echo ""
         eval $command
@@ -208,7 +223,16 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
 
     test_num=$(($test_num+1))
 done < "$SUITE"
-echo "################################################################"
+echo "###### Finished Running Suite #########"
+
+if [ $KV_CV_RUN ]; then
+    #Rename this test run to the suite name we just ran
+    if [ -d ./store/Couchbase-$testStoreName ]; then
+        mv ./store/Couchbase/*  ./store/Couchbase-$testStoreName/
+    else
+        mv ./store/Couchbase/ ./store/Couchbase-$testStoreName
+    fi
+fi
 
 total=$(($pass+$unknown+$fail+$crash))
 percent=`echo  "scale=2; $pass*100/$total" | bc`
