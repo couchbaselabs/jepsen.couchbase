@@ -737,7 +737,8 @@
    control-atom  (atom :continue)
    checker       (checker/compose
                   (merge
-                   {:set (checker/set)
+                   {:timeline (timeline/html)
+                    :set (checker/set)
                     :sanity (cbchecker/sanity-check)}
                    (if (opts :perf-graphs)
                      {:perf (checker/perf)})))
@@ -782,7 +783,8 @@
    control-atom          (atom :continue)
    checker               (checker/compose
                           (merge
-                           {:set (checker/set)
+                           {:timeline (timeline/html)
+                            :set (checker/set)
                             :sanity (cbchecker/sanity-check)}
                            (if (opts :perf-graphs)
                              {:perf (checker/perf)})))
@@ -914,7 +916,8 @@
    control-atom          (atom :continue)
    checker               (checker/compose
                           (merge
-                           {:set (checker/set)
+                           {:timeline (timeline/html)
+                            :set (checker/set)
                             :sanity (cbchecker/sanity-check)}
                            (if (opts :perf-graphs)
                              {:perf (checker/perf)})))
@@ -966,7 +969,8 @@
    nemesis       (cbnemesis/couchbase)
    checker       (checker/compose
                   (merge
-                   {:set (checker/set)}
+                   {:timeline (timeline/html)
+                    :set (checker/set)}
                    (if (opts :perf-graphs)
                      {:perf (checker/perf)})))
 
@@ -1028,7 +1032,8 @@
                                    {:bump-time :bump}     (nt/clock-nemesis)})
    checker       (checker/compose
                   (merge
-                   {:set (cbchecker/extended-set-checker)}
+                   {:timeline (timeline/html)
+                    :set (cbchecker/extended-set-checker)}
                    (if (opts :perf-graphs)
                      {:perf (checker/perf)})))
 
