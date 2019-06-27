@@ -2,7 +2,7 @@
   :description "Jepsen testing for couchbase"
   :main couchbase.core
   :plugins [[lein-cljfmt "0.6.4"]]
-  :dependencies [[org.clojure/clojure "1.9.0"]
+  :dependencies [[org.clojure/clojure "1.10.1"]
                  [jepsen "0.1.11"]
                  [io.projectreactor/reactor-core "3.2.1.RELEASE"]
                  [io.projectreactor.addons/reactor-adapter "3.2.0.RELEASE"]
