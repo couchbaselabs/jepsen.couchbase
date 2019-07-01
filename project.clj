@@ -3,7 +3,8 @@
   :main couchbase.core
   :plugins [[lein-cljfmt "0.6.4"]]
   :dependencies [[org.clojure/clojure "1.10.1"]
-                 [jepsen "0.1.11"]
+                 [org.clojure/tools.cli "0.4.2"]
+                 [jepsen "0.1.14"]
                  [io.projectreactor/reactor-core "3.2.1.RELEASE"]
                  [io.projectreactor.addons/reactor-adapter "3.2.0.RELEASE"]
                  [io.projectreactor.addons/reactor-extra "3.2.0.RELEASE"]

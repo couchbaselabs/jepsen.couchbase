@@ -106,7 +106,7 @@
                                {:indep (independent/checker
                                         (checker/compose
                                          {:timeline (timeline/html)
-                                          :linear (checker/linearizable)}))
+                                          :linear (checker/linearizable {:model ~'model})}))
                                 :sanity (cbchecker/sanity-check)}
                                (if (~opts :perf-graphs)
                                  {:perf (checker/perf)})))

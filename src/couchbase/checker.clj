@@ -3,14 +3,13 @@
             [clojure.set :as set]
             [clojure.tools.logging :refer :all]
             [jepsen.checker :as checker]
-            [jepsen.util :as util]
-            [knossos.op :as op]))
+            [jepsen.util :as util]))
 
 (defn sanity-check
   "Return unknown validity if the test is broken."
   []
   (reify checker/Checker
-    (check [this test model history opts]
+    (check [this test history opts]
       (let [reads   (->> history (filter #(and (= (:f %) :read) (= (:type %) :invoke))) (count))
             allfail? (fn [ftype] (> (->> history
                                          (filter #(and (= (:f %) ftype) (= (:type %) :invoke)))
@@ -35,7 +34,7 @@
   the final operation."
   []
   (reify checker/Checker
-    (check [this test model history opts]
+    (check [this test history opts]
       (let [ops         (group-by #(str (name (:f %)) (name (:type %))) history)
             add-invoke  (->> (ops "addinvoke")  (r/map :value) (into #{}))
             add-ok      (->> (ops "addok")      (r/map :value) (into #{}))
