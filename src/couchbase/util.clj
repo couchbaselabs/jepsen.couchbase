@@ -76,7 +76,7 @@
   "Add nodes to the cluster"
   ([nodes-to-add] (add-nodes nodes-to-add nil))
   ([nodes-to-add add-opts]
-   (if (nil? add-opts)
+   (if-not (:group-name add-opts)
      (doseq [node nodes-to-add]
        (let [params (str "hostname=" node
                          "&user=Administrator"
@@ -84,15 +84,14 @@
                          "&services=kv")]
          (info "Adding node" node "to cluster")
          (rest-call "/controller/addNode" params)))
-     (if (contains? add-opts :group-name)
-       (let [group-uuid (get-group-uuid (:group-name add-opts))]
-         (doseq [node nodes-to-add]
-           (let [params (str "hostname=" node
-                             "&user=Administrator"
-                             "&password=abc123"
-                             "&services=kv")]
-             (info "Adding node" node "to cluster")
-             (rest-call (format "/pools/default/serverGroups/%s/addNode" group-uuid)  params))))))))
+     (let [group-uuid (get-group-uuid (:group-name add-opts))]
+       (doseq [node nodes-to-add]
+         (let [params (str "hostname=" node
+                           "&user=Administrator"
+                           "&password=abc123"
+                           "&services=kv")]
+           (info "Adding node" node "to cluster")
+           (rest-call (format "/pools/default/serverGroups/%s/addNode" group-uuid) params)))))))
 
 (defn wait-for
   ([call-function desired-state] (wait-for call-function desired-state 60))
