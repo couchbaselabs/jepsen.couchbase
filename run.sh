@@ -101,8 +101,8 @@ else
     testStoreName=$BUILD_TAG
 fi
 
-if [[ -f "jepsen-output.log" && $KV_CV_RUN ]]; then
-    rm -f ./jepsen-output.log
+if [[ $KV_CV_RUN ]]; then
+    rm -f ./jepsen-output-*.log
 fi
 
 while IFS='' read -r line || [[ -n "$line" ]]; do
@@ -137,7 +137,7 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
     # run test using vagrants or docker
     PREVIOUS_RUN=$(cd ./store/latest; pwd -P)
     if [ "$PROVISIONER" == "vagrant" ]; then
-        command="$vagrantBaseCommand $vagrantParams $packageParam $testParams &>> jepsen-output.log"
+        command="$vagrantBaseCommand $vagrantParams $packageParam $testParams &> jepsen-output-$test_num.log"
         echo "Test command: $command"
         echo ""
         eval $command
@@ -145,7 +145,7 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
     fi
     if [ "$PROVISIONER" == "docker" ]; then
         docker exec -it jepsen-control bash -c "rm -rf /jepsen/store"
-        command="$dockerBaseCommand $dockerParams $packageParam $testParams &>> jepsen-output.log"
+        command="$dockerBaseCommand $dockerParams $packageParam $testParams &> jepsen-output-$test_num.log"
         echo "Test command: $command"
         echo ""
         eval $command
@@ -154,13 +154,14 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
     fi
 
     if [ "$PROVISIONER" == "vmpool" ]; then
-        command="$vmpoolBaseCommand $vmpoolParams $packageParam $testParams &>> jepsen-output.log"
+        command="$vmpoolBaseCommand $vmpoolParams $packageParam $testParams &> jepsen-output-$test_num.log"
         echo "Test command: $command"
         echo ""
         eval $command
         EXITCODE=$?
     fi
     if [ $EXITCODE -ne 0 ]; then
+        cat "jepsen-output-$test_num.log"
         LAST_RUN=$(cd ./store/latest; pwd -P)
         if [ "$PREVIOUS_RUN" != "$LAST_RUN" ] && grep -q -e "^ :valid? false" store/latest/results.edn; then
             grep -m 1 -e ":workload.*" store/latest/jepsen.log | cut -d "\"" -f 2 |

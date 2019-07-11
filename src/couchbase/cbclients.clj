@@ -30,11 +30,8 @@
   [test]
   (info "Opening new client")
   (let [node       (->> test :nodes rand-nth)
-        ioConfig   (-> (IoConfig/builder)
-                       ; (.configPollInterval duration) FOR FUTURE
-                       (.mutationTokensEnabled true))
-        timeout    (-> (TimeoutConfig/builder)
-                       (.kvTimeout (:kv-timeout test)))
+        ioConfig   (.mutationTokensEnabled (IoConfig/builder) true)
+        timeout    (.kvTimeout (TimeoutConfig/builder) (:kv-timeout test))
         env        (-> (ClusterEnvironment/builder node "Administrator" "abc123")
                        (.timeoutConfig timeout)
                        (.ioConfig ioConfig)
@@ -43,8 +40,7 @@
         bucket     (.bucket cluster "default")
         collection (.defaultCollection bucket)
         txn-config (if (:transactions test)
-                     (-> (TransactionConfigBuilder/create)
-                         (.build)))
+                     (.build (TransactionConfigBuilder/create)))
         txn        (if (:transactions test)
                      (-> (Transactions/create cluster txn-config)))]
     {:cluster cluster :bucket bucket :collection collection :env env :txn txn}))
@@ -97,8 +93,7 @@
     (assert (not= @store :INVALID) "Store invalid")
     (info "DCPControlEventHandler got:" descr)
     (swap! store (partial remove #(and (= (:vbucket %) vbid) (> (:seqno %) seqno))))
-    (-> (.rollbackAndRestartStream @client vbid seqno)
-        (.subscribe oksub errorsub))))
+    (.subscribe (.rollbackAndRestartStream @client vbid seqno) oksub errorsub)))
 
 (defn dcpControlEventHandler [{:keys [client store idle] :as client-record}]
   (reify ControlEventHandler
@@ -149,11 +144,11 @@
                            (.bufferAckWatermark 75)
                            (.bucket "default"))]
     (if (or (>= (first server-version) 5)
-            (=  (first server-version) 0))
+            (zero? (first server-version)))
       (-> client-builder
           (.username "Administrator")
           (.password "abc123")))
-    (reset! client (-> client-builder (.build)))
+    (reset! client (.build client-builder))
     (.controlEventHandler @client (dcpControlEventHandler client-record))
     (.dataEventHandler @client (dcpDataEventHandler client-record))
     (-> @client (.connect) (.await))

@@ -50,10 +50,8 @@
   "Initialise a new cluster"
   [test]
   (let [base-path  (:install-path test)
-        data-path  (-> (str base-path "/var/lib/couchbase/data")
-                       (str/replace "/" "%2F"))
-        index-path (-> (str base-path "/var/lib/couchbase/data")
-                       (str/replace "/" "%2F"))
+        data-path  (str/replace (str base-path "/var/lib/couchbase/data") "/" "%2F")
+        index-path (str/replace (str base-path "/var/lib/couchbase/data") "/" "%2F")
         params     (format "data_path=%s&index_path=%s" data-path index-path)]
     (rest-call "/nodes/self/controller/settings" params)
     (rest-call "/node/controller/setupServices" "services=kv")
@@ -100,11 +98,10 @@
           attempts 0]
      (if (>= attempts retries)
        (throw (RuntimeException. (str "Desired state not achieved in " (str retries) " retries"))))
-     (if (not= state desired-state)
-       (do
-         (info "waiting for " (str desired-state) " but have " (str state))
-         (Thread/sleep 1000)
-         (recur (call-function) (+ attempts 1)))))))
+     (when (not= state desired-state)
+       (info "waiting for " (str desired-state) " but have " (str state))
+       (Thread/sleep 1000)
+       (recur (call-function) (inc attempts))))))
 
 (defn get-rebalance-status
   [target]
@@ -133,8 +130,8 @@
        (Thread/sleep 1000)
        (let [new-status-map (get-rebalance-status rest-target)]
          (recur new-status-map
-                (+ retry-count 1)
-                (if (= status-map new-status-map) (+ stuck-count 1) stuck-count)))))))
+                (inc retry-count)
+                (if (= status-map new-status-map) (inc stuck-count) stuck-count)))))))
 
 (defn rebalance
   "Inititate a rebalance with the given parameters"
@@ -190,8 +187,7 @@
   "Wait for warmup to complete"
   []
   (let [retry-count (atom 0)]
-    (while (->> (rest-call "/pools/default" nil)
-                (re-find #"\"status\":\"warmup\""))
+    (while (re-find #"\"status\":\"warmup\"" (rest-call "/pools/default" nil))
       (if (> @retry-count 60)
         (throw (Exception. "bucket failed to warmup")))
       (swap! retry-count inc)
@@ -218,7 +214,7 @@
 
 (defn create-server-groups
   [server-group-count]
-  (let [server-group-nums (vec (range 1 (+ server-group-count 1)))]
+  (let [server-group-nums (vec (range 1 (inc server-group-count)))]
     (doseq [server-group-num server-group-nums]
       (if (not= server-group-num 1)
         (rest-call "/pools/default/serverGroups" (format "name=Group %s" server-group-num))))))
@@ -314,34 +310,29 @@
   "Install the given package on the nodes"
   [package]
   (case (:type package)
-    :rpm (do
-           (let [package-name (.getName (:package package))
-                 split-package-name (str/split package-name #"-")]
-             (try
-               (do
-                 (info "checking if couchbase-server already installed...")
-                 (c/su (c/exec (str "/opt/couchbase" "/bin/couchbase-server") :-v))
-                 (info "couchbase-server is installed, removing...")
-                 (c/su (c/exec :yum :remove :-y "couchbase-server"))
-                 (throw (Exception. "removed server")))
-               (catch Exception e
-                 (let [root-files (c/su (c/exec :ls "/root"))]
-                   (info "checking if package exists in /root...")
-                   (when (not (str/includes? root-files package-name))
-                     (info "package does not exist in /root, uploading...")
-                     (c/su (c/upload (:package package) package-name))))
-                 (try
-                   (info "checking if this is a centos vagrant run...")
-                   (c/su (c/exec :mv (str "/home/vagrant/" package-name) "/root/"))
-                   (catch Exception e (info "no package to move from /home/vagrant to /root")))
-                 (info "running yum install -y " (str "/root/" package-name))
-                 (c/su (c/exec :yum :install :-y (str "/root/" package-name)))
-                 (info "moving package to tmp")
-                 (c/su (c/exec :mv (str "/root/" package-name) "/tmp/"))
-                 (info "cleaning up /root")
-                 (c/su (c/exec :rm :-rf "/root/*"))
-                 (info "moving package back to /root")
-                 (c/su (c/exec :mv (str "/tmp/" package-name) "/root/"))))))
+    :rpm (let [package-name (.getName (:package package))
+               split-package-name (str/split package-name #"-")]
+           (try (do (info "checking if couchbase-server already installed...")
+                    (c/su (c/exec (str "/opt/couchbase" "/bin/couchbase-server") :-v))
+                    (info "couchbase-server is installed, removing...")
+                    (c/su (c/exec :yum :remove :-y "couchbase-server"))
+                    (throw (Exception. "removed server")))
+                (catch Exception e (let [root-files (c/su (c/exec :ls "/root"))]
+                                     (info "checking if package exists in /root...")
+                                     (when-not (str/includes? root-files package-name)
+                                       (info "package does not exist in /root, uploading...")
+                                       (c/su (c/upload (:package package) package-name))))
+                       (try (info "checking if this is a centos vagrant run...")
+                            (c/su (c/exec :mv (str "/home/vagrant/" package-name) "/root/"))
+                            (catch Exception e (info "no package to move from /home/vagrant to /root")))
+                       (info "running yum install -y " (str "/root/" package-name))
+                       (c/su (c/exec :yum :install :-y (str "/root/" package-name)))
+                       (info "moving package to tmp")
+                       (c/su (c/exec :mv (str "/root/" package-name) "/tmp/"))
+                       (info "cleaning up /root")
+                       (c/su (c/exec :rm :-rf "/root/*"))
+                       (info "moving package back to /root")
+                       (c/su (c/exec :mv (str "/tmp/" package-name) "/root/")))))
     :deb (do
            (c/su (c/upload (:package package) "couchbase.deb"))
            (c/su (c/exec :apt :install :-y "~/couchbase.deb"))
@@ -545,12 +536,12 @@
 (defn random-server-group
   "Get a random server group name string given a server group count"
   [server-group-count]
-  (str "Group " (str (+ (rand-int server-group-count) 1))))
+  (str "Group " (str (inc (rand-int server-group-count)))))
 
 (defn complementary-server-group
   "Get a random server group name string given a server group count"
   [server-group-count exclude-group-name]
-  (if (= server-group-count 0)
+  (if (zero? server-group-count)
     "Group 0"
     (loop [group-name (random-server-group server-group-count)]
       (info group-name)

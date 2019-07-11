@@ -55,10 +55,10 @@
           (warn "Final two history entries were not invocation and success of read,"
                 "results may be invalid"))
 
-        (if-not (> (count read-ok) 0)
+        (if-not (pos? (count read-ok))
           {:valid? :unknown :error "Set was never read"}
 
-          (let [final-read (into #{} (:value (last read-ok)))
+          (let [final-read (set (:value (last read-ok)))
 
                 ;; Keys for which we never invoked delete
                 no-delete-attempt (set/difference add-invoke del-invoke)

@@ -212,7 +212,7 @@
             :wait-for-autofailover
             (let [target (first target-nodes)
                   initial-count (util/get-autofailover-info target :count)
-                  final-count (+ initial-count 1)
+                  final-count (inc initial-count)
                   autofailover-count (atom initial-count)
                   node-info-before (util/get-node-info target)]
               (util/wait-for #(util/get-autofailover-info target :count) final-count 120)
@@ -224,7 +224,7 @@
                         active-before (= state-before "active")
                         failed-after (= state-after "inactiveFailed")]
                     (if (and active-before failed-after)
-                      (do (update-node-state node-states node-key {:cluster :failed}))))))
+                      (update-node-state node-states node-key {:cluster :failed})))))
               (info "cluster state: " @node-states)
               (assoc op :value :autofailover-complete))
 

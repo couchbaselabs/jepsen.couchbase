@@ -171,12 +171,11 @@
     :parse-fn parse-int
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
    [nil "--scenario SCENARIO"
-    :parse-fn #(keyword %)]
+    :parse-fn keyword]
    [nil "--durability L0:L1:L2:L3"
     "Probability distribution for the durability level"
     :default [100 0 0 0]
-    :parse-fn #(->> (str/split % #":")
-                    (map parse-int))
+    :parse-fn #(map parse-int (str/split % #":"))
     :validate [#(and (= (reduce + %) 100)
                      (= (count %) 4))]]
    [nil "--custom-vbucket-count CUSTOM-VBUCKET-COUNT"
@@ -251,11 +250,10 @@
    (var jepsen.checker.perf/preamble)
    (fn [preamble]
      (fn [output-path]
-       (assoc-in (into [] (preamble output-path)) [1 5 :xs] '(1800 800)))))
+       (assoc-in (vec (preamble output-path)) [1 5 :xs] '(1800 800)))))
 
   ;; Now parse args and run the test
   (let [test        (cli/single-test-cmd {:test-fn  cbtest
                                           :opt-spec extra-cli-options})
         serve       (cli/serve-cmd)]
-    (-> (merge test serve)
-        (cli/run! args))))
+    (cli/run! (merge test serve) args)))

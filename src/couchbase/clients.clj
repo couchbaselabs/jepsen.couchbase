@@ -78,12 +78,11 @@
         dockey (format "jepsen%04d" rawkey)]
     (try
       (let []
-        (if-let [get-result (-> (.get collection dockey) (.orElse nil))]
+        (if-let [get-result (.orElse (.get collection dockey) nil)]
           (assoc op
                  :type :ok
                  :cas (.cas get-result)
-                 :value (->> (.contentAs get-result Integer)
-                             (independent/tuple rawkey)))
+                 :value (independent/tuple rawkey (.contentAs get-result Integer)))
           (assoc op
                  :type :ok
                  :value (independent/tuple rawkey :nil))))
@@ -131,7 +130,7 @@
   (let [[rawkey [swap-from swap-to]] (:value op)
         dockey (format "jepsen%04d" rawkey)]
     (try
-      (let [get-current (-> (.get collection dockey) (.get))
+      (let [get-current (.get (.get collection dockey))
             current-value (.contentAs get-current Integer)
             current-cas (.cas get-current)]
         (if (= current-value swap-from)
@@ -176,8 +175,7 @@
     (-> (PerTransactionConfigBuilder/create)
         (.durabilityLevel durability-level)
         (.build))
-    (-> (PerTransactionConfigBuilder/create)
-        (.build))))
+    (.build (PerTransactionConfigBuilder/create))))
 
 (defn ^Consumer f-to-consumer [f]
   "Converts a function to java.util.function.Consumer."
@@ -200,11 +198,11 @@
                   dockey (format "jepsen%04d" rawkey)]
               (case optype
                 :read
-                (let [get-result (-> (.get ctx @coll dockey) (.orElse nil))
+                (let [get-result (.orElse (.get ctx @coll dockey) nil)
                       get-value (if (nil? get-result) :nil (.contentAs get-result Integer))]
                   (reset! op-attempt-history (conj @op-attempt-history [optype rawkey get-value])))
                 :write
-                (let [get-result (-> (.get ctx @coll dockey) (.orElse nil))]
+                (let [get-result (.orElse (.get ctx @coll dockey) nil)]
                   (if (nil? get-result)
                     (.insert ctx @coll dockey opval)
                     (.replace ctx get-result opval))
@@ -264,10 +262,10 @@
                  (apply-observe-options! op))
           dockey (format "jepsen%010d" (:value op))
           result (.insert collection dockey (:value op) opts)
-          token  (-> (.mutationToken result) (.orElse nil))]
+          token  (.orElse (.mutationToken result) nil)]
       (assoc op
              :type :ok
-             :mutation-token (.toString token)))
+             :mutation-token (str token)))
     ;; Certain failures - we know the operations did not take effect
     (catch DurabilityImpossibleException _
       (assoc op :type :fail, :error :DurabilityImpossible))
@@ -295,7 +293,7 @@
           token  (.mutationToken result)]
       (assoc op
              :type :ok
-             :mutation-token (.toString token)))
+             :mutation-token (str token)))
      ;; Certain failures - we know the operations did not take effect
     (catch DurabilityImpossibleException _
       (assoc op :type :fail, :error :DurabilityImpossible))

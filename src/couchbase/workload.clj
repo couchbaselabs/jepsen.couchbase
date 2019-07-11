@@ -138,7 +138,7 @@
                          (take max-txn-size)
                          (mapv (fn [k] (let [op-type (first (shuffle [:read :write]))
                                              key k
-                                             val (if (= op-type :write) (rand-int 50) nil)]
+                                             val (when (= op-type :write) (rand-int 50))]
                                          [op-type key val])))
                          (array-map :type :invoke,
                                     :f :txn,
@@ -187,8 +187,7 @@
     (independent/concurrent-generator
      doc-threads
      (range)
-     (fn [k] (->> (gen/mix @combined-gen)
-                  (rate-limit rate))))))
+     (fn [k] (rate-limit rate (gen/mix @combined-gen))))))
 
 ;; ==================
 ;; Register workloads
@@ -296,11 +295,11 @@
     scenario      (opts :scenario)
     disrupt-count (if (= scenario :swap-rebalance)
                     (let [disrupt-count (opts :disrupt-count 1)
-                          max-disrupt-count (- (Math/ceil (double (/ (count (:nodes opts)) 2))) 1)]
+                          max-disrupt-count (dec (Math/ceil (double (/ (count (:nodes opts)) 2))))]
                       (assert (<= disrupt-count max-disrupt-count))
                       disrupt-count)
                     (let [disrupt-count (opts :disrupt-count 1)
-                          max-disrupt-count (- (count (:nodes opts)) 1)]
+                          max-disrupt-count (dec (count (:nodes opts)))]
                       (assert (<= disrupt-count max-disrupt-count))
                       disrupt-count))
     autofailover  (opts :autofailover false)
@@ -318,26 +317,26 @@
                      cycles
                      [(repeatedly
                        disrupt-count
-                       #(do [(gen/sleep 5)
-                             {:type :info :f :rebalance-out
-                              :targeter-opts
-                              {:type :random
-                               :condition (merge {:cluster [:active :failed]
-                                                  :network [:connected]
-                                                  :node [:running]}
-                                                 (when-let [target-sq target-server-groups]
-                                                   {:server-group [random-server-group]}))}}]))
+                       (fn [] [(gen/sleep 5)
+                               {:type :info :f :rebalance-out
+                                :targeter-opts
+                                {:type :random
+                                 :condition (merge {:cluster [:active :failed]
+                                                    :network [:connected]
+                                                    :node [:running]}
+                                                   (when-let [target-sq target-server-groups]
+                                                     {:server-group [random-server-group]}))}}]))
                       (gen/sleep 5)
                       (repeatedly
                        disrupt-count
-                       #(do [(gen/sleep 5)
-                             {:type :info :f :rebalance-in
-                              :f-opts {:add-opts {:group-name random-server-group}}
-                              :targeter-opts
-                              {:type :random
-                               :condition {:cluster [:ejected]
-                                           :network [:connected]
-                                           :node [:running]}}}]))
+                       (fn [] [(gen/sleep 5)
+                               {:type :info :f :rebalance-in
+                                :f-opts {:add-opts {:group-name random-server-group}}
+                                :targeter-opts
+                                {:type :random
+                                 :condition {:cluster [:ejected]
+                                             :network [:connected]
+                                             :node [:running]}}}]))
                       (gen/sleep 5)]
                      client-generator)
 
