@@ -74,7 +74,7 @@
   "Add nodes to the cluster"
   ([nodes-to-add] (add-nodes nodes-to-add nil))
   ([nodes-to-add add-opts]
-   (if-not (:group-name add-opts)
+   (if (empty? (:group-name add-opts))
      (doseq [node nodes-to-add]
        (let [params (str "hostname=" node
                          "&user=Administrator"
