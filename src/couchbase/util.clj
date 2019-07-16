@@ -471,30 +471,28 @@
   "Get a vector of log file paths"
   [test]
   (let [install-dir (:install-path test)]
-    (when (test :get-cbcollect)
-      (info "Generating cbcollect...")
-      (c/su (c/exec (str install-dir "/bin/cbcollect_info")
-                    (str install-dir "/var/lib/couchbase/logs/cbcollect.zip"))))
+    (c/su (c/exec :rm :-rf "/tmp/jepsen-logs")
+          (c/exec :mkdir :-m777 "/tmp/jepsen-logs")
+          ;; This file is required to ensure consistent behaviour. We want
+          ;; Jepsen to detect /tmp/jepsen-logs as the root log directory.
+          ;; Otherwise, the root would some times be /tmp/jepsen-logs and
+          ;; sometime the extracted cbcollect directory.
+          (c/exec :touch "/tmp/jepsen-logs/.ignore"))
+    (when (test :cbcollect)
+      (info "Running cbcollect_info on" c/*host*)
+      (c/su (c/exec (str install-dir "/bin/cbcollect_info") "/tmp/jepsen_cbcollect.zip")
+            (c/exec :unzip "/tmp/jepsen_cbcollect.zip" :-d "/tmp/jepsen-logs")
+            (c/exec :rm "/tmp/jepsen_cbcollect.zip")))
     (when (test :hashdump)
-      (info "Getting hashtable dump from all vbuckets")
-      (c/su
-       (c/exec
-        :for :i :in (c/lit "$(seq 0 1023);") :do
-        (str install-dir "/bin/cbstats")
-        :localhost :-u :Administrator :-p :abc123 :-b :default :raw
-        (c/lit "\"_hash-dump $i\"")
-        :>> (str install-dir "/var/lib/couchbase/logs/hashdump.txt") (c/lit ";")
-        :echo :>> (str install-dir "/var/lib/couchbase/logs/hashdump.txt") (c/lit ";")
-        :done)))
-    (c/su (c/exec :chmod :a+rx (str install-dir "/var/lib/couchbase")))
-    (c/su (c/exec :chmod :-R :a+rx (str install-dir "/var/lib/couchbase/logs")))
-    (try
-      (->> (c/exec :ls (str install-dir "/var/lib/couchbase/logs"))
-           (str/split-lines)
-           (map #(str install-dir "/var/lib/couchbase/logs/" %)))
-      (catch RuntimeException e
-        (warn "Error getting logfiles")
-        []))))
+      (info "Creating hashtable dump on" c/*host*)
+      (let [vbuckets (format "$(seq 0 %d)" (:custom-vbucket-count test 1024))
+            cbstats (str install-dir "/bin/cbstats")
+            hashcmd (str cbstats " localhost -u Administrator -p abc123 -b default raw \"_hash-dump $i\"")
+            logfile "/tmp/jepsen-logs/hashtable_dump.txt"
+            loopcmd (format "for i in %s; do (%s; echo) &>> %s; done" vbuckets hashcmd logfile)]
+        (c/su (c/exec* loopcmd))))
+    (c/su (c/exec :chmod :a+r :-R "/tmp/jepsen-logs"))
+    (str/split-lines (c/exec :find "/tmp/jepsen-logs" :-type :f))))
 
 (defn get-autofailover-info
   [target field]

@@ -84,9 +84,9 @@
     "Limit the total number of operations"
     :parse-fn parse-int
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
-   [nil "--get-cbcollect"
+   [nil "--[no-]cbcollect"
     "Generate a cbcollect at the end of the run?"
-    :default false]
+    :default true]
    [nil "--perf-graphs"
     "Output performance graphs? (Requires gnuplot)"
     :default false]
