@@ -15,19 +15,30 @@
 (defn couchbase
   "Initialise couchbase"
   []
-  (reify
-    db/DB
-    (setup!    [_ test node] (util/setup-node test))
-    (teardown! [_ test node] (util/teardown test))
+  (let [collected-logs (atom [])]
+    (reify
+      db/DB
+      (setup!    [_ test node] (util/setup-node test))
+      (teardown! [_ test node] (util/teardown test))
 
-    db/Primary
-    (setup-primary! [_ test node]
-      (util/setup-cluster test node)
-      (compare-and-set! (test :db-intialized) false true))
+      db/Primary
+      (setup-primary! [_ test node]
+        (util/setup-cluster test node)
+        (compare-and-set! (test :db-intialized) false true))
 
-    db/LogFiles
-    (log-files [_ test node]
-      (util/get-logs test))))
+      db/LogFiles
+      (log-files [_ test node]
+        ;; Following the update from Jepsen 0.1.11 -> 0.1.14, this function
+        ;; is for some reason being called multiple times for the same
+        ;; node. I'm not sure what is triggering this, but it causes issues
+        ;; for the cbcollects. Keep a list of nodes for which log collection
+        ;; has been triggered, and return nil if we receive a duplicate
+        ;; request.
+        (if (->> (swap-vals! collected-logs conj node)
+                 (first)
+                 (not-any? #{node}))
+          (util/get-logs test)
+          (warn "Ignoring duplicate log collection request"))))))
 
 ;; The only utility we actually need to install on our vagrants seems to be
 ;; ntpdate, so detect which package manager to use and install it
