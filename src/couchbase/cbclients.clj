@@ -71,11 +71,20 @@
   (locking client-pool
     (when client-pool
       (doseq [client (take (test :pool-size) @client-pool)]
-        (if (some? (:txn client)) (.close (:txn client))))
+        (try
+          (some-> client :txn .close)
+          (catch Exception e
+            (warn "Ignored exception while closing transactions:" e))))
       (doseq [client (take (test :pool-size) @client-pool)]
-        (if (some? (:cluster client)) (.shutdown (:cluster client))))
+        (try
+          (some-> client :cluster .shutdown)
+          (catch Exception e
+            (warn "Ignored exception while disconnecting from cluster:" e))))
       (doseq [client (take (test :pool-size) @client-pool)]
-        (if (some? (:env client)) (.shutdown (:env client))))
+        (try
+          (some-> client :env .shutdown)
+          (catch Exception e
+            (warn "Ignored exception while shutting down environment:" e))))
       (reset! client-pool nil))))
 
 ;; DCP client logic
