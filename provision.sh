@@ -149,7 +149,9 @@ case "$TYPE" in
                 done
                 ;;
             "destroy-all")
-                NODES=$(ls -1U ./resources/.vagrant/machines/ | wc -l) vagrant destroy --force && rm -rf ./resources/.vagrant
+                NODES=$(ls -1U ./resources/.vagrant/machines/ | wc -l) vagrant destroy --force
+                rm -rf ./resources/.vagrant
+                rm -f ./resources/Vagrantfile
                 ;;
         esac
         ;;
