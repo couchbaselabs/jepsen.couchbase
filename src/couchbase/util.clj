@@ -419,9 +419,7 @@
         (net/heal! (:net test) test)))
     (info "Teardown Complete")
     (catch Exception e
-      (do
-        (str "teardown failed: " (str e))
-        (throw (Exception. "teardown failed"))))))
+      (throw (Exception. (str "teardown failed: " (str e)))))))
 
 (defn get-version
   "Get the couchbase version running on the cluster"
