@@ -106,25 +106,6 @@
         (when (:server-groups-enabled test)
           (info "inspecting server groups...")
           (set-node-server-group-state node-states))
-        (when (:manipulate-disks test)
-          (info "setting up disks")
-          (let [path        (:install-path test)
-                server-path (str path "/bin/couchbase-server")
-                data-path   (str path "/var/lib/couchbase/data")]
-            (c/with-test-nodes test
-              (c/su (c/exec :dd "if=/dev/zero" "of=/tmp/cbdata.img" "bs=1M" "count=512")
-                    (c/exec :losetup "/dev/loop0" "/tmp/cbdata.img")
-                    (c/exec :dmsetup :create :cbdata :--table (c/lit "'0 1048576 linear /dev/loop0 0'"))
-                    (c/exec :mkfs.ext4 "/dev/mapper/cbdata")
-                    (c/exec server-path :-k)
-                    (c/exec :mv :-T data-path "/tmp/cbdata")
-                    (c/exec :mkdir data-path)
-                    (c/exec :mount :-o "noatime" "/dev/mapper/cbdata" data-path)
-                    (c/exec :chmod "a+rwx" data-path)
-                    (c/exec :mv :-t data-path (c/lit "/tmp/cbdata/*") (c/lit "/tmp/cbdata/.[!.]*")))
-              (c/ssh* {:cmd (str "nohup " server-path " -- -noinput >> /dev/null 2>&1 &")})
-              (util/wait-for-daemon)
-              (util/wait-for-warmup))))
         this)
 
       (invoke! [this test op]

@@ -58,7 +58,6 @@
   [test]
   (locking client-pool
     (when-not @client-pool
-      (Thread/sleep 10000)
       (reset! client-pool (->> (partial new-client test)
                                (repeatedly (test :pool-size))
                                (doall)

@@ -360,29 +360,44 @@
                :done)))))
       (Thread/sleep 2000))))
 
-(defn setup-node
-  "Start couchbase on a node"
+(defn setup-devmapper-device
+  "Mount a devmapper device as the Couchbase data directory"
   [test]
-  (info "Setting up couchbase")
+  (let [data-path (str (:install-path test) "/var/lib/couchbase/data")]
+    (c/su (c/exec :dd "if=/dev/zero" "of=/tmp/cbdata.img" "bs=1M" "count=512")
+          (c/exec :losetup "/dev/loop0" "/tmp/cbdata.img")
+          (c/exec :dmsetup :create :cbdata :--table (c/lit "'0 1048576 linear /dev/loop0 0'"))
+          (c/exec :mkfs.ext4 "/dev/mapper/cbdata")
+          (c/exec :mkdir :-p data-path)
+          (c/exec :mount :-o "noatime" "/dev/mapper/cbdata" data-path))))
+
+(defn setup-node
+  "Start Couchbase Server on a node"
+  [test]
+  (info "Setting up Couchbase Server")
   (let [package (:package test)
-        path (:install-path test)]
+        install-path (:install-path test)
+        server-path (str install-path "/bin/couchbase-server")
+        config-path (str install-path "/var/lib/couchbase")
+        data-path (str config-path "/data")]
     (when package
       (info "Installing package")
       (try
         (install-package package)
         (catch Exception e
-          (do
-            (info "install failed: " (str e))
-            (throw (Exception. "install failed")))))
+          (fatal "Package installation failed with exception: " e)
+          (throw e)))
       (info "Package installed"))
-    (info "making directory " (str path "/var/lib/couchbase"))
-    (c/su (c/exec :mkdir :-p (str path "/var/lib/couchbase")))
-    (info "changing permissions for " (str path "/var/lib/couchbase"))
-    (c/su (c/exec :chmod :-R :a+rwx (str path "/var/lib/couchbase")))
+    (info "Setting up data paths")
+    (if (:manipulate-disks test)
+      (setup-devmapper-device test)
+      (c/su (c/exec :mkdir :-p data-path)))
+    (c/su (c/exec :chmod "a+rwx" data-path)
+          (c/exec :chmod "a+rwx" config-path))
     (info "Starting daemon")
-    (c/ssh* {:cmd (str "nohup " path "/bin/couchbase-server -- -noinput >> /dev/null 2>&1 &")}))
-  (wait-for-daemon)
-  (info "Daemon started"))
+    (c/ssh* {:cmd (str "nohup " server-path " -- -noinput >> /dev/null 2>&1 &")})
+    (wait-for-daemon)
+    (info "Daemon started")))
 
 (defn teardown
   "Stop the couchbase server instances and delete the data files"
