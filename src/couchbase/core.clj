@@ -4,6 +4,7 @@
             [couchbase
              [util     :as util]
              [workload :as workload]]
+            [dom-top.core :refer [with-retry]]
             [jepsen
              [cli     :as cli]
              [control :as c]
@@ -263,8 +264,23 @@
      (fn [output-path]
        (assoc-in (vec (preamble output-path)) [1 5 :xs] '(1800 800)))))
 
+  ;; We've encountered crashed during log collection that appear to be caused
+  ;; by https://github.com/hugoduncan/clj-ssh/issues/59. Until it is fixed,
+  ;; inject a retry loop for that issue, and just move on if we keep failing.
+  (alter-var-root
+   (var jepsen.control/download)
+   (fn [download]
+     (fn [& args]
+       (with-retry [attempts 5]
+         (apply download args)
+         (catch ArrayIndexOutOfBoundsException _
+           (warn "Encountered clj-ssh issue #59 during log download")
+           (if (pos? attempts)
+             (retry (dec attempts))
+             (error "Log download failed due to clj-ssh issue #59")))))))
+
   ;; Now parse args and run the test
-  (let [test        (cli/single-test-cmd {:test-fn  cbtest
-                                          :opt-spec extra-cli-options})
-        serve       (cli/serve-cmd)]
+  (let [test (cli/single-test-cmd {:test-fn  cbtest
+                                   :opt-spec extra-cli-options})
+        serve (cli/serve-cmd)]
     (cli/run! (merge test serve) args)))
