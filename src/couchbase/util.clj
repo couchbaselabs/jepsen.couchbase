@@ -335,7 +335,7 @@
                        (c/su (c/exec :mv (str "/tmp/" package-name) "/root/")))))
     :deb (do
            (c/su (c/upload (:package package) "couchbase.deb"))
-           (c/su (c/exec :apt :install :-y "~/couchbase.deb"))
+           (c/su (c/exec :apt :install :-y :--allow-downgrades "~/couchbase.deb"))
            (c/su (c/exec :rm "~/couchbase.deb")))
     :tar (do
            (c/su (c/upload (:package package) "couchbase.tar"))
