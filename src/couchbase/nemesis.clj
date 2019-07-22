@@ -142,7 +142,7 @@
                                   nil (first healthy-cluster-nodes))]
                   (info "target node: " (str target))
                   (info "call node: " (str call-node))
-                  (util/rest-call call-node endpoint (str "otpNode=ns_1@" target))
+                  (util/rest-call call-node endpoint {:otpNode (str "ns_1@" target)})
                   (if (= failover-type :graceful) (util/wait-for-rebalance-complete call-node))
                   (update-node-state node-states target {:cluster :failed})))
               (info "cluster state: " @node-states)
@@ -155,9 +155,11 @@
                   call-node (first healthy-cluster-nodes)]
               (assert (<= (count target-nodes) (count failed-nodes)) "recovery count must be less or equal to the total failed node count")
               (doseq [target target-nodes]
-                (let [params (str (format  "otpNode=%s&recoveryType=%s" (str "ns_1@" target) (str (name recovery-type))))]
-                  (info "setting recovery type to " (str (name recovery-type)) "for node " target)
-                  (util/rest-call call-node "/controller/setRecoveryType" params)))
+                (info "Setting recovery type to" (name recovery-type) "for node" target)
+                (util/rest-call call-node
+                                "/controller/setRecoveryType"
+                                {:otpNode (str "ns_1@" target)
+                                 :recoveryType (name recovery-type)}))
               (info "cluster nodes: " cluster-nodes)
               (util/rebalance cluster-nodes)
               (doseq [target target-nodes]

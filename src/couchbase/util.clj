@@ -4,6 +4,7 @@
             [clojure.java.io :as io]
             [clojure.tools.logging :refer :all]
             [clojure.string :as str]
+            [dom-top.core :refer [with-retry]]
             [clj-http.client :as client]
             [cheshire.core :refer :all]
             [jepsen [control :as c]
@@ -15,26 +16,23 @@
   "Perform a rest api call"
   ([endpoint params] (rest-call c/*host* endpoint params))
   ([target endpoint params]
-   (let [;; /diag/eval is only accessible from localhost on newer couchbase
-         ;; versions, so if endpoint is /diag/eval ssh into the node before
-         ;; calling curl
-         uri  (if (= endpoint "/diag/eval")
-                (str "http://localhost:8091"  endpoint)
-                (str "http://" target ":8091" endpoint))
-         cmd  (if (= endpoint "/diag/eval")
-                (fn [& args] {:out  (apply c/exec args)
-                              :exit 0})
-                shell/sh)
-         call (if (some? params)
-                (cmd "curl" "-s" "-S" "--fail" "-u" "Administrator:abc123" uri "-d" params)
-                (cmd "curl" "-s" "-S" "--fail" "-u" "Administrator:abc123" uri))]
-     (if (not= (call :exit) 0)
-       (throw+ {:type :rest-fail
-                :target target
-                :endpoint endpoint
-                :params params
-                :error call})
-       (:out call)))))
+   (let [uri (str "http://" target ":8091" endpoint)]
+     (if (empty? params)
+       (:body (client/get uri {:basic-auth ["Administrator" "abc123"]
+                               :throw-entire-message true}))
+       (:body (client/post uri {:form-params params
+                                :basic-auth ["Administrator" "abc123"]
+                                :throw-entire-message true}))))))
+
+;; On recent version versions of Couchbase Server /diag/eval is only accesible
+;; from localhost, so we need to ssh into the node and curl from there.
+(defn diag-eval
+  "Perform a diag eval call"
+  ([params] (diag-eval c/*host* params))
+  ([endpoint params]
+   (c/exec (c/lit "curl -s -S --fail -u Administrator:abc123")
+           "http://localhost:8091/diag/eval"
+           "-d" params)))
 
 (defn get-package-manager
   "Get the package manager for the nodes os, only really designed for determining
@@ -49,14 +47,16 @@
 (defn initialise
   "Initialise a new cluster"
   [test]
-  (let [base-path  (:install-path test)
-        data-path  (str/replace (str base-path "/var/lib/couchbase/data") "/" "%2F")
-        index-path (str/replace (str base-path "/var/lib/couchbase/data") "/" "%2F")
-        params     (format "data_path=%s&index_path=%s" data-path index-path)]
-    (rest-call "/nodes/self/controller/settings" params)
-    (rest-call "/node/controller/setupServices" "services=kv")
-    (rest-call "/settings/web" "username=Administrator&password=abc123&port=SAME")
-    (rest-call "/pools/default" "memoryQuota=256")))
+  (let [base-path (:install-path test)
+        data-path (str base-path "/var/lib/couchbase/data")
+        index-path (str base-path "/var/lib/couchbase/data")]
+    (rest-call "/nodes/self/controller/settings" {:data_path data-path
+                                                  :index_path index-path})
+    (rest-call "/node/controller/setupServices" {:services "kv"})
+    (rest-call "/settings/web" {:username "Administrator"
+                                :password "abc123"
+                                :port "SAME"})
+    (rest-call "/pools/default" {:memoryQuota "256"})))
 
 (defn get-group-uuid
   "Get id of group based on group name"
@@ -74,22 +74,16 @@
   "Add nodes to the cluster"
   ([nodes-to-add] (add-nodes nodes-to-add nil))
   ([nodes-to-add add-opts]
-   (if (empty? (:group-name add-opts))
+   (let [endpoint (if (empty? (:group-name add-opts))
+                    "/controller/addNode"
+                    (format "/pools/default/serverGroups/%s/addNode"
+                            (get-group-uuid (:group-name add-opts))))]
      (doseq [node nodes-to-add]
-       (let [params (str "hostname=" node
-                         "&user=Administrator"
-                         "&password=abc123"
-                         "&services=kv")]
-         (info "Adding node" node "to cluster")
-         (rest-call "/controller/addNode" params)))
-     (let [group-uuid (get-group-uuid (:group-name add-opts))]
-       (doseq [node nodes-to-add]
-         (let [params (str "hostname=" node
-                           "&user=Administrator"
-                           "&password=abc123"
-                           "&services=kv")]
-           (info "Adding node" node "to cluster")
-           (rest-call (format "/pools/default/serverGroups/%s/addNode" group-uuid) params)))))))
+       (info "Adding node" node "to cluster")
+       (rest-call endpoint {:hostname node
+                            :user "Administrator"
+                            :password "abc123"
+                            :services "kv"})))))
 
 (defn wait-for
   ([call-function desired-state] (wait-for call-function desired-state 60))
@@ -143,31 +137,32 @@
          eject-nodes-str (->> eject-nodes
                               (map #(str "ns_1@" %))
                               (str/join ","))
-         params (format "ejectedNodes=%s&knownNodes=%s"
-                        eject-nodes-str
-                        known-nodes-str)
          rest-target (first (apply disj (set known-nodes) eject-nodes))]
      (if eject-nodes
        (info "Rebalancing nodes" eject-nodes "out of cluster"))
-     (rest-call rest-target "/controller/rebalance" params)
+     (rest-call rest-target "/controller/rebalance" {:ejectedNodes eject-nodes-str
+                                                     :knownNodes known-nodes-str})
      (wait-for-rebalance-complete rest-target)
      (info "Rebalance complete"))))
 
 (defn create-bucket
   "Create the default bucket"
   [replicas eviction]
-  (let [params (str "flushEnabled=1&replicaNumber=" replicas
-                    "&evictionPolicy=" eviction
-                    "&ramQuotaMB=100&bucketType=couchbase"
-                    "&name=default&authType=sasl&saslPassword=")]
-    (rest-call "/pools/default/buckets" params)))
+  (rest-call "/pools/default/buckets"
+             {:flushEnabled 1
+              :replicaNumber replicas
+              :evictionPolicy eviction
+              :ramQuotaMB 100
+              :bucketType "couchbase"
+              :name "default"
+              :authType "sasl"
+              :saslPassword ""}))
 
 (defn set-vbucket-count
   "Set the number of vbuckets for new buckets"
   [test]
   (if-let [num-vbucket (test :custom-vbucket-count)]
-    (rest-call "/diag/eval"
-               (format "ns_config:set(couchbase_num_vbuckets_default, %s)."
+    (diag-eval (format "ns_config:set(couchbase_num_vbuckets_default, %s)."
                        num-vbucket))))
 
 (defn set-autofailover
@@ -180,8 +175,12 @@
         disk-timeout (or (test :disk-autofailover-timeout) 6)
         maxcount (or (test :autofailover-maxcount) 3)]
     (rest-call "/settings/autoFailover"
-               (format "enabled=%s&timeout=%s&maxCount=%s&failoverServerGroup=%s&failoverOnDataDiskIssues[enabled]=%s&failoverOnDataDiskIssues[timePeriod]=%s"
-                       enabled timeout maxcount sg-enabled disk-enabled disk-timeout))))
+               {:enabled enabled
+                :timeout timeout
+                :maxCount maxcount
+                :failoverServerGroup sg-enabled
+                "failoverOnDataDiskIssues[enabled]" disk-enabled
+                "failoverOnDataDiskIssues[timePeriod]" disk-timeout})))
 
 (defn wait-for-warmup
   "Wait for warmup to complete"
@@ -204,7 +203,7 @@
         props (format "[{extra_config_string, \"%s\"}]" config)
         params (format "ns_bucket:update_bucket_props(\"default\", %s)." props)]
     (doseq [node (test :nodes)]
-      (rest-call "/diag/eval" params)))
+      (diag-eval params)))
   (c/with-test-nodes test (c/su (c/exec :pkill :memcached)))
   ;; Before polling to check if we have warmed up again, we need to wait a while
   ;; for ns_server to detect memcached was killed
@@ -217,7 +216,7 @@
   (let [server-group-nums (vec (range 1 (inc server-group-count)))]
     (doseq [server-group-num server-group-nums]
       (if (not= server-group-num 1)
-        (rest-call "/pools/default/serverGroups" (format "name=Group %s" server-group-num))))))
+        (rest-call "/pools/default/serverGroups" {:name (str "Group " server-group-num)})))))
 
 (defn populate-server-groups
   "This function will deterministically add nodes to server groups"
@@ -345,20 +344,13 @@
 (defn wait-for-daemon
   "Wait until couchbase server daemon has started"
   []
-  (let [retry-count (atom 0)]
-    (while
-     (= :not-ready
-        (try+
-         (rest-call "/pools/default" nil)
-         (catch [:type :rest-fail] e
-           (do
-             (if (> @retry-count 30)
-               (throw (Exception. "daemon failed to start")))
-             (swap! retry-count inc)
-             (if (= (->> e (:error) (:exit)) 7)
-               :not-ready
-               :done)))))
-      (Thread/sleep 2000))))
+  (with-retry [retry-count 30]
+    (rest-call "/pools/" nil)
+    (catch Exception _
+      (Thread/sleep 2000)
+      (if (pos? retry-count)
+        (retry (dec retry-count))
+        (throw (Exception. "Cluster not reachable after 60s. Install broken?"))))))
 
 (defn setup-devmapper-device
   "Mount a devmapper device as the Couchbase data directory"
