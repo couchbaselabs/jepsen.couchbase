@@ -423,7 +423,15 @@
         (try
           (c/su (c/exec :rm :-rf (str path "/var/lib/couchbase")))
           (catch RuntimeException e (info "rm -rf " (str path "/var/lib/couchbase") " failed: " (str e))))
-        (net/heal! (:net test) test)))
+        ;; Remove any leftover iptables rules from Jepsen's network partitions
+        (locking teardown
+          (with-retry [retry-count 5]
+            (net/heal! (:net test) test)
+            (catch RuntimeException e
+              (warn "Failed to heal network," retry-count "retries remaining")
+              (if (pos? retry-count)
+                (retry (dec retry-count))
+                (throw (RuntimeException. "Failed to heal network" e))))))))
     (info "Teardown Complete")
     (catch Exception e
       (throw (Exception. (str "teardown failed: " (str e)))))))
