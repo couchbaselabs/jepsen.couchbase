@@ -1,11 +1,14 @@
 (ns couchbase.nemesis
-  (:require [clojure [set    :as set]
+  (:require [clojure
+             [set :as set]
              [string :as string]]
             [clojure.tools.logging :refer :all]
-            [couchbase [util      :as util]]
-            [jepsen    [control   :as c]
+            [couchbase [util :as util]]
+            [dom-top.core :refer [with-retry]]
+            [jepsen
+             [control :as c]
              [generator :as gen]
-             [nemesis   :as nemesis]
+             [nemesis :as nemesis]
              [net :as net]]
             [cheshire.core :refer :all]
             [slingshot.slingshot :refer [try+ throw+]]))
@@ -100,7 +103,6 @@
     (reify nemesis/Nemesis
       (setup! [this test]
         (info "Nemesis setup has started...")
-        (net/heal! (:net test) test)
         (reset! nodes (:nodes test))
         (reset! node-states (reduce #(assoc %1 %2 {:state {:cluster :active :network :connected :node :running :disk :normal}}) {} (:nodes test)))
         (when (:server-groups-enabled test)
@@ -181,7 +183,13 @@
 
             :heal-network
             (do
-              (net/heal! (:net test) test)
+              (with-retry [retry-count 5]
+                (net/heal! (:net test) test)
+                (catch RuntimeException e
+                  (warn "Failed to heal network," retry-count "retries remaining")
+                  (if (pos? retry-count)
+                    (retry (dec retry-count))
+                    (throw (RuntimeException. "Failed to heal network" e)))))
               (doseq [target @nodes]
                 (let [target-cluster-state (get-in @node-states [target :state :cluster])
                       target-node-state (get-in @node-states [target :state :node])
