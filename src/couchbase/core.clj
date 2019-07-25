@@ -155,6 +155,11 @@
    [nil "--skip-teardown"
     "Skip teardown of Couchbase server"
     :default false]
+   [nil "--bucket-type TYPE"
+    "Type of bucket to create (persistent or ephemeral)"
+    :parse-fn {"persistent" :couchbase "ephemeral" :ephemeral}
+    :validate [some? "Bucket type must be 'persistent' or 'ephemeral'"]
+    :default :couchbase]
    [nil "--server-groups-enabled"
     "Turn on server groups"
     :default false]
