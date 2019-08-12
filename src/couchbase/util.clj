@@ -282,6 +282,12 @@
     (create-server-groups server-group-count)
     (populate-server-groups test)))
 
+(defn set-debug-log-level
+  "Set log level of memcached to debug (1)"
+  []
+  (info "Setting memcached log level to debug")
+  (rest-call "/pools/default/settings/memcached/global" {:verbosity 1}))
+
 (defn setup-cluster
   "Setup couchbase cluster"
   [test node]
@@ -306,6 +312,8 @@
       (set-custom-cursor-drop-marks test))
     (if (:server-groups-enabled test)
       (setup-server-groups test))
+    (if (:enable-memcached-debug-log-level test)
+      (set-debug-log-level))
     (info "Setup complete")))
 
 (defn install-package
