@@ -288,8 +288,7 @@
               (Thread/sleep (+ (* (rand) 2000) 2000))
               ;; Kill memcached on a different random collection of nodes
               (case kill-target
-                :same-nodes
-                (c/on-many target-nodes (c/su (c/exec :pkill :-9 :memcached))))
+                :same-nodes (doseq [node target-nodes] (util/kill-process node :memcached)))
               ;; Wait for rebalance to quit, swallowing rebalance failure
               (try @rebalance (catch Exception e (warn "Rebalance failed")))
               (assoc op :value (str "Rebalance failed for nodes: " (str target-nodes))))
@@ -299,18 +298,17 @@
               (case process
                 :memcached
                 (do
-                  (c/on-many target-nodes (c/su (c/exec :pkill :-9 :memcached)))
+                  (doseq [node target-nodes] (util/kill-process node :memcached))
                   (info "cluster state: " @node-states)
                   (assoc op :value [:killed :memcached target-nodes]))
                 :ns-server
                 (do
-                  (c/on-many target-nodes (c/su (c/exec :bash :-c "kill -9 $(pgrep beam.smp | tail -n +2)")))
+                  (doseq [node target-nodes] (util/kill-process node :ns-server))
                   (info "cluster state: " @node-states)
                   (assoc op :value [:killed :ns_server target-nodes]))
                 :babysitter
                 (do
-                  (c/on-many target-nodes
-                             (c/su (c/exec :bash :-c "kill -9 $(pgrep beam.smp | head -n 1)")))
+                  (doseq [node target-nodes] (util/kill-process node :babysitter))
                   (doseq [killed-node target-nodes]
                     (if (contains? (set cluster-nodes) killed-node)
                       ;node will become inactive after being killed only if it is in the cluster

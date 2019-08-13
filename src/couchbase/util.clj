@@ -30,6 +30,31 @@
     (str "127.0.0.1:" (-> port (Integer/parseInt) (- 9000) (* 2) (+ 12000)))
     node))
 
+(defn kill-process
+  "Kill a Couchbase Server process of the target node"
+  [node process]
+  (if (re-matches #"127.0.0.1:(\d+)" node)
+    (let [node-id (-> (get-node-name node) (str/split #"@") (first))]
+      (case process
+        ;; On some systems (notably OSX) pgrep seems to have an issue where with very
+        ;; long command argument lists it doesn't search the list, even with the -f
+        ;; option, so pipe the output through normal grep
+        :babysitter (shell/sh "kill" "-9" (str "$(pgrep -lf memcached | grep -E \""
+                                               node-id
+                                               "[^0-9]\" cut -d \" \" -f 1 | head -n 1)"))
+
+        :ns-server (shell/sh "kill" "-9" (str "$(pgrep -lf memcached | grep -E \""
+                                              node-id
+                                              "[^0-9]\" cut -d \" \" -f 1 | tail -n +2)"))
+
+        :memcached (shell/sh "kill" "-9" (str "$(pgrep -lf memcached | grep -E \""
+                                              node-id
+                                              "[^0-9]\" cut -d \" \" -f 1)"))))
+    (case process
+      :babysitter (c/on node (c/su (c/exec :bash :-c "kill -9 $(pgrep beam.smp | head -n 1)")))
+      :ns-server (c/on node (c/su (c/exec :bash :-c "kill -9 $(pgrep beam.smp | tail -n +2)")))
+      :memcached (c/on node (c/su (c/exec :bash :-c "kill -9 $(pgrep memcached)"))))))
+
 (defn rest-call
   "Perform a rest api call"
   ([endpoint params] (rest-call c/*host* endpoint params))
@@ -226,7 +251,7 @@
         params (format "ns_bucket:update_bucket_props(\"default\", %s)." props)]
     (doseq [node (test :nodes)]
       (diag-eval node params)))
-  (c/with-test-nodes test (c/su (c/exec :pkill :memcached)))
+  (c/with-test-nodes test (kill-process c/*host* :memcached))
   ;; Before polling to check if we have warmed up again, we need to wait a while
   ;; for ns_server to detect memcached was killed
   (Thread/sleep 3000)
