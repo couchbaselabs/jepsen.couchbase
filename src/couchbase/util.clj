@@ -34,16 +34,6 @@
            "http://localhost:8091/diag/eval"
            "-d" params)))
 
-(defn get-package-manager
-  "Get the package manager for the nodes os, only really designed for determining
-  between centos and ubuntu"
-  []
-  (if (= "yum" (c/exec :bash :-c "if [ -e /etc/redhat-release ]; then echo yum; fi"))
-    :yum
-    (if (= "apt" (c/exec :bash :-c "if [ -e /etc/debian_version ]; then echo apt; fi"))
-      :apt
-      (throw (RuntimeException. "Couldn't determine node os")))))
-
 (defn initialise
   "Initialise a new cluster"
   [test]

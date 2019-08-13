@@ -6,7 +6,7 @@ echo "Running vm-setup script"
 echo "Installing libstdc++6"
 add-apt-repository -y ppa:ubuntu-toolchain-r/test
 apt-get update
-apt-get install -y libstdc++6
+apt-get install -y libstdc++6 ntpdate
 
 # enabling core dumps to be written to the vagrants shared directory
 echo "Setting up core dumps"
