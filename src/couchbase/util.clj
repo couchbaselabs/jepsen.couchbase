@@ -7,16 +7,36 @@
             [dom-top.core :refer [with-retry]]
             [clj-http.client :as client]
             [cheshire.core :refer :all]
-            [jepsen [control :as c]
-             [net     :as net]]
+            [jepsen
+             [control :as c]
+             [net :as net]
+             [store :as store]]
             [slingshot.slingshot :refer [try+ throw+]])
   (:import java.io.File))
+
+(defn get-node-name
+  "Getting the ns_server name for a given node"
+  [node]
+  ;; Handle special case for cluster-run nodes
+  (if-let [[_ port] (re-matches #"127.0.0.1:(\d+)" node)]
+    (format "n_%d@127.0.0.1" (-> port (Integer/parseInt) (- 9000)))
+    (str "ns_1@" node)))
+
+(defn get-connection-string
+  "Get the connection string to pass to the SDK"
+  [node]
+  (if-let [[_ port] (re-matches #"127.0.0.1:(\d+)" node)]
+    ;; For cluster-run nodes we need to pass the custom memcached port
+    (str "127.0.0.1:" (-> port (Integer/parseInt) (- 9000) (* 2) (+ 12000)))
+    node))
 
 (defn rest-call
   "Perform a rest api call"
   ([endpoint params] (rest-call c/*host* endpoint params))
   ([target endpoint params]
-   (let [uri (str "http://" target ":8091" endpoint)]
+   (let [uri (if (re-matches #".*:[0-9]+" target)
+               (str "http://" target endpoint)
+               (str "http://" target ":8091" endpoint))]
      (if (empty? params)
        (:body (client/get uri {:basic-auth ["Administrator" "abc123"]
                                :throw-entire-message true}))
@@ -25,14 +45,19 @@
                                 :throw-entire-message true}))))))
 
 ;; On recent version versions of Couchbase Server /diag/eval is only accesible
-;; from localhost, so we need to ssh into the node and curl from there.
+;; from localhost, so we need to ssh into the node and curl from there. In
+;; cluster-run scenarios we don't have any ssh sessions, in this case we call
+;; curl from a local shell to keep argument handling identical.
 (defn diag-eval
-  "Perform a diag eval call"
   ([params] (diag-eval c/*host* params))
-  ([endpoint params]
-   (c/exec (c/lit "curl -s -S --fail -u Administrator:abc123")
-           "http://localhost:8091/diag/eval"
-           "-d" params)))
+  ([node params]
+   (if (str/starts-with? node "127.0.0.1:")
+     (shell/sh "curl" "-s" "-S" "--fail" "-u" "Administrator:abc123"
+               (str "http://" node "/diag/eval")
+               "-d" params)
+     (c/on node (c/exec "curl" "-s" "-S" "--fail" "-u" "Administrator:abc123"
+                        "http://localhost:8091/diag/eval"
+                        "-d" params)))))
 
 (defn initialise
   "Initialise a new cluster"
@@ -70,7 +95,7 @@
                             (get-group-uuid (:group-name add-opts))))]
      (doseq [node nodes-to-add]
        (info "Adding node" node "to cluster")
-       (rest-call endpoint {:hostname node
+       (rest-call endpoint {:hostname (str "http://" node)
                             :user "Administrator"
                             :password "abc123"
                             :services "kv"})))))
@@ -122,10 +147,10 @@
   ([known-nodes] (rebalance known-nodes nil))
   ([known-nodes eject-nodes]
    (let [known-nodes-str (->> known-nodes
-                              (map #(str "ns_1@" %))
+                              (map get-node-name)
                               (str/join ","))
          eject-nodes-str (->> eject-nodes
-                              (map #(str "ns_1@" %))
+                              (map get-node-name)
                               (str/join ","))
          rest-target (first (apply disj (set known-nodes) eject-nodes))]
      (if eject-nodes
@@ -200,7 +225,7 @@
         props (format "[{extra_config_string, \"%s\"}]" config)
         params (format "ns_bucket:update_bucket_props(\"default\", %s)." props)]
     (doseq [node (test :nodes)]
-      (diag-eval params)))
+      (diag-eval node params)))
   (c/with-test-nodes test (c/su (c/exec :pkill :memcached)))
   ;; Before polling to check if we have warmed up again, we need to wait a while
   ;; for ns_server to detect memcached was killed
@@ -485,11 +510,11 @@
          (.isDirectory (io/file package "etc"))
          (.isDirectory (io/file package "lib"))
          (.isDirectory (io/file package "share"))) {:type    :tar
-                                                    :package (tar-build (io/file package))
+                                                    :package (io/file package)
                                                     :path    (.getCanonicalPath (io/file package))}
     :else (throw (RuntimeException. (str "Couldn't load package " package)))))
 
-(defn get-logs
+(defn get-remote-logs
   "Get a vector of log file paths"
   [test]
   (let [install-dir (:install-path test)]
@@ -515,6 +540,37 @@
         (c/su (c/exec* loopcmd))))
     (c/su (c/exec :chmod :a+r :-R "/tmp/jepsen-logs"))
     (str/split-lines (c/exec :find "/tmp/jepsen-logs" :-type :f))))
+
+(defn get-cluster-run-logs
+  "Collect logs for all nodes"
+  [test node]
+  (let [install-path (:install-path test)
+        cbcollect_info (.getCanonicalPath (io/file install-path "bin" "cbcollect_info"))
+        initargs_file (.getCanonicalPath (io/file install-path
+                                                  "../ns_server/data"
+                                                  (-> (get-node-name node)
+                                                      (str/split #"@")
+                                                      (first))
+                                                  "initargs"))
+        tmp-collect (.getCanonicalPath (store/path test (str "cbcollect-tmp-" node ".zip")))
+        extract-path (.getCanonicalPath (store/path test node))]
+    (when (test :cbcollect)
+      (info "Running cbcollect_info on" node)
+      (shell/sh cbcollect_info
+                (str "--initargs=" initargs_file)
+                tmp-collect)
+      (shell/sh "unzip" tmp-collect "-d" extract-path)
+      (shell/sh "rm" tmp-collect))
+    (when (test :hashdump)
+      (let [vbuckets (format "$(seq 0 %d)" (:custom-vbucket-count test 1024))
+            cbstats (str install-path "/bin/cbstats")
+            nodestr (get-connection-string node)
+            hashcmd (str cbstats " " nodestr " -u Administrator -p abc123 -b default raw \"_hash-dump $i\"")
+            logfile (.getCanonicalPath (store/path test node "hashtable_dump.txt"))
+            ;; OSX ships with an ancient version of bash that doesn't support &>>
+            loopcmd (format "for i in %s; do (%s; echo) >> %s 2>&1 ; done" vbuckets hashcmd logfile)]
+        (shell/sh "bash" "-c" loopcmd)))
+    nil))
 
 (defn get-autofailover-info
   [target field]
@@ -568,3 +624,21 @@
       (if (= group-name exclude-group-name)
         (recur (random-server-group server-group-count))
         group-name))))
+
+(defn start-cluster-run
+  "Start a cluster-run for this test, destroying any currently existing runs"
+  [test]
+  (let [install-path (:install-path test)
+        ns-server-dir (io/file install-path ".." "ns_server")
+        config-data-dir (io/file ns-server-dir "data")
+        cluster-run (io/file ns-server-dir "cluster_run")]
+    (assert (.exists cluster-run) "Couldn't find cluster-run script in install")
+    (shell/sh "rm" "-rf" (.getPath config-data-dir))
+    (shell/sh "mkdir" (.getPath config-data-dir))
+    (info "Starting cluster run")
+    (let [ret (future (shell/sh (.getPath cluster-run)
+                                (str "--nodes=" (:node-count test))
+                                "--dont-rename"
+                                :dir (.getPath ns-server-dir)))]
+      (wait-for-daemon)
+      ret)))

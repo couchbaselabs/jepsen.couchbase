@@ -13,8 +13,8 @@
              [tests   :as tests]])
   (:gen-class))
 
-(defn couchbase
-  "Initialise couchbase"
+(defn couchbase-remote
+  "Initialisation logic for remote Couchbase nodes"
   []
   (let [collected-logs (atom [])]
     (reify
@@ -38,33 +38,94 @@
         (if (->> (swap-vals! collected-logs conj node)
                  (first)
                  (not-any? #{node}))
-          (util/get-logs test)
+          (util/get-remote-logs test)
           (warn "Ignoring duplicate log collection request"))))))
+
+(defn couchbase-cluster-run
+  "Initialisation logic for cluster-run nodes"
+  []
+  (let [cluster-run-future (atom nil)
+        collected-logs (atom {})]
+    (reify
+      db/DB
+      (setup! [_ test node] nil)
+      (teardown! [_ test node]
+        (some-> @cluster-run-future future-cancel))
+
+      db/Primary
+      (setup-primary! [_ test node]
+        (reset! cluster-run-future (util/start-cluster-run test))
+        (util/setup-cluster test node))
+
+      db/LogFiles
+      (log-files [_ test node]
+        ;; Avoid the same duplicate logging issue as above
+        (when (->> (swap-vals! collected-logs assoc node :started)
+                   (first)
+                   (keys)
+                   (not-any? #{node}))
+          (util/get-cluster-run-logs test node)
+          ;; Since all node get killed during teardown, we need to hang on
+          ;; log-files until all nodes have finished collecting logs.
+          (swap! collected-logs assoc node :done)
+          (while (->> @collected-logs (vals) (some #{:started}))
+            (Thread/sleep 500)))))))
+
+(defn validate-opts
+  "Validate options. Individual options are validated during parsing, but once
+  all options have been parsed we need to check the resulting map to ensure the
+  combination of options is valid."
+  [opts]
+  (when (:cluster-run opts)
+    (if-not (:package opts)
+      (throw (RuntimeException. "--cluster-run requires --package parameter")))
+    (if-not (:node-count opts)
+      (throw (RuntimeException. "--cluster-run requires --node-count parameter")))
+    (if (:manipulate-disks opts)
+      (throw (RuntimeException. "--manipulate-disks cannot be used with --cluster-run")))))
 
 ;; The actual testcase, merge the user options, basic parameters and workload
 ;; parameters into something that can be passed into Jepsen to run
 (defn cbtest
   "Run the test"
   [opts]
+  (validate-opts opts)
   ;; opts passed to this function come straight from cli parsing
   ;; these ops are then passed to workload
-  (merge tests/noop-test
-         opts
-         ;; generic parameters
-         {:name "Couchbase"
-          :db (couchbase)
-          :os os/noop
-          :db-intialized (atom false)}
-         ;; workload specific parameter
-         (try
-           (as-> (opts :workload) %
-             (format "couchbase.workload/%s-workload" %)
-             (resolve (symbol %))
-             (% opts))
-           (catch NullPointerException _
-             (let [msg (format "Workload %s does not exist" (opts :workload))]
-               (fatal msg)
-               (throw (RuntimeException. msg)))))))
+  (as-> opts opts
+    ;; Construct base test case
+    (merge tests/noop-test
+           opts
+           ;; generic parameters
+           {:name "Couchbase"
+            :db (if (opts :cluster-run)
+                  (couchbase-cluster-run)
+                  (couchbase-remote))
+            :os os/noop
+            :db-intialized (atom false)})
+    ;; If cluster-run is specified, override the nodes and disable ssh
+    (if (:cluster-run opts)
+      (assoc opts
+             :nodes (map #(str "127.0.0.1:" %)
+                         (range 9000 (+ 9000 (:node-count opts))))
+             :ssh (assoc (:ssh opts) :dummy? true))
+      opts)
+    ;; If package is a build dir, and not cluster-run, tar build to deploy
+    (if (and (= :tar (:type (:package opts)))
+             (not (:cluster-run opts)))
+      (update-in opts [:package :package] util/tar-build)
+      opts)
+    ;; Construct the test case by merging workload parameters with options
+    (merge opts
+           (try
+             (as-> (opts :workload) %
+               (format "couchbase.workload/%s-workload" %)
+               (resolve (symbol %))
+               (% opts))
+             (catch NullPointerException _
+               (let [msg (format "Workload %s does not exist" (opts :workload))]
+                 (fatal msg)
+                 (throw (RuntimeException. msg))))))))
 
 (defn parse-int [x] (Integer/parseInt x))
 
@@ -208,6 +269,9 @@
     :default false]
    [nil "--enable-memcached-debug-log-level"
     "Set memcached log level to debug on all nodes"
+    :default false]
+   [nil "--cluster-run"
+    "Start a cluster-run of the provided package on the host rather than using provided nodes"
     :default false]])
 
 (defn -main

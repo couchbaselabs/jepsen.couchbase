@@ -29,7 +29,7 @@
   bucket, and collection instances"
   [test]
   (info "Opening new client")
-  (let [node       (->> test :nodes rand-nth)
+  (let [node       (->> test :nodes rand-nth util/get-connection-string)
         ioConfig   (.mutationTokensEnabled (IoConfig/builder) true)
         timeout    (.kvTimeout (TimeoutConfig/builder) (:kv-timeout test))
         env        (-> (ClusterEnvironment/builder node "Administrator" "abc123")
