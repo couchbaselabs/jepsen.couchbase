@@ -118,6 +118,13 @@
     "Autofailover max count if autofailover is enabled"
     :parse-fn parse-int
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
+   [nil "--[no-]autoreprovision"
+    "Enable autoreprovisioning for ephemeral buckets?"
+    :default true]
+   [nil "--autoreprovision-maxnodes AUTOREPROVISION-MAXNODES"
+    "Autoreprovision max nodes for ephemeral buckets if autoreprovisioning is enabled"
+    :parse-fn parse-int
+    :default 1]
    [nil "--doc-count DOC-COUNT"
     "Number of documents"
     :default 30

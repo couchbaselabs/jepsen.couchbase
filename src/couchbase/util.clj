@@ -172,6 +172,13 @@
                 "failoverOnDataDiskIssues[enabled]" disk-enabled
                 "failoverOnDataDiskIssues[timePeriod]" disk-timeout})))
 
+(defn set-autoreprovision
+  "Apply ephemeral autoreprovision settings to cluster"
+  [test]
+  (rest-call "/settings/autoReprovision"
+             {:enabled (test :autoreprovision)
+              :maxNodes (test :autoreprovision-maxnodes)}))
+
 (defn wait-for-warmup
   "Wait for warmup to complete"
   []
@@ -295,6 +302,7 @@
     (if (> (count nodes) 1)
       (rebalance nodes))
     (set-autofailover test)
+    (set-autoreprovision test)
     (create-bucket bucket-type num-replicas eviction-policy)
     (info "Waiting for bucket warmup to complete...")
     (wait-for-warmup)
