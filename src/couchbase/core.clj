@@ -19,7 +19,7 @@
   (let [collected-logs (atom [])]
     (reify
       db/DB
-      (setup!    [_ test node] (util/setup-node test))
+      (setup!    [_ test node] (util/setup-node test node))
       (teardown! [_ test node] (util/teardown test))
 
       db/Primary
@@ -274,6 +274,9 @@
     :default false]
    [nil "--enable-memcached-debug-log-level"
     "Set memcached log level to debug on all nodes"
+    :default false]
+   [nil "--enable-tcp-capture"
+    "Enable the tcp packet capture on eth1 for Couchbase Server running on a VM use a vagrant and is not supported for --cluster-run"
     :default false]
    [nil "--cluster-run"
     "Start a cluster-run of the provided package on the host rather than using provided nodes"

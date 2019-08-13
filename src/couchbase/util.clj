@@ -428,9 +428,18 @@
           (c/exec :mkdir :-p data-path)
           (c/exec :mount :-o "noatime" "/dev/mapper/cbdata" data-path))))
 
+(defn setup-tcp-packet-capture
+  "Function to enable tcp packet capture on eth1"
+  [test node]
+  (let [packet-capture-dir (str "/tmp/packet-capture/")
+        pack-dump-file (str packet-capture-dir (:name test) "-" node ".pcap")]
+    (c/su (c/exec :mkdir :-p packet-capture-dir))
+    (info (str "packet dump file name " pack-dump-file))
+    (c/ssh* {:cmd (str "screen -dmS test bash -c \"sudo -b tcpdump -C 500 -w " pack-dump-file " -i eth1 -s 0 tcp \"")})))
+
 (defn setup-node
   "Start Couchbase Server on a node"
-  [test]
+  [test node]
   (info "Setting up Couchbase Server")
   (let [package (:package test)
         install-path (:install-path test)
@@ -454,7 +463,10 @@
     (info "Starting daemon")
     (c/ssh* {:cmd (str "nohup " server-path " -- -noinput >> /dev/null 2>&1 &")})
     (wait-for-daemon)
-    (info "Daemon started")))
+    (info "Daemon started")
+    (if (and (:enable-tcp-capture test) (not (:cluster-run test)))
+      (setup-tcp-packet-capture test node)
+      (info "TCP packet capture is not enabled"))))
 
 (defn teardown
   "Stop the couchbase server instances and delete the data files"
@@ -569,6 +581,10 @@
             logfile "/tmp/jepsen-logs/hashtable_dump.txt"
             loopcmd (format "for i in %s; do (%s; echo) &>> %s; done" vbuckets hashcmd logfile)]
         (c/su (c/exec* loopcmd))))
+    (when (test :enable-tcp-capture)
+      (info "Collecting tcp packet capture")
+      (c/su (c/exec* (str "kill -s TERM $(pgrep tcpdump)"))
+            (c/exec* (str "mv /tmp/packet-capture/*.pcap* /tmp/jepsen-logs/"))))
     (c/su (c/exec :chmod :a+r :-R "/tmp/jepsen-logs"))
     (str/split-lines (c/exec :find "/tmp/jepsen-logs" :-type :f))))
 
