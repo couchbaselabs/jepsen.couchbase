@@ -17,6 +17,7 @@
            com.couchbase.client.core.error.DurabilityImpossibleException
            com.couchbase.client.core.error.DurabilityLevelNotAvailableException
            com.couchbase.client.core.error.DurableWriteInProgressException
+           com.couchbase.client.core.error.KeyNotFoundException
            com.couchbase.client.core.error.RequestTimeoutException
            com.couchbase.client.core.error.TemporaryFailureException
            com.couchbase.client.core.msg.kv.DurabilityLevel
@@ -77,16 +78,20 @@
   (let [[rawkey _] (:value op)
         dockey (format "jepsen%04d" rawkey)]
     (try
-      (let []
-        (if-let [get-result (.orElse (.get collection dockey) nil)]
-          (assoc op
-                 :type :ok
-                 :cas (.cas get-result)
-                 :value (independent/tuple rawkey (.contentAs get-result Integer)))
-          (assoc op
-                 :type :ok
-                 :value (independent/tuple rawkey :nil))))
-      ;; Reads are idempotent, so it's ok to just :fail on any exception
+      (let [get-result (.get collection dockey)]
+        (assoc op
+               :type :ok
+               :cas (.cas get-result)
+               :value (independent/tuple rawkey (.contentAs get-result Integer))))
+      (catch KeyNotFoundException _
+        (assoc op :type :ok :value (independent/tuple rawkey :nil)))
+      ;; Reads are idempotent, so it's ok to just :fail on any exception. Note
+      ;; that we don't :fail on a KeyNotFoundException, since translating between
+      ;; the Couchbase and Jepsen models we know the read succeeded, but it wouldn't
+      ;; strictly be wrong if we did return it as a failure (i.e it wouldn't cause
+      ;; false-positive linearizability errors to be detected; it might increase the
+      ;; probability of a linearizability error going undetected, but Jepsen can't
+      ;; prove correctness anyway.
       (catch RequestTimeoutException _
         (assoc op :type :fail, :error :Timeout))
       (catch TemporaryFailureException _

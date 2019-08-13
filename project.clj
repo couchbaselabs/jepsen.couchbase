@@ -12,8 +12,8 @@
                  [io.reactivex/rxjava-reactive-streams "1.2.1"]
                  [cheshire "5.8.1"]
                  [clj-http "3.9.1"]
-                 [com.couchbase.client/core-io "2.0.0-alpha.5"]
-                 [com.couchbase.client/java-client "3.0.0-alpha.5"]]
+                 [com.couchbase.client/core-io "2.0.0-alpha.6"]
+                 [com.couchbase.client/java-client "3.0.0-alpha.6"]]
   :resource-paths ["./lib/dcp-client-0.23.0-SHADEDCORE.jar"
                    "./lib/couchbase-transactions-1.0.0-alpha.3.jar"]
   :repositories [["couchbase-preview" {:url "https://files.couchbase.com/maven2"
