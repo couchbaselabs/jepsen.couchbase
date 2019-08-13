@@ -62,12 +62,18 @@
    (let [uri (if (re-matches #".*:[0-9]+" target)
                (str "http://" target endpoint)
                (str "http://" target ":8091" endpoint))]
-     (if (empty? params)
-       (:body (client/get uri {:basic-auth ["Administrator" "abc123"]
-                               :throw-entire-message true}))
-       (:body (client/post uri {:form-params params
-                                :basic-auth ["Administrator" "abc123"]
-                                :throw-entire-message true}))))))
+     (try
+       (if (empty? params)
+         (:body (client/get uri {:basic-auth ["Administrator" "abc123"]
+                                 :throw-entire-message true}))
+         (:body (client/post uri {:form-params params
+                                  :basic-auth ["Administrator" "abc123"]
+                                  :throw-entire-message true})))
+       ;; Catch any exception and rethrow any exception so that we can log
+       ;; the call which caused the exception.
+       (catch Exception e
+         (warn "Rest call to" uri "with params" params "threw exception.")
+         (throw e))))))
 
 ;; On recent version versions of Couchbase Server /diag/eval is only accesible
 ;; from localhost, so we need to ssh into the node and curl from there. In
