@@ -56,8 +56,8 @@ if [ -z "$PACKAGE" ]; then
     exit 1
 fi
 
-if [ "$PROVISIONER" != "vagrant" -a "$PROVISIONER" != "docker" -a "$PROVISIONER" != "vmpool" ]; then
-    echo "Provisioner must be either docker or vagrant, got $PROVISIONER"
+if [ "$PROVISIONER" != "vagrant" -a "$PROVISIONER" != "docker" -a "$PROVISIONER" != "vmpool" -a "$PROVISIONER" != "cluster-run" ]; then
+    echo "Provisioner must be either vagrant, docker, or cluster-run, but got $PROVISIONER"
 fi
 
 case $PACKAGE in
@@ -152,7 +152,6 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
         EXITCODE=$?
         docker cp jepsen-control:/jepsen/store .
     fi
-
     if [ "$PROVISIONER" == "vmpool" ]; then
         command="$vmpoolBaseCommand $vmpoolParams $packageParam $testParams &> jepsen-output-$test_num.log"
         echo "Test command: $command"
@@ -160,6 +159,14 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
         eval $command
         EXITCODE=$?
     fi
+    if [ "$PROVISIONER" == "cluster-run" ]; then
+	command="lein trampoline run test --cluster-run $packageParam $testParams &> jepsen-output-$test_num.log"
+	echo "Test command: $command"
+	echo ""
+	eval $command
+	EXITCODE=$?
+    fi
+
     if [ $EXITCODE -ne 0 ]; then
         cat "jepsen-output-$test_num.log"
         LAST_RUN=$(cd ./store/latest; pwd -P)
