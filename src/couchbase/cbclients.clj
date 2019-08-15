@@ -20,7 +20,8 @@
            com.couchbase.client.dcp.state.StateFormat
            com.couchbase.transactions.Transactions
            com.couchbase.transactions.config.TransactionConfigBuilder
-           com.couchbase.transactions.TransactionDurabilityLevel))
+           com.couchbase.transactions.TransactionDurabilityLevel
+           java.time.Duration))
 
 ;; Couchbase Java SDK setup
 
@@ -31,7 +32,9 @@
   (info "Opening new client")
   (let [node       (->> test :nodes rand-nth util/get-connection-string)
         ioConfig   (.mutationTokensEnabled (IoConfig/builder) true)
-        timeout    (.kvTimeout (TimeoutConfig/builder) (:kv-timeout test))
+        timeout    (-> (TimeoutConfig/builder)
+                       (.kvTimeout  (:kv-timeout test))
+                       (.connectTimeout (Duration/ofSeconds (:connect-timeout test))))
         env        (-> (ClusterEnvironment/builder node "Administrator" "abc123")
                        (.timeoutConfig timeout)
                        (.ioConfig ioConfig)
