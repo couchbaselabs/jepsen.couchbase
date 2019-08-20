@@ -290,6 +290,9 @@
     :default false]
    [nil "--cluster-run"
     "Start a cluster-run of the provided package on the host rather than using provided nodes"
+    :default false]
+   [nil "--dcp-set-read"
+    "Use DCP to read back set keys"
     :default false]])
 
 (defn -main
