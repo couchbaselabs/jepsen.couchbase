@@ -82,7 +82,12 @@
     (if-not (:node-count opts)
       (throw (RuntimeException. "--cluster-run requires --node-count parameter")))
     (if (:manipulate-disks opts)
-      (throw (RuntimeException. "--manipulate-disks cannot be used with --cluster-run")))))
+      (throw (RuntimeException. "--manipulate-disks cannot be used with --cluster-run"))))
+  (if (and (not= (:durability opts) [100 0 0 0])
+           (or (not= (:replicate-to opts) 0)
+               (not= (:persist-to opts) 0)))
+    (throw (RuntimeException.
+            "Cannot combine sync-rep --durability with observe based --replicate-to or --persist-to"))))
 
 ;; The actual testcase, merge the user options, basic parameters and workload
 ;; parameters into something that can be passed into Jepsen to run
@@ -155,8 +160,13 @@
     "Number of replicas"
     :parse-fn parse-int]
    [nil "--replicate-to REPLICATE-TO"
-    "Replicate-to value"
-    :parse-fn parse-int]
+    "Observe based durability replicate-to value"
+    :parse-fn parse-int
+    :default 0]
+   [nil "--persist-to PERSIST-TO"
+    "Observe based durability persist-to value"
+    :parse-fn parse-int
+    :default 0]
    [nil "--rate RATE"
     "Rate of operations. A rate of 0 disables rate limiting"
     :parse-fn read-string

@@ -29,7 +29,7 @@
            com.couchbase.transactions.TransactionDurabilityLevel
            java.util.function.Consumer))
 
-;; Helper functions to workaround JDK-4283544
+;; Helper functions to apply durability options
 
 (defn apply-durability-options!
   "Helper function to apply durability level to perform sync-writes"
@@ -39,35 +39,24 @@
                    1 DurabilityLevel/MAJORITY
                    2 DurabilityLevel/MAJORITY_AND_PERSIST_ON_MASTER
                    3 DurabilityLevel/PERSIST_TO_MAJORITY)]
-    ;; Due to java bug JDK-4283544 we can't call withDurabilityLevel from clojure
-    ;; in the usual fashion, we need to use the following workaround:
-    (let [parameters (into-array java.lang.Class [DurabilityLevel])
-          method     (.getDeclaredMethod CommonDurabilityOptions "durabilityLevel" parameters)
-          arguments  (into-array java.lang.Object [level])]
-      (.setAccessible method true)
-      (.invoke method mutation-options arguments))))
+    (.durabilityLevel mutation-options level)))
 
 (defn apply-observe-options!
   "Helper function to apply the old observe based replicate-to/persist-to"
   [mutation-options op]
-  (let [replicate-to (case (op :replicate-to 0)
-                       0 nil
-                       1 ReplicateTo/ONE
-                       2 ReplicateTo/TWO
-                       3 ReplicateTo/THREE)
-        persist-to   (case (op :persist-to 0)
-                       0 nil
-                       1 PersistTo/ONE
-                       2 PersistTo/TWO
-                       3 PersistTo/THREE)]
-    (when (or replicate-to persist-to)
-        ;; Again due to java bug JDK-4283544 we can't just call withDurability
-        ;; in the usual fashion, we need the following workaround:
-      (let [parameters (into-array java.lang.Class [PersistTo ReplicateTo])
-            method (.getDeclaredMethod CommonDurabilityOptions "durability" parameters)
-            arguments (into-array java.lang.Object [persist-to replicate-to])]
-        (.setAccessible method true)
-        (.invoke method mutation-options arguments)))))
+  (when (or (pos? (op :replicate-to 0))
+            (pos? (op :persist-to 0)))
+    (let [replicate-to (case (op :replicate-to 0)
+                         0 ReplicateTo/NONE
+                         1 ReplicateTo/ONE
+                         2 ReplicateTo/TWO
+                         3 ReplicateTo/THREE)
+          persist-to   (case (op :persist-to 0)
+                         0 PersistTo/NONE
+                         1 PersistTo/ONE
+                         2 PersistTo/TWO
+                         3 PersistTo/THREE)]
+      (.durability mutation-options persist-to replicate-to))))
 
 ;; ===============
 ;; Register Client

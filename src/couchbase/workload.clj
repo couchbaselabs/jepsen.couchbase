@@ -63,19 +63,20 @@
 ;; =============
 
 (defmacro let-and-merge
-  "Take pairs of parameter-name parameter-value and merge these into a map. Bind
-  all previous parameter names to their value to allow parameters values
+  "Take a map and pairs of parameter-name parameter-value. Merge these pairs into
+  the map while also binding the names to their values to allow parameters values
   dependent on previous values."
-  ([] {})
-  ([param value & more] `(merge {(keyword (name '~param)) ~value}
-                                (let [~param ~value]
-                                  (let-and-merge ~@more)))))
+  ([map] map)
+  ([map param value & more] `(let [~param ~value
+                                   ~map (assoc ~map (keyword (name '~param)) ~value)]
+                               (let-and-merge ~map ~@more))))
 
 (defmacro with-register-base
   "Apply a set of shared parameters used across the register workloads before
   merging the custom parameters"
   ([opts & more]
    `(let-and-merge
+     ~opts
      ~'cycles                (~opts :cycles 1)
      ~'cas                   (~opts :cas)
      ~'node-count            (~opts :node-count (count (~opts :nodes)))
@@ -84,7 +85,8 @@
                                (assert false "node-count greater than available nodes"))
      ~'server-group-count    (~opts :server-group-count 1)
      ~'transactions          (~opts :transactions false)
-     ~'mixed-txns            (~opts :mixed-txns false)
+     ~'mixed-txns            (and ~'transactions
+                                  (~opts :mixed-txns false))
      ~'max-txn-size          (~opts :max-txn-size 3)
      ~'rate                  (~opts :rate 1/3)
      ~'txn-bucket-count      (~opts :txn-bucket-count 1)
@@ -122,72 +124,94 @@
   (let [n-vec (vec (range n))]
     (take (inc (rand-int n)) (shuffle n-vec))))
 
-(defn client-gen
-  [durability doc-threads rate cas transactions txn-doc-count max-txn-size mixed-txns]
-  (let [read-gen (atom nil)
-        write-gen (atom nil)
-        cas-gen (atom nil)
-        mixed-txn-gen (atom nil)
-        combined-gen (atom nil)]
-    (if transactions
-      (if mixed-txns
-        (do
-          (reset! mixed-txn-gen
-                  (fn [_ _]
-                    (->> (random-sample-from-n txn-doc-count)
-                         (take max-txn-size)
-                         (mapv (fn [k] (let [op-type (first (shuffle [:read :write]))
-                                             key k
-                                             val (when (= op-type :write) (rand-int 50))]
-                                         [op-type key val])))
-                         (array-map :type :invoke,
-                                    :f :txn,
-                                    :durability-level (util/random-durability-level durability),
-                                    :value))))
-          (reset! combined-gen [@mixed-txn-gen]))
-        (do
-          (reset! read-gen
-                  (fn [_ _]
-                    (->> (random-sample-from-n txn-doc-count)
-                         (take max-txn-size)
-                         (mapv (fn [k] [:read k nil]))
-                         (array-map :type :invoke,
-                                    :f :txn,
-                                    :durability-level (util/random-durability-level durability),
-                                    :value))))
-          (reset! write-gen
-                  (fn [_ _]
-                    (->> (random-sample-from-n txn-doc-count)
-                         (take max-txn-size)
+(defn mixed-txn-gen
+  "Generate mixed transactions consisting of both read and write operations"
+  [opts]
+  (let [gen (fn [_ _]
+              ;; Choose a random set of documents in the range 0 to :txn-doc-count, then
+              ;; limit to :max-txn-size documents. For each chosen document, choose to
+              ;; perform either a read or write operation
+              (->> (random-sample-from-n (:txn-doc-count opts))
+                   (take (:max-txn-size opts))
+                   (mapv (fn [key] (let [op-type (rand-nth [:read :write])
+                                         val (when (= op-type :write) (rand-int 50))]
+                                     [op-type key val])))
+                   (array-map :type :invoke
+                              :f :txn
+                              :durability-level (util/random-durability-level (:durability opts))
+                              :value)))]
+    (independent/concurrent-generator (:doc-threads opts)
+                                      (range)
+                                      (fn [k] (rate-limit (:rate opts) gen)))))
+
+(defn txn-gen
+  "Generate a mix of read transactions and write transactions"
+  [opts]
+  (let [read-gen (fn [_ _]
+                   ;; Choose a random set of documents in the range 0 to :txn-doc-count, then
+                   ;; limit to :max-txn-size documents. Map each chose document to a read op.
+                   (->> (random-sample-from-n (:txn-doc-count opts))
+                        (take (:max-txn-size opts))
+                        (mapv (fn [k] [:read k nil]))
+                        (array-map :type :invoke
+                                   :f :txn
+                                   :durability-level (util/random-durability-level (:durability opts))
+                                   :value)))
+        write-gen (fn [_ _]
+                    ;; Choose a random set of documents in the range 0 to :txn-doc-count, then
+                    ;; limit to :max-txn-size documents. Map each chose document to a write op.
+                    (->> (random-sample-from-n (:txn-doc-count opts))
+                         (take (:max-txn-size opts))
                          (mapv (fn [k] [:write k (rand-int 50)]))
-                         (array-map :type :invoke,
-                                    :f :txn,
-                                    :durability-level (util/random-durability-level durability),
-                                    :value))))
-          (reset! combined-gen [@read-gen @write-gen])))
-      (do
-        (reset! read-gen
-                (fn [_ _]
-                  {:type :invoke,
-                   :f :read,
-                   :value nil}))
-        (reset! write-gen
-                (fn [_ _]
-                  {:type :invoke,
-                   :f :write,
-                   :value (rand-int 50)
-                   :durability-level (util/random-durability-level durability)}))
-        (reset! cas-gen
-                (fn [_ _]
-                  {:type :invoke,
-                   :f :cas,
-                   :value [(rand-int 50) (rand-int 50)]
-                   :durability-level (util/random-durability-level durability)}))
-        (reset! combined-gen (if cas [@read-gen @write-gen @cas-gen] [@read-gen @write-gen]))))
+                         (array-map :type :invoke
+                                    :f :txn
+                                    :durability-level (util/random-durability-level (:durability opts)))))]
     (independent/concurrent-generator
-     doc-threads
+     (:doc-threads opts)
      (range)
-     (fn [k] (rate-limit rate (gen/mix @combined-gen))))))
+     (fn [k] (rate-limit (:rate opts)
+                         (gen/mix [read-gen write-gen]))))))
+
+(defn register-gen
+  "Generate standard register operations"
+  [opts]
+  (let [read-gen (fn [_ _] {:type :invoke
+                            :f :read
+                            :value nil})
+        write-gen (fn [_ _]
+                    {:type :invoke
+                     :f :write
+                     :value (rand-int 50)
+                     :replicate-to (:replicate-to opts)
+                     :persist-to (:persist-to opts)
+                     :durability-level (util/random-durability-level
+                                        (:durability opts))})
+        cas-gen (fn [_ _]
+                  {:type :invoke
+                   :f :cas
+                   :value [(rand-int 50) (rand-int 50)]
+                   :replicate-to (:replicate-to opts)
+                   :persist-to (:persist-to opts)
+                   :durability-level (util/random-durability-level
+                                      (:durability opts))})]
+    (independent/concurrent-generator
+     (:doc-threads opts)
+     (range)
+     (fn [k] (rate-limit
+              (:rate opts)
+              (gen/mix (if (:cas opts)
+                         [read-gen write-gen cas-gen]
+                         [read-gen write-gen])))))))
+
+(defn client-gen
+  "Based on the provided cli options, determine whether to generate mixed
+  transactions, transactions or basic register operations for the client;
+  then create the corresponding operation generator."
+  [opts]
+  (cond
+    (:mixed-txns opts) (mixed-txn-gen opts)
+    (:transactions opts) (txn-gen opts)
+    :else (register-gen opts)))
 
 ;; ==================
 ;; Register workloads
@@ -199,7 +223,7 @@
   (with-register-base opts
     replicas      (opts :replicas 1)
     nemesis       nemesis/noop
-    client-generator      (client-gen durability doc-threads rate cas transactions txn-doc-count max-txn-size mixed-txns)
+    client-generator      (client-gen opts)
     generator (do-n-nemesis-cycles cycles [(gen/sleep 20)] client-generator)))
 
 (defn partition-workload
@@ -233,7 +257,7 @@
     random-server-group (if sg-enabled (util/random-server-group server-group-count))
     complementary-server-group (if sg-enabled (util/complementary-server-group server-group-count random-server-group))
     nemesis        (cbnemesis/couchbase)
-    client-generator (client-gen durability doc-threads rate cas transactions txn-doc-count max-txn-size mixed-txns)
+    client-generator (client-gen opts)
     generator       (do-n-nemesis-cycles
                      cycles
                      [(gen/sleep 5)
@@ -310,7 +334,7 @@
     random-server-group (if sg-enabled (util/random-server-group server-group-count))
     complementary-server-group (if sg-enabled (util/complementary-server-group server-group-count random-server-group))
     nemesis       (cbnemesis/couchbase)
-    client-generator (client-gen durability doc-threads rate cas transactions txn-doc-count max-txn-size mixed-txns)
+    client-generator (client-gen opts)
     generator     (case scenario
                     :sequential-rebalance-out-in
                     (do-n-nemesis-cycles
@@ -418,7 +442,7 @@
     target-server-groups      (if (opts :target-server-groups) (do (assert sg-enabled) true) false)
     random-server-group (if sg-enabled (util/random-server-group server-group-count))
     nemesis   (cbnemesis/couchbase)
-    client-generator (client-gen durability doc-threads rate cas transactions txn-doc-count max-txn-size mixed-txns)
+    client-generator (client-gen opts)
     generator (do-n-nemesis-cycles cycles
                                    [(gen/sleep 5)
                                     {:type :info
@@ -476,7 +500,7 @@
                                           (> disrupt-time autofailover-timeout)
                                           (>= node-count 3))
     nemesis               (cbnemesis/couchbase)
-    client-generator      (client-gen durability doc-threads rate cas transactions txn-doc-count max-txn-size mixed-txns)
+    client-generator      (client-gen opts)
     generator (case scenario
                 :kill-memcached
                 (do-n-nemesis-cycles cycles
@@ -586,7 +610,7 @@
     random-server-group (if sg-enabled (util/random-server-group server-group-count))
     complementary-server-group (if sg-enabled (util/complementary-server-group server-group-count random-server-group))
     nemesis   (cbnemesis/couchbase)
-    client-generator (client-gen durability doc-threads rate cas transactions txn-doc-count max-txn-size mixed-txns)
+    client-generator (client-gen opts)
 
     generator       (do-n-nemesis-cycles
                      cycles
@@ -673,7 +697,7 @@
     random-server-group (if sg-enabled (util/random-server-group server-group-count))
     complementary-server-group (if sg-enabled (util/complementary-server-group server-group-count random-server-group))
     nemesis        (cbnemesis/couchbase)
-    client-generator (client-gen durability doc-threads rate cas transactions txn-doc-count max-txn-size mixed-txns)
+    client-generator (client-gen opts)
     generator (do-n-nemesis-cycles cycles
                                    [(gen/sleep 5)
                                     {:type   :info
@@ -721,6 +745,7 @@
   stream all mutations, keeping track of which keys exist"
   [opts]
   (let-and-merge
+   opts
    dcpclient     (cbclients/dcp-client)
 
    cycles        (opts :cycles 1)
@@ -729,6 +754,7 @@
    pool-size     4
    replicas      (opts :replicas 0)
    replicate-to  (opts :replicate-to 0)
+   persist-to    (opts :persist-to 0)
    autofailover  (opts :autofailover true)
    autofailover-timeout  (opts :autofailover-timeout 6)
    autofailover-maxcount (opts :autofailover-maxcount 3)
@@ -746,6 +772,8 @@
                        (map (fn [x] {:type :invoke
                                      :f :add
                                      :value x
+                                     :replicate-to replicate-to
+                                     :persist-to persist-to
                                      :durability-level (util/random-durability-level (:durability opts))}))
                        (gen/seq)
                        (do-n-nemesis-cycles cycles
@@ -758,6 +786,7 @@
   the cluster"
   [opts]
   (let-and-merge
+   opts
    scenario              (opts :scenario)
    dcpclient             (cbclients/dcp-client)
    cycles                (opts :cycles 1)
@@ -766,6 +795,7 @@
    custom-vbucket-count  (opts :custom-vbucket-count 64)
    replicas              (opts :replicas 1)
    replicate-to          (opts :replicate-to 0)
+   persist-to            (opts :persist-to 0)
    disrupt-count         (opts :disrupt-count 1)
    recovery-type         (opts :recovery-type :delta)
    autofailover          (opts :autofailover false)
@@ -791,6 +821,8 @@
                    (map (fn [x] {:type :invoke
                                  :f :add
                                  :value x
+                                 :replicate-to replicate-to
+                                 :persist-to persist-to
                                  :durability-level (util/random-durability-level (:durability opts))}))
                    (gen/seq))
    generator  (gen/phases
@@ -898,12 +930,14 @@
   "Trigger lost inserts due to one of several white-rabbit variants"
   [opts]
   (let-and-merge
+   opts
    cycles                (opts :cycles 5)
    concurrency           500
    pool-size             6
    custom-vbucket-count  (opts :custom-vbucket-count 64)
    replicas              (opts :replicas 0)
    replicate-to          (opts :replicate-to 0)
+   persist-to            (opts :persist-to 0)
    autofailover          (opts :autofailover true)
    autofailover-timeout  (opts :autofailover-timeout 6)
    autofailover-maxcount (opts :autofailover-maxcount 3)
@@ -926,6 +960,8 @@
                                       {:type :invoke
                                        :f :add
                                        :value x
+                                       :replicate-to replicate-to
+                                       :persist-to persist-to
                                        :durability-level (util/random-durability-level (:durability opts))}))
                                (gen/seq)
                                (do-n-nemesis-cycles cycles
@@ -949,16 +985,18 @@
   "Workload to trigger lost inserts due to cursor dropping bug MB29369"
   [opts]
   (let-and-merge
-      ;; Around 100 Kops per node should be sufficient to trigger cursor dropping with
-      ;; 100 MB per node bucket quota and ep_cursor_dropping_upper_mark reduced to 30%.
-      ;; Since we need the first 2/3 of the ops to cause cursor dropping, we need 150 K
-      ;; per node
+   opts
+   ;; Around 100 Kops per node should be sufficient to trigger cursor dropping with
+   ;; 100 MB per node bucket quota and ep_cursor_dropping_upper_mark reduced to 30%.
+   ;; Since we need the first 2/3 of the ops to cause cursor dropping, we need 150 K
+   ;; per node
    oplimit       (opts :oplimit (* (count (opts :nodes)) 150000))
    custom-cursor-drop-marks [20 30]
    concurrency   250
    pool-size     8
    replicas      (opts :replicas 0)
    replicate-to  (opts :replicate-to 0)
+   persist-to    (opts :persist-to 0)
    autofailover  (opts :autofailover true)
    autofailover-timeout (opts :autofailover-timeout 6)
    autofailover-maxcount (opts :autofailover-maxcount 3)
@@ -981,7 +1019,12 @@
                      ;; ToDo: It would be better if we could monitor ep_cursors_dropped
                      ;;       to ensure that we really have dropped cursors.
                   (->> (range 0 (int (* 2/3 oplimit)))
-                       (map (fn [x] {:type :invoke :f :add :value x}))
+                       (map (fn [x] {:type :invoke
+                                     :f :add
+                                     :replicate-to replicate-to
+                                     :persist-to persist-to
+                                     :durability (util/random-durability-level (:durability opts))
+                                     :value x}))
                        (gen/seq)
                        (gen/nemesis (gen/once {:type :info :f :slow-dcp-client})))
                      ;; Make DCP fast again
@@ -997,7 +1040,12 @@
                      nil))
                      ;; Write the remainder of the ops.
                   (->> (range (int (* 2/3 oplimit)) oplimit)
-                       (map (fn [x] {:type :invoke :f :add :value x}))
+                       (map (fn [x] {:type :invoke
+                                     :f :add
+                                     :replicate-to replicate-to
+                                     :persist-to persist-to
+                                     :durability (util/random-durability-level (:durability opts))
+                                     :value x}))
                        (gen/seq)
                        (gen/clients))
                   (gen/once
@@ -1011,6 +1059,7 @@
   "Workload to trigger lost deletes due to cursor dropping bug MB29480"
   [opts]
   (let-and-merge
+   opts
    dcpclient     (cbclients/dcp-client)
    client        (clients/set-client dcpclient)
 
@@ -1022,6 +1071,7 @@
    pool-size     4
    replicas      (opts :replicas 0)
    replicate-to  (opts :replicate-to 0)
+   persist-to    (opts :persist-to 0)
    autofailover  (opts :autofailover true)
    autofailover-timeout (opts :autofailover-timeout 6)
    autofailover-maxcount (opts :autofailover-maxcount 3)
@@ -1041,17 +1091,32 @@
                   (gen/clients (gen/once {:type :info :f :dcp-start-streaming}))
                      ;; First create 10000 keys and let the client see them
                   (->> (range 0 10000)
-                       (map (fn [x] {:type :invoke :f :add :value x}))
+                       (map (fn [x] {:type :invoke
+                                     :f :add
+                                     :replicate-to replicate-to
+                                     :persist-to persist-to
+                                     :durability (util/random-durability-level (:durability opts))
+                                     :value x}))
                        (gen/seq)
                        (gen/clients))
                      ;; Then slow down dcp and make sure the queue is filled
                   (->> (range 10000 50000)
-                       (map (fn [x] {:type :invoke :f :add :value x}))
+                       (map (fn [x] {:type :invoke
+                                     :f :add
+                                     :replicate-to replicate-to
+                                     :persist-to persist-to
+                                     :durability (util/random-durability-level (:durability opts))
+                                     :value x}))
                        (gen/seq)
                        (gen/nemesis (gen/once {:type :info :f :slow-dcp-client})))
                      ;; Now delete the keys
                   (->> (range 0 50000)
-                       (map (fn [x] {:type :invoke :f :del :value x}))
+                       (map (fn [x] {:type :invoke
+                                     :f :del
+                                     :replicate-to replicate-to
+                                     :persist-to persist-to
+                                     :durability (util/random-durability-level (:durability opts))
+                                     :value x}))
                        (gen/seq)
                        (gen/clients))
                      ;; Now trigger tombstone purging. We need to bump time by at least 3
@@ -1064,7 +1129,12 @@
                   (gen/sleep 20)
                      ;; Ensure cursor dropping by spamming inserts while dcp is still slow
                   (->> (range 50000 oplimit)
-                       (map (fn [x] {:type :invoke :f :add :value x}))
+                       (map (fn [x] {:type :invoke
+                                     :f :add
+                                     :replicate-to replicate-to
+                                     :persist-to persist-to
+                                     :durability (util/random-durability-level (:durability opts))
+                                     :value x}))
                        (gen/seq)
                        (gen/clients))
 
