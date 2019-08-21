@@ -1,7 +1,6 @@
 (ns couchbase.clients
   (:require [clojure.tools.logging :refer :all]
             [couchbase.cbclients :as cbclients]
-            [dom-top.core :refer [with-retry]]
             [jepsen.client :as client]
             [jepsen.independent :as independent]
             [slingshot.slingshot :refer [try+]])
@@ -306,22 +305,6 @@
     (catch CouchbaseException e
       (assoc op :type :info, :error e))))
 
-(defn check-if-exists [collection rawkey]
-  (with-retry [attempts 3]
-    (let [key (format "jepsen%010d" rawkey)
-          get (.get collection key)]
-      ;; If the key is found, return it
-      rawkey)
-    ;; Else if we get a KeyNotFoundException, return nil
-    (catch KeyNotFoundException _ nil)
-    ;; Retry other failures, throwing an exception if it persists
-    (catch CouchbaseException e
-      (if (pos? attempts)
-        (do (Thread/sleep 100)
-            (retry (dec attempts)))
-        (do (warn "Couldn't read key" rawkey)
-            (throw e))))))
-
 (defrecord NewSetClient [cluster bucket collection dcpclient]
   client/Client
   (open! [this test node]
@@ -333,25 +316,10 @@
       :add (do-set-add collection op)
       :del (do-set-del collection op)
 
-      :read (if dcpclient
-              (->> (cbclients/get-all-keys dcpclient test)
-                   (map #(Integer/parseInt (subs % 6)))
-                   (sort)
-                   (assoc op :type :ok, :value))
-              (try
-                (->> @(:history test)
-                     (filter #(and (= (:type %) :invoke)))
-                     (apply max-key #(or (:value %) -1))
-                     (:value)
-                     (inc)
-                     (range)
-                     (pmap #(check-if-exists collection %))
-                     (filter some?)
-                     (doall)
-                     (assoc op :type :ok, :value))
-                (catch CouchbaseException e
-                  (warn "Encountered errors reading some keys, keys might be stuck pending?")
-                  (assoc op :type :fail, :error e))))
+      :read (->> (cbclients/get-all-keys dcpclient test)
+                 (map #(Integer/parseInt (subs % 6)))
+                 (sort)
+                 (assoc op :type :ok, :value))
 
       :dcp-start-streaming (do (cbclients/start-streaming dcpclient test) op)))
   (close! [_ _])

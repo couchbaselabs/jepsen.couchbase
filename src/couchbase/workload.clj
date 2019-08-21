@@ -746,8 +746,8 @@
   [opts]
   (let-and-merge
    opts
-   dcpclient     (if (:dcp-set-read opts)
-                   (cbclients/dcp-client))
+   dcpclient     (cbclients/dcp-client)
+
    cycles        (opts :cycles 1)
    client        (clients/set-client dcpclient)
    concurrency   250
@@ -788,8 +788,7 @@
   (let-and-merge
    opts
    scenario              (opts :scenario)
-   dcpclient             (if (:dcp-set-read)
-                           (cbclients/dcp-client))
+   dcpclient             (cbclients/dcp-client)
    cycles                (opts :cycles 1)
    concurrency           1000
    pool-size             16
@@ -943,8 +942,7 @@
    autofailover-timeout  (opts :autofailover-timeout 6)
    autofailover-maxcount (opts :autofailover-maxcount 3)
    disrupt-count         (opts :disrupt-count 1)
-   dcpclient             (if (:dcp-set-read opts)
-                           (cbclients/dcp-client))
+   dcpclient             (cbclients/dcp-client)
    client                (clients/set-client dcpclient)
 
    nemesis               (cbnemesis/couchbase)
@@ -1003,10 +1001,7 @@
    autofailover-timeout (opts :autofailover-timeout 6)
    autofailover-maxcount (opts :autofailover-maxcount 3)
 
-   dcpclient     (if (:dcp-set-read opts)
-                   (cbclients/dcp-client)
-                   (throw (RuntimeException.
-                           "MB29369 workload must be used with --dcp-set-read option")))
+   dcpclient     (cbclients/dcp-client)
    client        (clients/set-client dcpclient)
    nemesis       (cbnemesis/couchbase)
    checker       (checker/compose
@@ -1065,10 +1060,7 @@
   [opts]
   (let-and-merge
    opts
-   dcpclient     (if (:dcp-set-read opts)
-                   (cbclients/dcp-client)
-                   (throw (RuntimeException.
-                           "MB29480 workload must be used with --dcp-set-read option")))
+   dcpclient     (cbclients/dcp-client)
    client        (clients/set-client dcpclient)
 
       ;; Around 100 Kops per node should be sufficient to trigger cursor dropping with
