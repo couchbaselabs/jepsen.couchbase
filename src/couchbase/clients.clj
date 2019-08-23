@@ -307,7 +307,7 @@
       (assoc op :type :info, :error e))))
 
 (defn check-if-exists [collection rawkey]
-  (with-retry [attempts 3]
+  (with-retry [attempts 120]
     (let [key (format "jepsen%010d" rawkey)
           get (.get collection key)]
       ;; If the key is found, return it
@@ -315,9 +315,9 @@
     ;; Else if we get a KeyNotFoundException, return nil
     (catch KeyNotFoundException _ nil)
     ;; Retry other failures, throwing an exception if it persists
-    (catch CouchbaseException e
+    (catch Exception e
       (if (pos? attempts)
-        (do (Thread/sleep 100)
+        (do (Thread/sleep 1000)
             (retry (dec attempts)))
         (do (warn "Couldn't read key" rawkey)
             (throw e))))))
