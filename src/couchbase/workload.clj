@@ -729,13 +729,10 @@
                  :kill-memcached-on-slow-disk
                  (do-n-nemesis-cycles cycles
                                       [(gen/sleep 10)
-                                       {:type   :info
-                                        :f      :slow-disk
-                                        :targeter-opts {:type      :all
-                                                        :condition [:active]
-                                                        :network [:connected]
-                                                        :node [:running]
-                                                        :disk [:normal]}}
+                                       {:type :info
+                                        :f :slow-disk
+                                        :targeter cbnemesis/target-all-test-nodes}
+
                                        (gen/sleep 4)
                                        {:type :info
                                         :f :kill-process
@@ -743,13 +740,10 @@
                                         :targeter cbnemesis/basic-nodes-targeter
                                         :target-count disrupt-count}
 
-                                       {:type   :info
-                                        :f      :reset-disk
-                                        :targeter-opts {:type      :all
-                                                        :condition [:active]
-                                                        :network [:connected]
-                                                        :node [:running]
-                                                        :disk [:slowed]}}
+                                       {:type :info
+                                        :f :reset-disk
+                                        :targeter cbnemesis/target-all-test-nodes}
+
                                        (gen/sleep 10)]
                                       client-gen)
 

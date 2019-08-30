@@ -22,6 +22,11 @@
        (shuffle)
        (take (:target-count op 1))))
 
+(defn target-all-test-nodes
+  "A targeter that always targets all the nodes in the test"
+  [test op]
+  (:nodes test))
+
 (defn start-stop-targeter
   "Create a targeter functions with shared state, such that an op :action can
   be classified as either :start or :stop. Once a node has been targeted by a
@@ -259,6 +264,69 @@
      (util/wait-for-daemon))
     (assoc op :value target-nodes)))
 
+(defn slow-dcp-client
+  "Slow down the set workload DCP client"
+  [test op]
+  (assert (= (:f op) :slow-dcp-client))
+  (assert (:dcp-set-read test))
+  (reset! (->> test :client :dcpclient :slow) true)
+  op)
+
+(defn reset-dcp-client
+  "Reset the set workload DCP client"
+  [test op]
+  (assert (= (:f op) :reset-dcp-client))
+  (assert (:dcp-set-read test))
+  (reset! (->> test :client :dcpclient :slow) false)
+  op)
+
+(defn trigger-compaction
+  "Trigger compaction on the cluster"
+  [test op]
+  (assert (= (:f op) :trigger-compaction))
+  (let [cluster-nodes (util/get-cluster-nodes test)]
+    (util/rest-call (rand-nth cluster-nodes)
+                    "/pools/default/buckets/default/controller/compactBucket"
+                    "")))
+
+(defn fail-disk
+  "Simulate a disk failure on the targeted nodes"
+  [test op]
+  (assert (= (:f op) :fail-disk))
+  (let [target-nodes ((:targeter op) test op)]
+    (c/on-many
+     target-nodes
+     ;; Load a new (inactive) table that delays all disk IO by 25ms.
+     (c/su (c/exec :dmsetup :load :cbdata :--table
+                   (c/lit "'0 1048576 delay /dev/loop0 0 25 /dev/loop0 0 25'"))
+           (c/exec :dmsetup :resume :cbdata)))
+    (assoc op :value target-nodes)))
+
+(defn slow-disk
+  "Slow down disk operations on the targeted nodes"
+  [test op]
+  (assert (= (:f op) :slow-disk))
+  (let [target-nodes ((:targeter op) test op)]
+    (c/on-many
+     target-nodes
+     ;; Load a new (inactive) table that delays all disk IO by 25ms.
+     (c/su (c/exec :dmsetup :load :cbdata :--table
+                   (c/lit "'0 1048576 delay /dev/loop0 0 25 /dev/loop0 0 25'"))
+           (c/exec :dmsetup :resume :cbdata)))
+    (assoc op :value target-nodes)))
+
+(defn reset-disk
+  "Reset the virtual disk on the targeted nodes"
+  [test op]
+  (assert (= (:f op) :reset-disk))
+  (let [target-nodes ((:targeter op) test op)]
+    (c/on-many
+     target-nodes
+     (c/su (c/exec :dmsetup :load :cbdata :--table
+                   (c/lit "'0 1048576 linear /dev/loop0 0'"))
+           (c/exec :dmsetup :resume :cbdata)))
+    (assoc op :value target-nodes)))
+
 (defn filter-nodes
   "This function will take in node-state atom and targeter-opts. Target conditions will be extracted from
   targeter-opts and used to filter nodes represented in node-states. Targeter conditions should be passed in as
@@ -396,67 +464,16 @@
             :kill-process (kill-process test op)
             :start-process (start-process test op)
 
-            :slow-dcp-client
-            (let [dcpclient (:dcpclient (:client test))]
-              (reset! (:slow dcpclient) true)
-              (info "cluster state: " @node-states)
-              (assoc op :type :info))
+            :slow-dcp-client (slow-dcp-client test op)
+            :reset-dcp-client (reset-dcp-client test op)
 
-            :reset-dcp-client
-            (let [dcpclient (:dcpclient (:client test))]
-              (reset! (:slow dcpclient) false)
-              (info "cluster state: " @node-states)
-              (assoc op :type :info))
+            :trigger-compaction (trigger-compaction test op)
 
-            :trigger-compaction
-            (do
-              (util/rest-call (rand-nth (test :nodes)) "/pools/default/buckets/default/controller/compactBucket" "")
-              (info "cluster state: " @node-states)
-              op)
+            :fail-disk (fail-disk test op)
+            :slow-disk (slow-disk test op)
+            :reset-disk (reset-disk test op)
 
-            :fail-disk
-            (do
-              (c/on-many
-               target-nodes
-               (c/su (c/exec :dmsetup :wipe_table :cbdata :--noflush :--nolockfs)
-                      ;; Drop buffers. Since most of our tests use little data we can read
-                      ;; everything from the filesystem level buffer despite the block device
-                      ;; returning errors.
-                     (c/exec :echo "3" :> "/proc/sys/vm/drop_caches")))
-              (doseq [target target-nodes]
-                (update-node-state node-states target {:disk :killed}))
-              (info "cluster state: " @node-states)
-              (assoc op :value [:disk-failed target-nodes]))
-
-            :slow-disk
-            (do
-              (c/on-many
-               target-nodes
-                ;; Load a new (inactive) table that delays all disk IO by 25ms.
-               (c/su (c/exec :dmsetup :load :cbdata :--table
-                             (c/lit "'0 1048576 delay /dev/loop0 0 25 /dev/loop0 0 25'"))
-                     (c/exec :dmsetup :resume :cbdata)))
-              (doseq [target target-nodes]
-                (update-node-state node-states target {:disk :slowed}))
-              (info "cluster state: " @node-states)
-              (assoc op :value [:disk-slowed target-nodes]))
-
-            :reset-disk
-            (do
-              (c/on-many
-               target-nodes
-               (c/su (c/exec :dmsetup :load :cbdata :--table
-                             (c/lit "'0 1048576 linear /dev/loop0 0'"))
-                     (c/exec :dmsetup :resume :cbdata)))
-              (doseq [target target-nodes]
-                (update-node-state node-states target {:disk :normal}))
-              (info "cluster state: " @node-states)
-              (assoc op :value [:disk-reset target-nodes]))
-
-            :noop
-            (do
-              (info "cluster state: " @node-states)
-              (assoc op :value "noop")))))
+            :noop op)))
 
       (teardown! [this test]))))
 
