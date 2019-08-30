@@ -327,153 +327,41 @@
            (c/exec :dmsetup :resume :cbdata)))
     (assoc op :value target-nodes)))
 
-(defn filter-nodes
-  "This function will take in node-state atom and targeter-opts. Target conditions will be extracted from
-  targeter-opts and used to filter nodes represented in node-states. Targeter conditions should be passed in as
-  a map with keys :cluster :node and :network. The values for each key should be a vector of eligible state
-  keywords. If a particular key is not present in the map, this function will consider all state keywords as
-  eligible for that particular key.
-  Example:
-  {:condition {:cluster [:active :failed] :node [:running}} will return all nodes whose cluster state is either
-  active or failed, node state is running and any network state."
-  [node-states targeter-opts]
-  (let [filter-conditions (:condition targeter-opts)
-        cluster-condition (if (nil? (:cluster filter-conditions)) (set [:active :failed :inactive :ejected]) (set (:cluster filter-conditions)))
-        network-condition (if (nil? (:network filter-conditions)) (set [:connected :partitioned]) (set (:network filter-conditions)))
-        node-condition    (if (nil? (:node filter-conditions)) (set [:running :killed]) (set (:node filter-conditions)))
-        disk-condition    (if (nil? (:disk filter-conditions)) (set [:normal :killed :slowed]) (set (:disk filter-conditions)))
-        server-group-condition (set (:server-group filter-conditions))
-        cluster-match-nodes (select-keys node-states (for [[k v] node-states :when (contains? cluster-condition (get-in v [:state :cluster]))] k))
-        network-match-nodes (select-keys node-states (for [[k v] node-states :when (contains? network-condition (get-in v [:state :network]))] k))
-        node-match-nodes (select-keys node-states (for [[k v] node-states :when (contains? node-condition (get-in v [:state :node]))] k))
-        disk-match-nodes (select-keys node-states (for [[k v] node-states :when (contains? disk-condition (get-in v [:state :disk]))] k))
-        server-group-match-nodes (select-keys node-states (for [[k v] node-states :when (contains? server-group-condition (get-in v [:state :server-group]))] k))
-        matching-nodes (set/intersection (set (keys cluster-match-nodes)) (set (keys network-match-nodes)) (set (keys node-match-nodes)) (set (keys disk-match-nodes)))
-        sg-matching-nodes (if (nil? (:server-group filter-conditions)) matching-nodes (set/intersection matching-nodes (set (keys server-group-match-nodes))))]
-    (vec sg-matching-nodes)))
-
-(defn apply-targeter
-  "This function takes in a list of nodes and a targeter-opts map that specifies how to select a subset of the nodes.
-  The function will apply a function to the list of nodes based on a keyword (:type) in the target-opts map."
-  [filtered-nodes targeter-opts]
-  (let [targeter-type (:type targeter-opts)
-        target-seq
-        (case targeter-type
-          :first (take 1 filtered-nodes)
-          :random (take 1 (shuffle filtered-nodes))
-          :random-subset (take (:count targeter-opts) (shuffle filtered-nodes))
-          :all filtered-nodes)]
-    (vec target-seq)))
-
-(defn get-targets
-  "This function takes in an atom representing node states and a targeter-opts map. The function will first
-  apply a filter to the list of nodes based on node state, then it will target a subset of the filtered nodes
-  and return the select nodes as a vector"
-  [node-states targeter-opts]
-  (let [filtered-nodes (filter-nodes node-states targeter-opts)
-        target-nodes (apply-targeter filtered-nodes targeter-opts)]
-    target-nodes))
-
-(defn update-node-state
-  "This function takes in a atom of node states, a target node, a map of state keys with a single value to update
-  the current node state with."
-  [node-states target new-states]
-  (let [node-state (get-in @node-states [target :state])
-        updated-state (merge node-state new-states)]
-    (swap! node-states assoc-in [target :state] updated-state)))
-
-(defn set-node-server-group-state
-  [node-states]
-  (let [server-group-info (util/rest-call (first (keys @node-states)) "/pools/default/serverGroups" nil)
-        server-group-json (json/parse-string server-group-info true)
-        server-groups (:groups server-group-json)]
-    (doseq [group server-groups]
-      (doseq [node (:nodes group)]
-        (let [group-name (:name group)
-              otpNode (:otpNode node)
-              node-name (string/replace otpNode #"ns_1@" "")]
-          (update-node-state node-states node-name {:server-group group-name}))))))
-
 (defn couchbase
-  "The Couchbase nemesis represents operations that can be taken against a Couchbase cluster. Nodes are
-  represented as a map atom where the keys are node ips and the values are state maps. State maps store node
-  state in vectors of keywords. Each invoke can select a subset of nodes to act upon by filtering nodes
-  based on state.After selecting a set of nodes, the nemesis will take the requested action and update node state
-  accordingly."
+  "The Couchbase nemesis represents operations that can be taken against a
+  Couchbase Server cluster. Each invoke can select which nodes to act upon
+  by providing a targeter function. It is the responsibility of the caller
+  to ensure that the chain of events specified by the targeter function of
+  successive invokation is valid."
   []
-  (let [nodes (atom [])
-        node-states (atom {})]
-    (reify nemesis/Nemesis
-      (setup! [this test]
-        (info "Nemesis setup has started...")
-        (reset! nodes (:nodes test))
-        (reset! node-states (reduce #(assoc %1 %2 {:state {:cluster :active :network :connected :node :running :disk :normal}}) {} (:nodes test)))
-        (when (:server-groups-enabled test)
-          (info "inspecting server groups...")
-          (set-node-server-group-state node-states))
-        this)
+  (reify nemesis/Nemesis
+    (setup! [this test] this)
 
-      (invoke! [this test op]
-        (info "op: " (str op))
-        (let [f-opts                (:f-opts op)
-              targeter-opts         (:targeter-opts op)
-              target-nodes          (if (nil? targeter-opts) @nodes (get-targets @node-states targeter-opts))
-              active-nodes          (filter-nodes @node-states {:condition {:cluster [:active]}})
-              failed-nodes          (filter-nodes @node-states {:condition {:cluster [:failed]}})
-              ejected-nodes         (filter-nodes @node-states {:condition {:cluster [:ejected]}})
-              inactive-nodes        (filter-nodes @node-states {:condition {:cluster [:inactive]}})
-              connected-nodes       (filter-nodes @node-states {:condition {:network [:connected]}})
-              partitioned-nodes     (filter-nodes @node-states {:condition {:network [:partitioned]}})
-              running-nodes         (filter-nodes @node-states {:condition {:node [:running]}})
-              killed-nodes          (filter-nodes @node-states {:condition {:node [:killed]}})
-              cluster-nodes         (filter-nodes @node-states {:condition {:cluster [:active :inactive :failed]}})
-              failover-nodes        (filter-nodes @node-states {:condition {:cluster [:active :inactive]}})
-              healthy-cluster-nodes (filter-nodes @node-states {:condition {:cluster [:active]
-                                                                            :network [:connected]
-                                                                            :node [:running]}})]
-          (case (:f op)
-            :failover (failover test op)
-            :recover (recover test op)
-            :isolate-completely (isolate-completely test op)
-            :heal-network (heal-network test op)
+    (invoke! [this test op]
+      (case (:f op)
+        :failover (failover test op)
+        :recover (recover test op)
+        :isolate-completely (isolate-completely test op)
+        :heal-network (heal-network test op)
 
-            :wait-for-autofailover
-            (let [target (first target-nodes)
-                  initial-count (util/get-autofailover-info target :count)
-                  final-count (inc initial-count)
-                  autofailover-count (atom initial-count)
-                  node-info-before (util/get-node-info target)]
-              (util/wait-for #(util/get-autofailover-info target :count) final-count 120)
-              (let [node-info-after (util/get-node-info target)]
-                (doseq [node-info node-info-before]
-                  (let [node-key (key node-info)
-                        state-before (get-in node-info-before [node-key :clusterMembership])
-                        state-after (get-in node-info-after [node-key :clusterMembership])
-                        active-before (= state-before "active")
-                        failed-after (= state-after "inactiveFailed")]
-                    (if (and active-before failed-after)
-                      (update-node-state node-states node-key {:cluster :failed})))))
-              (info "cluster state: " @node-states)
-              (assoc op :value :autofailover-complete))
+        :rebalance-out (rebalance-out test op)
+        :rebalance-in (rebalance-in test op)
+        :swap-rebalance (swap-rebalance test op)
+        :fail-rebalance (fail-rebalance test op)
 
-            :rebalance-out (rebalance-out test op)
-            :rebalance-in (rebalance-in test op)
-            :swap-rebalance (swap-rebalance test op)
-            :fail-rebalance (fail-rebalance test op)
+        :kill-process (kill-process test op)
+        :start-process (start-process test op)
 
-            :kill-process (kill-process test op)
-            :start-process (start-process test op)
+        :slow-dcp-client (slow-dcp-client test op)
+        :reset-dcp-client (reset-dcp-client test op)
 
-            :slow-dcp-client (slow-dcp-client test op)
-            :reset-dcp-client (reset-dcp-client test op)
+        :trigger-compaction (trigger-compaction test op)
 
-            :trigger-compaction (trigger-compaction test op)
+        :fail-disk (fail-disk test op)
+        :slow-disk (slow-disk test op)
+        :reset-disk (reset-disk test op)
 
-            :fail-disk (fail-disk test op)
-            :slow-disk (slow-disk test op)
-            :reset-disk (reset-disk test op)
+        :noop op))
 
-            :noop op)))
-
-      (teardown! [this test]))))
+    (teardown! [this test])))
 

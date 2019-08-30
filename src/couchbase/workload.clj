@@ -240,20 +240,6 @@
     sg-enabled     (opts :server-groups-enabled)
     server-group-count (if sg-enabled (opts :server-group-count))
     target-server-groups      (if (opts :target-server-groups) (do (assert sg-enabled) true) false)
-    should-autofailover (and autofailover
-                             (>= replicas 1)
-                             (= disrupt-count 1)
-                             (> disrupt-time autofailover-timeout)
-                             (>= node-count 3))
-    should-server-group-autofailover (and autofailover
-                                          sg-enabled
-                                          target-server-groups
-                                          server-group-autofailover
-                                          (>= replicas 1)
-                                          (>= server-group-count 3)
-                                          (>= disrupt-count (Math/ceil (/ node-count server-group-count)))
-                                          (> disrupt-time autofailover-timeout)
-                                          (>= node-count 3))
     random-server-group (if sg-enabled (util/random-server-group server-group-count))
     complementary-server-group (if sg-enabled (util/complementary-server-group server-group-count random-server-group))
     nemesis        (cbnemesis/couchbase)
