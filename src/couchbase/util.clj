@@ -15,12 +15,22 @@
   (:import java.io.File))
 
 (defn get-node-name
-  "Getting the ns_server name for a given node"
+  "Get the ns_server otpNode name for a given node"
   [node]
   ;; Handle special case for cluster-run nodes
   (if-let [[_ port] (re-matches #"127.0.0.1:(\d+)" node)]
     (format "n_%d@127.0.0.1" (-> port (Integer/parseInt) (- 9000)))
     (str "ns_1@" node)))
+
+(defn get-node-id
+  "Get the Jepsen node ID from the ns_server otpNode name"
+  [name]
+  (let [[_ cri ni node] (re-matches #"n(s?)_(\d+)@([\d\.]+)" name)
+        cluster-run (empty? cri)
+        node-index (Integer/parseInt ni)]
+    (if cluster-run
+      (str "127.0.0.1:" (+ 9000 node-index))
+      node)))
 
 (defn get-connection-string
   "Get the connection string to pass to the SDK"
@@ -642,7 +652,7 @@
       (if (not-empty nodes-info)
         (let [node-info (first nodes-info)
               otp-node (:otpNode node-info)
-              node-name (str/replace otp-node #"ns_1@" "")
+              node-name (get-node-id otp-node)
               updated-node-info-map (assoc node-info-map node-name node-info)
               updated-nodes-info (remove #(= node-info %) nodes-info)]
           (recur updated-node-info-map updated-nodes-info))
