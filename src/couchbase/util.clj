@@ -2,11 +2,11 @@
   (:require [clojure.java.shell :as shell]
             [clojure.set    :as set]
             [clojure.java.io :as io]
-            [clojure.tools.logging :refer :all]
+            [clojure.tools.logging :refer [info warn error fatal]]
             [clojure.string :as str]
             [dom-top.core :refer [with-retry]]
             [clj-http.client :as client]
-            [cheshire.core :refer :all]
+            [cheshire.core :as json]
             [jepsen
              [control :as c]
              [net :as net]
@@ -108,7 +108,7 @@
   "Get id of group based on group name"
   [group-name]
   (let [server-group-info (rest-call "/pools/default/serverGroups" nil)
-        server-group-json (parse-string server-group-info true)
+        server-group-json (json/parse-string server-group-info true)
         server-groups (:groups server-group-json)]
     (loop [groups server-groups]
       (if (empty? groups) (throw (RuntimeException. (str group-name " not found in list of groups"))))
@@ -146,7 +146,7 @@
 (defn get-rebalance-status
   [target]
   (let [rebalance-info (rest-call target "/pools/default/rebalanceProgress" nil)
-        rebalance-info-map (parse-string rebalance-info true)]
+        rebalance-info-map (json/parse-string rebalance-info true)]
     rebalance-info-map))
 
 (defn wait-for-rebalance-complete
@@ -275,7 +275,7 @@
   "This function will deterministically add nodes to server groups"
   [test]
   (let [server-group-info (rest-call "/pools/default/serverGroups" nil)
-        server-group-json (parse-string server-group-info true)
+        server-group-json (json/parse-string server-group-info true)
         revision-uri (:uri server-group-json)
         server-groups (:groups server-group-json)
         nodes (atom #{}) ; this will be used to build up and store the set of nodes in the cluster
@@ -302,7 +302,7 @@
         (reset! groups updated-groups)))
     (client/put endpoint
                 {:basic-auth ["Administrator" "abc123"]
-                 :body (generate-string {:groups @groups})
+                 :body (json/generate-string {:groups @groups})
                  :headers {"X-Api-Version" "2"}
                  :content-type :json
                  :socket-timeout 1000
@@ -313,7 +313,7 @@
   "Get the group name for a given node"
   [node]
   (let [server-group-info (rest-call node "/pools/default/serverGroups" nil)
-        server-group-json (parse-string server-group-info true)
+        server-group-json (json/parse-string server-group-info true)
         server-groups (:groups server-group-json)]
     (loop [groups server-groups]
       (info "checking node group for " (str node))
@@ -622,14 +622,14 @@
 (defn get-autofailover-info
   [target field]
   (let [autofailover-info (rest-call target "/settings/autoFailover" nil)
-        json-val (parse-string autofailover-info true)
+        json-val (json/parse-string autofailover-info true)
         field-val (json-val (keyword field))]
     field-val))
 
 (defn get-cluster-info
   [target]
   (let [rest-call (rest-call target "/pools/default" nil)
-        json-val (parse-string rest-call true)]
+        json-val (json/parse-string rest-call true)]
     json-val))
 
 (defn get-node-info

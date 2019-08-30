@@ -1,5 +1,5 @@
 (ns couchbase.workload
-  (:require [clojure.tools.logging :refer :all]
+  (:require [clojure.tools.logging :refer [info warn error fatal]]
             [couchbase [checker   :as cbchecker]
              [clients   :as clients]
              [cbclients :as cbclients]

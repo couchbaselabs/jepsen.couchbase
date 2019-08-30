@@ -1,5 +1,5 @@
 (ns couchbase.cbclients
-  (:require [clojure.tools.logging :refer :all]
+  (:require [clojure.tools.logging :refer [info warn error fatal]]
             [couchbase.util :as util])
   (:import com.couchbase.client.java.Cluster
            com.couchbase.client.java.env.ClusterEnvironment

@@ -1,7 +1,7 @@
 (ns couchbase.checker
   (:require [clojure.core.reducers :as r]
             [clojure.set :as set]
-            [clojure.tools.logging :refer :all]
+            [clojure.tools.logging :refer [info warn error fatal]]
             [jepsen.checker :as checker]
             [jepsen.util :as util]))
 

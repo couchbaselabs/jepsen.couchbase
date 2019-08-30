@@ -1,6 +1,6 @@
 (ns couchbase.core
   (:require [clojure.string :as str]
-            [clojure.tools.logging :refer :all]
+            [clojure.tools.logging :refer [info warn error fatal]]
             [couchbase
              [util     :as util]
              [workload :as workload]]

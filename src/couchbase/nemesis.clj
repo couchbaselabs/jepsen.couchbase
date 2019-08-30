@@ -2,7 +2,7 @@
   (:require [clojure
              [set :as set]
              [string :as string]]
-            [clojure.tools.logging :refer :all]
+            [clojure.tools.logging :refer [info warn error fatal]]
             [couchbase [util :as util]]
             [dom-top.core :refer [with-retry]]
             [jepsen
@@ -10,7 +10,7 @@
              [generator :as gen]
              [nemesis :as nemesis]
              [net :as net]]
-            [cheshire.core :refer :all]
+            [cheshire.core :as json]
             [slingshot.slingshot :refer [try+ throw+]]))
 
 (defn filter-nodes
@@ -82,7 +82,7 @@
 (defn set-node-server-group-state
   [node-states]
   (let [server-group-info (util/rest-call (first (keys @node-states)) "/pools/default/serverGroups" nil)
-        server-group-json (parse-string server-group-info true)
+        server-group-json (json/parse-string server-group-info true)
         server-groups (:groups server-group-json)]
     (doseq [group server-groups]
       (doseq [node (:nodes group)]

@@ -1,5 +1,5 @@
 (ns couchbase.clients
-  (:require [clojure.tools.logging :refer :all]
+  (:require [clojure.tools.logging :refer [info warn error fatal]]
             [couchbase.cbclients :as cbclients]
             [dom-top.core :refer [with-retry]]
             [jepsen.client :as client]
