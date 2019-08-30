@@ -193,12 +193,16 @@
          eject-nodes-str (->> eject-nodes
                               (map get-node-name)
                               (str/join ","))
-         rest-target (first (apply disj (set known-nodes) eject-nodes))]
+         valid-rest-targets (apply disj (set known-nodes) (set eject-nodes))]
+     (if-not c/*host*
+       (throw (ex-info "No control host is defined for rebalance")))
+     (if-not (contains? valid-rest-targets c/*host*)
+       (throw (ex-info "Current control host is not a valid rest target for rebalance")))
      (if eject-nodes
        (info "Rebalancing nodes" eject-nodes "out of cluster"))
-     (rest-call rest-target "/controller/rebalance" {:ejectedNodes eject-nodes-str
-                                                     :knownNodes known-nodes-str})
-     (wait-for-rebalance-complete rest-target)
+     (rest-call c/*host* "/controller/rebalance" {:ejectedNodes eject-nodes-str
+                                                  :knownNodes known-nodes-str})
+     (wait-for-rebalance-complete c/*host*)
      (info "Rebalance complete"))))
 
 (defn create-bucket
