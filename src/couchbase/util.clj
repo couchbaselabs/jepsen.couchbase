@@ -662,6 +662,33 @@
           (recur updated-node-info-map updated-nodes-info))
         node-info-map))))
 
+(defn get-node-info-map
+  "Construct a map that maps a node to the returned status information
+  for each node from which we got status information. Note that is
+  might be expected that some nodes don't return any data, for example
+  if they have been removed from the cluster."
+  [test]
+  (into {} (keep (fn get-node-info-wrapper [target]
+                   (with-retry [retries 5]
+                     [target (get-node-info target)]
+                     (catch Exception e
+                       (if (pos? retries)
+                         (retry (dec retries))))))
+                 (:nodes test))))
+
+(defn get-cluster-nodes
+  "Get a list of nodes currently in the cluster. Note that if different nodes
+  disagree on the current state of the cluster due to some failure condition,
+  this function will likely fail."
+  [test]
+  (let [status-maps (get-node-info-map test)
+        node-lists (map #(sort (keys %)) (vals status-maps))]
+    (if (empty? node-lists)
+      (throw (ex-info "Couldn't retrieve cluster data from any node.")))
+    (if-not (apply = node-lists)
+      (throw (ex-info "Cluster status data inconsistent between nodes.")))
+    (first node-lists)))
+
 (defn random-durability-level
   "Get a random durability level following the probability distribution in (:durability opts)"
   [durability]
