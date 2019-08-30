@@ -13,6 +13,103 @@
             [cheshire.core :as json]
             [slingshot.slingshot :refer [try+ throw+]]))
 
+(defn basic-nodes-targeter
+  "A basic targeter that selects :target-count (default 1) random nodes"
+  [test op]
+  (->> (:nodes test)
+       (shuffle)
+       (take (:target-count op 1))))
+
+(defn failover
+  "Using the rest-api trigger a failover of the target nodes"
+  [test op]
+  (assert (= (:f op) :failover))
+  (let [fail-type (:failover-type op)
+        target-nodes ((:targeter op) test op)
+        endpoint (case fail-type
+                   :hard  "/controller/failOver"
+                   :graceful "/controller/startGracefulFailover")]
+    (doseq [target target-nodes]
+      (info "Failing over node" target)
+      (util/rest-call target endpoint {:otpNode (util/get-node-name target)})
+      (if (= fail-type :graceful) (util/wait-for-rebalance-complete target)))
+    (assoc op :value target-nodes)))
+
+(defn recover
+  "Attempt to detect and recover all failed-over nodes in the cluster. Note that
+  if some failure condition is still applied to the nodes, this will likely fail."
+  [test op]
+  (assert (= (:f op) :recover))
+  (with-retry [retry-count 10]
+    (let [status-maps (util/get-node-info-map test)
+
+          ;; Assert that all nodes see each other as healthy, if not we can't
+          ;; recover. Node may be marked as unhealthy if ns_server has not yet
+          ;; detected that nodes are back up, so we want to retry.
+          _ (doseq [[_ status-map] status-maps]
+              (if (some #(not= "healthy" (:status %)) (vals status-map))
+                (throw (ex-info "Encountered unhealthy node during recovery"
+                                {:retryable true
+                                 :status-maps status-maps}))))
+
+          ;; Assert that all nodes agree on which nodes are in the cluster and
+          ;; that we got node info from all nodes in the cluster. Note  that
+          ;; this may not be the case if nodes have been removed from the
+          ;; cluster during a failure scenario and ns_server hasn't had a
+          ;; chance to sync up the nodes.
+          node-lists (map #(sort (keys %)) (vals status-maps))
+          _ (if-not (apply = (keys status-maps) node-lists)
+              (throw (ex-info "Cluster status inconsistent between nodes"
+                              {:retryable true
+                               :status-maps status-maps})))
+
+          nodes-in-cluster (first node-lists)
+
+          ;; Determine a healthy node that all nodes agree has not been failed
+          ;; over.
+          healthy-node (loop [[node & nodes] nodes-in-cluster]
+                         (if (and (every? #(= (:clusterMembership (% node)) "active")
+                                          (vals status-maps))
+                                  (contains? status-maps node))
+                           node
+                           (if nodes
+                             (recur nodes)
+                             (throw (ex-info "No healthy node found"
+                                             {:retryable true
+                                              :status-maps status-maps})))))
+
+          ;; Determine which nodes need recovery. If any status-map indicates
+          ;; a node is inactiveFailed we need to recover the node. To check this,
+          ;; iterate over all status maps for each node in the cluster.
+          recovery-nodes (keep (fn [node] (some #(if (= (:clusterMembership (% node))
+                                                        "inactiveFailed")
+                                                   node)
+                                                (vals status-maps)))
+                               nodes-in-cluster)]
+      (if (not-empty recovery-nodes)
+        (do
+          (info "Following nodes will be recovered:" recovery-nodes)
+          (doseq [target recovery-nodes]
+            (util/rest-call healthy-node
+                            "/controller/setRecoveryType"
+                            {:otpNode (util/get-node-name target)
+                             :recoveryType (name (:recovery-type op))}))
+          (c/on healthy-node
+                (util/rebalance nodes-in-cluster nil)))
+        (info "No recovery necessary"))
+      (assoc op :value recovery-nodes))
+
+    (catch Exception e
+      (if (and (pos? retry-count)
+               (:retryable (ex-data e)))
+        (do
+          (Thread/sleep 2000)
+          (retry (dec retry-count)))
+        (do
+          (error "Out of retries or non-retryable error occurred during recovery."
+                 "Exception was" e)
+          (throw e))))))
+
 (defn filter-nodes
   "This function will take in node-state atom and targeter-opts. Target conditions will be extracted from
   targeter-opts and used to filter nodes represented in node-states. Targeter conditions should be passed in as
@@ -129,47 +226,8 @@
                                                                             :network [:connected]
                                                                             :node [:running]}})]
           (case (:f op)
-            :failover
-            ; failover will not work if there is an :inactive :killed node in the cluster
-            (let [failover-type (:failover-type f-opts)
-                  endpoint (case failover-type
-                             :hard "/controller/failOver"
-                             :graceful "/controller/startGracefulFailover")]
-              (assert (< (count target-nodes)
-                         (count failover-nodes))
-                      "failover count must be less than total active and inactive nodes")
-              (doseq [target target-nodes]
-                (let [call-node (case (:call-node f-opts)
-                                  :target-node target
-                                  nil (first healthy-cluster-nodes))]
-                  (info "target node: " (str target))
-                  (info "call node: " (str call-node))
-                  (util/rest-call call-node endpoint {:otpNode (str "ns_1@" target)})
-                  (if (= failover-type :graceful) (util/wait-for-rebalance-complete call-node))
-                  (update-node-state node-states target {:cluster :failed})))
-              (info "cluster state: " @node-states)
-              (assoc op :value :failover-complete))
-
-            :recover
-            ; recovery will not work if there is an :inactive :killed node in the cluster
-            (let [recovery-type (:recovery-type f-opts)
-                  eject-nodes (vec (set/difference (set failed-nodes) (set target-nodes)))
-                  call-node (first healthy-cluster-nodes)]
-              (assert (<= (count target-nodes) (count failed-nodes)) "recovery count must be less or equal to the total failed node count")
-              (doseq [target target-nodes]
-                (info "Setting recovery type to" (name recovery-type) "for node" target)
-                (util/rest-call call-node
-                                "/controller/setRecoveryType"
-                                {:otpNode (str "ns_1@" target)
-                                 :recoveryType (name recovery-type)}))
-              (info "cluster nodes: " cluster-nodes)
-              (util/rebalance cluster-nodes)
-              (doseq [target target-nodes]
-                (update-node-state node-states target {:cluster :active}))
-              (doseq [eject-node eject-nodes]
-                (update-node-state node-states eject-node {:cluster :ejected}))
-              (info "cluster state: " @node-states)
-              (assoc op :value :recovery-complete))
+            :failover (failover test op)
+            :recover (recover test op)
 
             :partition-network
             (let [partition-type (:partition-type f-opts)

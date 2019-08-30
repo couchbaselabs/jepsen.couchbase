@@ -447,25 +447,15 @@
                                    [(gen/sleep 5)
                                     {:type :info
                                      :f    :failover
-                                     :f-opts {:failover-type failover-type}
-                                     :targeter-opts {:type :random-subset
-                                                     :count disrupt-count
-                                                     :condition (merge {:cluster [:active :failed]
-                                                                        :network [:connected]
-                                                                        :node [:running]}
-                                                                       (when-let [target-sq target-server-groups]
-                                                                         {:server-group [random-server-group]}))}}
+                                     :failover-type failover-type
+                                     :targeter cbnemesis/basic-nodes-targeter
+                                     :target-count disrupt-count}
                                     (gen/sleep 10)
                                     {:type :info
                                      :f    :recover
-                                     :f-opts {:recovery-type recovery-type}
-                                     :targeter-opts {:type :all
-                                                     :condition (merge {:cluster [:failed]
-                                                                        :network [:connected]
-                                                                        :node [:running]}
-                                                                       (when-let [target-sq target-server-groups]
-                                                                         {:server-group [random-server-group]}))}}
-                                    (gen/sleep 5)] client-generator)))
+                                     :recovery-type recovery-type}
+                                    (gen/sleep 5)]
+                                   client-generator)))
 
 (defn kill-workload
   "Register workload that repeatedly kills either memcached, ns_server, or babysitter processes
