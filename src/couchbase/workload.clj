@@ -308,6 +308,7 @@
     random-server-group (if sg-enabled (util/random-server-group server-group-count))
     complementary-server-group (if sg-enabled (util/complementary-server-group server-group-count random-server-group))
     nemesis       (cbnemesis/couchbase)
+    targeter      (cbnemesis/start-stop-targeter)
     client-generator (client-gen opts)
     generator     (case scenario
                     :sequential-rebalance-out-in
@@ -316,25 +317,20 @@
                      [(repeatedly
                        disrupt-count
                        (fn [] [(gen/sleep 5)
-                               {:type :info :f :rebalance-out
-                                :targeter-opts
-                                {:type :random
-                                 :condition (merge {:cluster [:active :failed]
-                                                    :network [:connected]
-                                                    :node [:running]}
-                                                   (when-let [target-sq target-server-groups]
-                                                     {:server-group [random-server-group]}))}}]))
+                               {:type :info
+                                :f :rebalance-out
+                                :targeter targeter
+                                :target-count 1
+                                :target-action :start}]))
                       (gen/sleep 5)
                       (repeatedly
                        disrupt-count
                        (fn [] [(gen/sleep 5)
-                               {:type :info :f :rebalance-in
-                                :f-opts {:add-opts {:group-name random-server-group}}
-                                :targeter-opts
-                                {:type :random
-                                 :condition {:cluster [:ejected]
-                                             :network [:connected]
-                                             :node [:running]}}}]))
+                               {:type :info
+                                :f :rebalance-in
+                                :targeter targeter
+                                :target-count 1
+                                :target-action :stop}]))
                       (gen/sleep 5)]
                      client-generator)
 
@@ -342,24 +338,17 @@
                     (do-n-nemesis-cycles
                      cycles
                      [(gen/sleep 5)
-                      {:type :info :f :rebalance-out
-                       :targeter-opts
-                       {:type :random-subset
-                        :count disrupt-count
-                        :condition (merge {:cluster [:active :failed]
-                                           :network [:connected]
-                                           :node [:running]}
-                                          (when-let [target-sq target-server-groups]
-                                            {:server-group [random-server-group]}))}}
+                      {:type :info
+                       :f :rebalance-out
+                       :targeter targeter
+                       :target-count disrupt-count
+                       :target-action :start}
                       (gen/sleep 5)
-                      {:type :info :f :rebalance-in
-                       :f-opts {:add-opts {:group-name random-server-group}}
-                       :targeter-opts
-                       {:type :random-subset
-                        :count disrupt-count
-                        :condition {:cluster [:ejected]
-                                    :network [:connected]
-                                    :node [:running]}}}
+                      {:type :info
+                       :f :rebalance-in
+                       :targeter targeter
+                       :target-count disrupt-count
+                       :target-action :stop}
                       (gen/sleep 5)]
                      client-generator)
 
@@ -367,21 +356,17 @@
                     (do-n-nemesis-cycles
                      cycles
                      [(gen/sleep 5)
-                      {:type :info :f :rebalance-out
-                       :targeter-opts
-                       {:type :random-subset
-                        :count disrupt-count
-                        :condition {:cluster [:active :inactive :failed]
-                                    :network [:connected]
-                                    :node [:running]}}}
+                      {:type :info
+                       :f :rebalance-out
+                       :targeter targeter
+                       :target-count disrupt-count
+                       :target-action :start}
                       (gen/sleep 5)]
-                     [{:type :info :f :swap-rebalance
-                       :targeter-opts
-                       {:type :random-subset
-                        :count disrupt-count
-                        :condition {:cluster [:ejected]
-                                    :network [:connected]
-                                    :node [:running]}}}
+                     [{:type :info
+                       :f :swap-rebalance
+                       :targeter targeter
+                       :target-count disrupt-count
+                       :target-action :swap}
                       (gen/sleep 5)]
                      []
                      client-generator)
@@ -390,16 +375,11 @@
                     (do-n-nemesis-cycles
                      cycles
                      [(gen/sleep 5)
-                      {:type :info :f :fail-rebalance
-                       :f-opts {:kill-target :same-nodes}
-                       :targeter-opts
-                       {:type :random-subset
-                        :count disrupt-count
-                        :condition (merge {:cluster [:active :failed]
-                                           :network [:connected]
-                                           :node [:running]}
-                                          (when-let [target-sq target-server-groups]
-                                            {:server-group [random-server-group]}))}}
+                      {:type :info
+                       :f :fail-rebalance
+                       ;; Nodes don't get removed, so use basic-nodes-targeter
+                       :targeter cbnemesis/basic-nodes-targeter
+                       :target-count disrupt-count}
                       (gen/sleep 5)]
                      client-generator))))
 
@@ -912,6 +892,7 @@
    client                (clients/set-client dcpclient)
 
    nemesis               (cbnemesis/couchbase)
+   targeter              (cbnemesis/start-stop-targeter)
    control-atom          (atom :continue)
    checker               (checker/compose
                           (merge
@@ -932,17 +913,17 @@
                                (gen/seq)
                                (do-n-nemesis-cycles cycles
                                                     [(gen/sleep 5)
-                                                     {:type :info :f :rebalance-out
-                                                      :targeter-opts
-                                                      {:type :random-subset
-                                                       :count disrupt-count
-                                                       :condition [:active :failed]}}
+                                                     {:type :info
+                                                      :f :rebalance-out
+                                                      :targeter targeter
+                                                      :target-count disrupt-count
+                                                      :target-action :start}
                                                      (gen/sleep 5)
-                                                     {:type :info :f :rebalance-in
-                                                      :targeter-opts
-                                                      {:type :random-subset
-                                                       :count disrupt-count
-                                                       :condition [:ejected]}}
+                                                     {:type :info
+                                                      :f :rebalance-in
+                                                      :targeter targeter
+                                                      :target-count disrupt-count
+                                                      :target-action :stop}
                                                      (gen/sleep 5)]))
                           (gen/sleep 3)
                           (gen/clients (gen/once {:type :invoke :f :read :value nil})))))

@@ -13,12 +13,55 @@
             [cheshire.core :as json]
             [slingshot.slingshot :refer [try+ throw+]]))
 
+;; Targeter functions
+
 (defn basic-nodes-targeter
   "A basic targeter that selects :target-count (default 1) random nodes"
   [test op]
   (->> (:nodes test)
        (shuffle)
        (take (:target-count op 1))))
+
+(defn start-stop-targeter
+  "Create a targeter functions with shared state, such that an op :action can
+  be classified as either :start or :stop. Once a node has been targeted by a
+  :start operation, it can only receive a :stop operation. Likewise a stop
+  operation can only be received by a node that previously received a :start.
+  Once a targeted node has received a :stop, it can again receive a :start."
+  []
+  (let [started (atom #{})]
+    (fn start-stop-targeter-invoke [test op]
+      (case (:target-action op)
+        :start (let [target-count (:target-count op 1)
+                     all-nodes (set (:nodes test))
+                     possible-targets (set/difference all-nodes @started)
+                     targets (take target-count (shuffle possible-targets))]
+                 (if (not= target-count (count targets))
+                   (throw (ex-info "Not enough undisrupted nodes to start"
+                                   {:started @started})))
+                 (swap! started set/union (set targets))
+                 targets)
+        :stop (let [target-count (:target-count op 1)
+                    targets (take target-count (shuffle @started))]
+                (if (not= target-count (count targets))
+                  (throw (ex-info "Not enought disrupted nodes to stop"
+                                  {:started @started})))
+                (swap! started set/difference (set targets))
+                targets)
+        :swap (let [target-count (:target-count op 1)
+                    all-nodes (set (:nodes test))
+                    stop-targets (take target-count (shuffle @started))
+                    start-targets (->> (set/difference all-nodes @started)
+                                       (shuffle)
+                                       (take target-count))]
+                (if (not= target-count (count stop-targets) (count start-targets))
+                  (throw (ex-info "Not enough nodes to swap"
+                                  {:started @started})))
+                (swap! started set/difference (set stop-targets))
+                (swap! started set/union (set start-targets))
+                [stop-targets start-targets])))))
+
+;; Nemesis functions
 
 (defn failover
   "Using the rest-api trigger a failover of the target nodes"
@@ -136,6 +179,64 @@
         (retry (dec retry-count))
         (throw (RuntimeException. "Failed to heal network" e)))))
   (assoc op :value :healed))
+
+(defn rebalance-out
+  "Rebalance nodes out of the cluster."
+  [test op]
+  (assert (= (:f op) :rebalance-out))
+  (let [eject-nodes ((:targeter op) test op)
+        cluster-nodes (util/get-cluster-nodes test)]
+    (c/on (first (set/difference (set cluster-nodes) (set eject-nodes)))
+          (util/rebalance cluster-nodes eject-nodes))
+    (assoc op :value eject-nodes)))
+
+(defn rebalance-in
+  "Rebalance node in to the cluster."
+  [test op]
+  (assert (= (:f op) :rebalance-in))
+  (let [add-nodes ((:targeter op) test op)
+        add-options (:add-opts op)
+        cluster-nodes (util/get-cluster-nodes test)
+        new-cluster-nodes (set/union (set cluster-nodes) (set add-nodes))]
+    (c/on (first cluster-nodes)
+          (util/add-nodes add-nodes add-options)
+          (util/rebalance new-cluster-nodes))
+    (assoc op :value add-nodes)))
+
+(defn swap-rebalance
+  "Swap in new nodes for existing nodes."
+  [test op]
+  (assert (= (:f op) :swap-rebalance))
+  (let [[add-nodes remove-nodes] ((:targeter op) test op)
+        add-count (count add-nodes)
+        add-options (:add-opts op)
+        cluster-nodes (util/get-cluster-nodes test)
+        static-nodes (set/difference (set cluster-nodes) (set remove-nodes))]
+    (c/on (first static-nodes)
+          (util/add-nodes add-nodes add-options)
+          (util/rebalance (set/union add-nodes cluster-nodes)
+                          remove-nodes))
+    (assoc op :value {:in add-nodes :out remove-nodes})))
+
+(defn fail-rebalance
+  "Start rebalancing nodes out of the cluster, then kill those node to cause
+  a rebalance failure."
+  [test op]
+  (assert (= (:f op) :fail-rebalance))
+  (let [target-nodes ((:targeter op) test op)
+        cluster-nodes (util/get-cluster-nodes test)
+        rest-target (first (set/difference (set cluster-nodes)
+                                           (set target-nodes)))
+        rebalance-f (future (c/on rest-target
+                                  (util/rebalance cluster-nodes target-nodes)))]
+    ;; Sleep 4 seconds to allow the rebalance to start
+    (Thread/sleep 4000)
+    ;; Kill memcached on the target nodes to cause the failure
+    (doseq [target target-nodes]
+      (util/kill-process target :memcached))
+    ;; Wait for the rebalance to quit, swallowing the exception
+    (try @rebalance-f (catch Exception e (info "Expected rebalance failure detected")))
+    (assoc op :value target-nodes)))
 
 (defn filter-nodes
   "This function will take in node-state atom and targeter-opts. Target conditions will be extracted from
@@ -266,79 +367,10 @@
               (info "cluster state: " @node-states)
               (assoc op :value :autofailover-complete))
 
-            :rebalance-out
-            ; rebalance will not work if there is an :inactive :killed node in the cluster
-            ; This function will attempt to rebalance out target nodes. It will also add any currently failed nodes
-            ; to the set of nodes to be removed as these nodes would be removed even if they were omitted from
-            ; the util/rebalance call. Issues may arise if util/add-nodes or
-            ; util/rebalance fails. No error handling is implemented in this function but Jepsen
-            ; will catch and exceptions and continue generating ops. Special care should be taken
-            ; when using this function in a scenario where nodes are partitioned
-            (let [nodes-to-eject (vec (set/union (set failed-nodes) (set target-nodes)))]
-              (util/rebalance (set cluster-nodes) (set nodes-to-eject))
-              (doseq [eject-node nodes-to-eject]
-                (update-node-state node-states eject-node {:cluster :ejected})
-                (update-node-state node-states eject-node {:server-group nil}))
-              (info "cluster state: " @node-states)
-              (assoc op :value (str "Removed: " nodes-to-eject)))
-
-            :rebalance-in
-            ; rebalance will not work if there is an :inactive :killed node in the cluster
-            ; This function will attempt to rebalance in the target nodes. It will grab any currently failed
-            ; nodes and set them for removal during rebalance as this would happen even if the failed nodes
-            ; were omitted from util/rebalance. Issues may arise if util/add-nodes or
-            ; util/rebalance fails. No error handling is implemented in this function but Jepsen
-            ; will catch and exceptions and continue generating ops. Special care should be taken
-            ; when using this function in a scenario where nodes are partitioned
-            (do
-              (c/on
-               (first healthy-cluster-nodes)
-               (util/add-nodes (set target-nodes) (get-in f-opts [:add-opts] nil)))
-              (util/rebalance (set/union (set cluster-nodes) (set target-nodes)) (set failed-nodes))
-              (doseq [target-node target-nodes]
-                (info "updating target node state in rebalance-in")
-                (update-node-state node-states target-node {:cluster :active})
-                (update-node-state node-states target-node {:server-group (util/get-node-group target-node)}))
-              (doseq [failed-node failed-nodes]
-                (info "updating failed node state in rebalance-in")
-                (update-node-state node-states failed-node {:cluster :ejected})
-                (update-node-state node-states failed-node {:server-group nil}))
-              (info "cluster state: " @node-states)
-              (assoc op :value (str "Added: " target-nodes " Removed: " failed-nodes)))
-
-            :swap-rebalance
-            ; rebalance will not work if there is an :inactive :killed node in the cluster
-            ; This function will grab all nodes in the cluster, sets target nodes to be
-            ; added to the cluster by issuing rest call to the first non-partitioned node
-            ; in the cluster, and sets an equal number of nodes in the cluster to be removed
-            ; which will accomplish a swap rebalance. Issues may arise if util/add-nodes or
-            ; util/rebalance fails. No error handling is implemented in this function but Jepsen
-            ; will catch and exceptions and continue generating ops. Special care should be taken
-            ; when using this function in a scenario where nodes are partitioned
-            (let [nodes-to-remove (vec (take (count target-nodes) (shuffle (vec cluster-nodes))))
-                  static-nodes (vec (set/difference (set healthy-cluster-nodes) (set nodes-to-remove)))]
-              (c/on (first static-nodes) (util/add-nodes (set target-nodes)))
-              (util/rebalance (set/union (set cluster-nodes) (set target-nodes)) (set nodes-to-remove))
-              (doseq [add-node target-nodes]
-                (update-node-state node-states add-node {:cluster :active}))
-              (doseq [remove-node nodes-to-remove]
-                (update-node-state node-states remove-node {:cluster :ejected}))
-              (info "cluster state: " @node-states)
-              (assoc op :value (str "Added: " target-nodes " Removed: " (vec nodes-to-remove))))
-
-            :fail-rebalance
-            (let [kill-target (if (nil? (:kill-target f-opts))
-                                (throw (RuntimeException. (str "kill-target not found in f-opts")))
-                                (:kill-target f-opts))
-                  rebalance  (future (util/rebalance cluster-nodes target-nodes))]
-              ;; Sleep between 2 and 4 seconds to allow the rebalance to start
-              (Thread/sleep (+ (* (rand) 2000) 2000))
-              ;; Kill memcached on a different random collection of nodes
-              (case kill-target
-                :same-nodes (doseq [node target-nodes] (util/kill-process node :memcached)))
-              ;; Wait for rebalance to quit, swallowing rebalance failure
-              (try @rebalance (catch Exception e (warn "Rebalance failed")))
-              (assoc op :value (str "Rebalance failed for nodes: " (str target-nodes))))
+            :rebalance-out (rebalance-out test op)
+            :rebalance-in (rebalance-in test op)
+            :swap-rebalance (swap-rebalance test op)
+            :fail-rebalance (fail-rebalance test op)
 
             :kill-process
             (let [process (:process f-opts)]
