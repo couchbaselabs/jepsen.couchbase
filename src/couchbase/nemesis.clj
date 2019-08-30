@@ -58,7 +58,7 @@
           ;; cluster during a failure scenario and ns_server hasn't had a
           ;; chance to sync up the nodes.
           node-lists (map #(sort (keys %)) (vals status-maps))
-          _ (if-not (apply = (keys status-maps) node-lists)
+          _ (if-not (apply = (sort (keys status-maps)) node-lists)
               (throw (ex-info "Cluster status inconsistent between nodes"
                               {:retryable true
                                :status-maps status-maps})))
