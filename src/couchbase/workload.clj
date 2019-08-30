@@ -429,36 +429,18 @@
     target-server-groups      (if (opts :target-server-groups) (do (assert sg-enabled) true) false)
     random-server-group (if sg-enabled (util/random-server-group server-group-count))
     complementary-server-group (if sg-enabled (util/complementary-server-group server-group-count random-server-group))
-    should-autofailover   (and autofailover
-                               (>= replicas 1)
-                               (= disrupt-count 1)
-                               (> disrupt-time autofailover-timeout)
-                               (>= node-count 3))
-    should-server-group-autofailover (and autofailover
-                                          sg-enabled
-                                          target-server-groups
-                                          server-group-autofailover
-                                          (>= replicas 1)
-                                          (>= server-group-count 3)
-                                          (>= disrupt-count (Math/ceil (/ node-count server-group-count)))
-                                          (> disrupt-time autofailover-timeout)
-                                          (>= node-count 3))
     nemesis               (cbnemesis/couchbase)
+    babysitter-targeter   (cbnemesis/start-stop-targeter)
     client-generator      (client-gen opts)
     generator (case scenario
                 :kill-memcached
                 (do-n-nemesis-cycles cycles
                                      [(gen/sleep 10)
                                       {:type :info
-                                       :f    :kill-process
-                                       :f-opts {:process :memcached}
-                                       :targeter-opts {:type :random-subset
-                                                       :count disrupt-count
-                                                       :condition (merge {:cluster [:active]
-                                                                          :network [:connected]
-                                                                          :node [:running]}
-                                                                         (when-let [target-sq target-server-groups]
-                                                                           {:server-group [random-server-group]}))}}
+                                       :f :kill-process
+                                       :kill-process :memcached
+                                       :targeter cbnemesis/basic-nodes-targeter
+                                       :target-count disrupt-count}
                                       (gen/sleep 20)]
                                      client-generator)
 
@@ -466,15 +448,10 @@
                 (do-n-nemesis-cycles cycles
                                      [(gen/sleep 10)
                                       {:type :info
-                                       :f    :kill-process
-                                       :f-opts {:process :ns-server}
-                                       :targeter-opts {:type :random-subset
-                                                       :count disrupt-count
-                                                       :condition (merge {:cluster [:active]
-                                                                          :network [:connected]
-                                                                          :node [:running]}
-                                                                         (when-let [target-sq target-server-groups]
-                                                                           {:server-group [random-server-group]}))}}
+                                       :f :kill-process
+                                       :kill-process :ns-server
+                                       :targeter cbnemesis/basic-nodes-targeter
+                                       :target-count disrupt-count}
                                       (gen/sleep 20)]
                                      client-generator)
 
@@ -482,45 +459,25 @@
                 (do-n-nemesis-cycles cycles
                                      [(gen/sleep 5)
                                       {:type :info
-                                       :f    :kill-process
-                                       :f-opts {:process :babysitter}
-                                       :targeter-opts {:type :random-subset
-                                                       :count disrupt-count
-                                                       :condition (merge {:cluster [:active]
-                                                                          :network [:connected]
-                                                                          :node [:running]}
-                                                                         (when-let [target-sq target-server-groups]
-                                                                           {:server-group [random-server-group]}))}}
-                                      (if (or should-autofailover should-server-group-autofailover)
-                                        [{:type :info
-                                          :f    :wait-for-autofailover
-                                          :targeter-opts {:type      :random
-                                                          :condition (merge {:cluster [:active]
-                                                                             :network [:connected]
-                                                                             :node [:running]}
-                                                                            (when-let [target-sq target-server-groups]
-                                                                              {:server-group [complementary-server-group]}))}}
-                                         (gen/sleep (- disrupt-time autofailover-timeout))]
-                                        [(gen/sleep disrupt-time)])
+                                       :f :kill-process
+                                       :kill-process :babysitter
+                                       :targeter babysitter-targeter
+                                       :target-count disrupt-count
+                                       :target-action :start}
+
+                                      (gen/sleep disrupt-time)
 
                                       {:type :info
-                                       :f    :start-process
-                                       :f-opts {:process :couchbase-server}
-                                       :targeter-opts {:type      :all
-                                                       :condition {:cluster [:inactive :failed]
-                                                                   :network [:connected]
-                                                                   :node [:killed]}}}
+                                       :f :start-process
+                                       :targeter babysitter-targeter
+                                       :target-count disrupt-count
+                                       :target-action :stop}
+
                                       (gen/sleep 5)
-                                      (if (or should-autofailover should-server-group-autofailover)
-                                        [{:type   :info
-                                          :f      :recover
-                                          :f-opts {:recovery-type recovery-type}
-                                          :targeter-opts {:type      :all
-                                                          :condition {:cluster [:failed]
-                                                                      :network [:connected]
-                                                                      :node [:running]}}}
-                                         (gen/sleep 5)]
-                                        [(gen/sleep 5)])]
+                                      {:type :info
+                                       :f :recover
+                                       :recovery-type recovery-type}
+                                      (gen/sleep 5)]
                                      client-generator))))
 
 (defn disk-failure-workload
@@ -748,12 +705,9 @@
    autofailover-maxcount (opts :autofailover-maxcount 3)
    disrupt-count         (opts :disrupt-count 1)
    disrupt-time          (opts :disrupt-time 30)
-   should-autofailover   (and autofailover
-                              (= disrupt-count 1)
-                              (> disrupt-time autofailover-timeout)
-                              (>= (count (:nodes opts)) 3))
    client                (clients/set-client dcpclient)
    nemesis               (cbnemesis/couchbase)
+   babysitter-targeter   (cbnemesis/start-stop-targeter)
    control-atom          (atom :continue)
    checker               (checker/compose
                           (merge
@@ -784,13 +738,11 @@
                                                         :disk [:normal]}}
                                        (gen/sleep 4)
                                        {:type :info
-                                        :f    :kill-process
-                                        :f-opts {:process :memcached}
-                                        :targeter-opts {:type :random-subset
-                                                        :count disrupt-count
-                                                        :condition {:cluster [:active]
-                                                                    :network [:connected]
-                                                                    :node [:running]}}}
+                                        :f :kill-process
+                                        :kill-process :memcached
+                                        :targeter cbnemesis/basic-nodes-targeter
+                                        :target-count disrupt-count}
+
                                        {:type   :info
                                         :f      :reset-disk
                                         :targeter-opts {:type      :all
@@ -805,13 +757,10 @@
                  (do-n-nemesis-cycles cycles
                                       [(gen/sleep 10)
                                        {:type :info
-                                        :f    :kill-process
-                                        :f-opts {:process :memcached}
-                                        :targeter-opts {:type :random-subset
-                                                        :count disrupt-count
-                                                        :condition {:cluster [:active]
-                                                                    :network [:connected]
-                                                                    :node [:running]}}}
+                                        :f :kill-process
+                                        :kill-process :memcached
+                                        :targeter cbnemesis/basic-nodes-targeter
+                                        :target-count disrupt-count}
                                        (gen/sleep 20)]
                                       client-gen)
 
@@ -819,13 +768,10 @@
                  (do-n-nemesis-cycles cycles
                                       [(gen/sleep 10)
                                        {:type :info
-                                        :f    :kill-process
-                                        :f-opts {:process :ns-server}
-                                        :targeter-opts {:type :random-subset
-                                                        :count disrupt-count
-                                                        :condition {:cluster [:active]
-                                                                    :network [:connected]
-                                                                    :node [:running]}}}
+                                        :f :kill-process
+                                        :kill-process :ns-server
+                                        :targeter cbnemesis/basic-nodes-targeter
+                                        :target-count disrupt-count}
                                        (gen/sleep 20)]
                                       client-gen)
 
@@ -833,41 +779,25 @@
                  (do-n-nemesis-cycles cycles
                                       [(gen/sleep 5)
                                        {:type :info
-                                        :f    :kill-process
-                                        :f-opts {:process :babysitter}
-                                        :targeter-opts {:type :random-subset
-                                                        :count disrupt-count
-                                                        :condition {:cluster [:active]
-                                                                    :network [:connected]
-                                                                    :node [:running]}}}
-                                       (if should-autofailover
-                                         [{:type :info
-                                           :f    :wait-for-autofailover
-                                           :targeter-opts {:type      :random
-                                                           :condition {:cluster [:active]
-                                                                       :network [:connected]
-                                                                       :node [:running]}}}
-                                          (gen/sleep (- disrupt-time autofailover-timeout))]
-                                         (gen/sleep disrupt-time))
+                                        :f :kill-process
+                                        :kill-process :babysitter
+                                        :targeter babysitter-targeter
+                                        :target-count disrupt-count
+                                        :target-action :start}
+
+                                       (gen/sleep disrupt-time)
 
                                        {:type :info
-                                        :f    :start-process
-                                        :f-opts {:process :couchbase-server}
-                                        :targeter-opts {:type      :all
-                                                        :condition {:cluster [:inactive :failed]
-                                                                    :network [:connected]
-                                                                    :node [:killed]}}}
+                                        :f :start-process
+                                        :targeter babysitter-targeter
+                                        :target-count disrupt-count
+                                        :target-action :stop}
+
                                        (gen/sleep 5)
-                                       (if should-autofailover
-                                         [{:type   :info
-                                           :f      :recover
-                                           :f-opts {:recovery-type recovery-type}
-                                           :targeter-opts {:type      :all
-                                                           :condition {:cluster [:failed]
-                                                                       :network [:connected]
-                                                                       :node [:running]}}}
-                                          (gen/sleep 5)]
-                                         [])]
+                                       {:type :info
+                                        :f :recover
+                                        :recovery-type recovery-type}
+                                       (gen/sleep 10)]
                                       client-gen))
                (gen/clients (gen/once {:type :invoke :f :read :value nil})))))
 

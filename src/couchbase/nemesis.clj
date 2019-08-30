@@ -238,6 +238,27 @@
     (try @rebalance-f (catch Exception e (info "Expected rebalance failure detected")))
     (assoc op :value target-nodes)))
 
+(defn kill-process
+  "Kill a process on the targeted noded"
+  [test op]
+  (assert (= (:f op) :kill-process))
+  (let [target-nodes ((:targeter op) test op)
+        process (:kill-process op)]
+    (doseq [node target-nodes] (util/kill-process node process))
+    (assoc op :value target-nodes)))
+
+(defn start-process
+  "Restart the Couchbase Server process"
+  [test op]
+  (assert (= (:f op) :start-process))
+  (let [target-nodes ((:targeter op) test op)
+        exec-path (str (:install-path test) "/bin/couchbase-server")]
+    (c/on-many
+     target-nodes
+     (c/ssh* {:cmd (str "nohup " exec-path " -- -noinput >> /dev/null 2>&1 &")})
+     (util/wait-for-daemon))
+    (assoc op :value target-nodes)))
+
 (defn filter-nodes
   "This function will take in node-state atom and targeter-opts. Target conditions will be extracted from
   targeter-opts and used to filter nodes represented in node-states. Targeter conditions should be passed in as
@@ -372,51 +393,8 @@
             :swap-rebalance (swap-rebalance test op)
             :fail-rebalance (fail-rebalance test op)
 
-            :kill-process
-            (let [process (:process f-opts)]
-              (case process
-                :memcached
-                (do
-                  (doseq [node target-nodes] (util/kill-process node :memcached))
-                  (info "cluster state: " @node-states)
-                  (assoc op :value [:killed :memcached target-nodes]))
-                :ns-server
-                (do
-                  (doseq [node target-nodes] (util/kill-process node :ns-server))
-                  (info "cluster state: " @node-states)
-                  (assoc op :value [:killed :ns_server target-nodes]))
-                :babysitter
-                (do
-                  (doseq [node target-nodes] (util/kill-process node :babysitter))
-                  (doseq [killed-node target-nodes]
-                    (if (contains? (set cluster-nodes) killed-node)
-                      ;node will become inactive after being killed only if it is in the cluster
-                      (update-node-state node-states killed-node {:cluster :inactive :node :killed})
-                      (update-node-state node-states killed-node {:node :killed})))
-                  (info "cluster state: " @node-states)
-                  (assoc op :value [:killed :babysitter target-nodes]))))
-
-            :start-process
-            (let [process (:process f-opts)]
-              (case process
-                :couchbase-server
-                (let [path (:install-path test)]
-                  (c/on-many
-                   target-nodes
-                   (c/ssh* {:cmd (str "nohup " path "/bin/couchbase-server -- -noinput >> /dev/null 2>&1 &")})
-                   (util/wait-for-daemon))
-                  (doseq [started-node target-nodes]
-                    (if (contains? (set inactive-nodes) started-node)
-                      ; inactive nodes will become active after starting couchbase-server
-                      ; the time to become active again is around 3 seconds, we should wait
-                      (do
-                        ; should wait here until node status is healthy
-                        (util/wait-for #(get-in (util/get-node-info (first healthy-cluster-nodes)) [started-node :status]) "healthy" 30)
-                        (update-node-state node-states started-node {:cluster :active :node :running}))
-                      ; failed over nodes will only be recoverable if couchbase-server is running
-                      (update-node-state node-states started-node {:node :running})))
-                  (info "cluster state: " @node-states)
-                  (assoc op :value [:started :couchbase-server target-nodes]))))
+            :kill-process (kill-process test op)
+            :start-process (start-process test op)
 
             :slow-dcp-client
             (let [dcpclient (:dcpclient (:client test))]
