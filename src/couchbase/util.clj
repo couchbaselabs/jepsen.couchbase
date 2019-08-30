@@ -12,7 +12,8 @@
              [net :as net]
              [store :as store]]
             [slingshot.slingshot :refer [try+ throw+]])
-  (:import java.io.File))
+  (:import java.io.File
+           (clojure.lang ExceptionInfo)))
 
 (defn get-node-name
   "Get the ns_server otpNode name for a given node"
@@ -161,8 +162,7 @@
 
 (defn wait-for-rebalance-complete
   ([rest-target] (wait-for-rebalance-complete rest-target 600))
-  ([rest-target retries] (wait-for-rebalance-complete rest-target 600 60))
-  ([rest-target retries max-stuck]
+  ([rest-target max-stuck]
    (loop [status-map {}
           retry-count 0
           stuck-count 0]
@@ -184,7 +184,7 @@
                 (if (= status-map new-status-map) (inc stuck-count) stuck-count)))))))
 
 (defn rebalance
-  "Inititate a rebalance with the given parameters"
+  "Initiate a rebalance with the given parameters"
   ([known-nodes] (rebalance known-nodes nil))
   ([known-nodes eject-nodes]
    (let [known-nodes-str (->> known-nodes
@@ -193,16 +193,21 @@
          eject-nodes-str (->> eject-nodes
                               (map get-node-name)
                               (str/join ","))
-         valid-rest-targets (apply disj (set known-nodes) (set eject-nodes))]
-     (if-not c/*host*
-       (throw (ex-info "No control host is defined for rebalance")))
-     (if-not (contains? valid-rest-targets c/*host*)
-       (throw (ex-info "Current control host is not a valid rest target for rebalance")))
+         valid-rest-targets (apply disj (set known-nodes) (set eject-nodes))
+         rest-target (if (some? c/*host*)
+                       c/*host*
+                       (first valid-rest-targets))]
+     (if-not rest-target
+       (throw (ex-info "No control host is defined for rebalance" {:ejectedNodes eject-nodes-str
+                                                                   :knownNodes known-nodes-str})))
+     (if-not (contains? valid-rest-targets rest-target)
+       (throw (ex-info "Current control host is not a valid rest target for rebalance" {:ejectedNodes eject-nodes-str
+                                                                                        :knownNodes known-nodes-str})))
      (if eject-nodes
        (info "Rebalancing nodes" eject-nodes "out of cluster"))
-     (rest-call c/*host* "/controller/rebalance" {:ejectedNodes eject-nodes-str
-                                                  :knownNodes known-nodes-str})
-     (wait-for-rebalance-complete c/*host*)
+     (rest-call rest-target "/controller/rebalance" {:ejectedNodes eject-nodes-str
+                                                     :knownNodes known-nodes-str})
+     (wait-for-rebalance-complete rest-target)
      (info "Rebalance complete"))))
 
 (defn create-bucket
@@ -684,9 +689,9 @@
   (let [status-maps (get-node-info-map test)
         node-lists (map #(sort (keys %)) (vals status-maps))]
     (if (empty? node-lists)
-      (throw (ex-info "Couldn't retrieve cluster data from any node.")))
+      (throw (ex-info "Couldn't retrieve cluster data from any node." {:node-lists node-lists})))
     (if-not (apply = node-lists)
-      (throw (ex-info "Cluster status data inconsistent between nodes.")))
+      (throw (ex-info "Cluster status data inconsistent between nodes." {:node-lists node-lists})))
     (first node-lists)))
 
 (defn random-durability-level
