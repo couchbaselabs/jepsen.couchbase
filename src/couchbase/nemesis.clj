@@ -110,6 +110,33 @@
                  "Exception was" e)
           (throw e))))))
 
+(defn isolate-completely
+  "Introduce a network partition that each targeted node is isolated from all
+  other nodes in cluster."
+  [test op]
+  (assert (= (:f op) :isolate-completely))
+  (let [isolate-nodes ((:targeter op) test op)
+        other-nodes (set/difference (set (:nodes test)) (set isolate-nodes))
+        partitions (conj (partition 1 isolate-nodes) other-nodes)
+        grudge (nemesis/complete-grudge partitions)]
+    (info "Applying grudge:" grudge)
+    (net/drop-all! test grudge)
+    (assoc op :value partitions)))
+
+(defn heal-network
+  "Remove all active grudges from the network such that all nodes can
+  communicate again."
+  [test op]
+  (assert (= (:f op) :heal-network))
+  (with-retry [retry-count 5]
+    (net/heal! (:net test) test)
+    (catch RuntimeException e
+      (warn "Failed to heal network," retry-count "retries remaining")
+      (if (pos? retry-count)
+        (retry (dec retry-count))
+        (throw (RuntimeException. "Failed to heal network" e)))))
+  (assoc op :value :healed))
+
 (defn filter-nodes
   "This function will take in node-state atom and targeter-opts. Target conditions will be extracted from
   targeter-opts and used to filter nodes represented in node-states. Targeter conditions should be passed in as
@@ -156,17 +183,6 @@
   (let [filtered-nodes (filter-nodes node-states targeter-opts)
         target-nodes (apply-targeter filtered-nodes targeter-opts)]
     target-nodes))
-
-(defn create-grudge
-  "This function will create a partition grudge to be based to Jepsen. Partitions look like [(n1) (n2 n3) (n4)].
-  Each sequence represents partitions such that only nodes within the same sequence can communicate."
-  [partition-type target-nodes all-nodes]
-  (case partition-type
-    :isolate-completely
-    (let [complement-nodes (seq (set/difference (set all-nodes) (set target-nodes)))
-          partitions (conj (partition 1 target-nodes) complement-nodes)
-          grudge (nemesis/complete-grudge partitions)]
-      grudge)))
 
 (defn update-node-state
   "This function takes in a atom of node states, a target node, a map of state keys with a single value to update
@@ -228,35 +244,8 @@
           (case (:f op)
             :failover (failover test op)
             :recover (recover test op)
-
-            :partition-network
-            (let [partition-type (:partition-type f-opts)
-                  grudge (create-grudge partition-type target-nodes @nodes)]
-              (info "Partition grudge: " (str grudge))
-              (net/drop-all! test grudge)
-              (doseq [target target-nodes]
-                (update-node-state node-states target {:network :partitioned :cluster :inactive}))
-              (info "cluster state: " @node-states)
-              (assoc op :value [:isolated grudge]))
-
-            :heal-network
-            (do
-              (with-retry [retry-count 5]
-                (net/heal! (:net test) test)
-                (catch RuntimeException e
-                  (warn "Failed to heal network," retry-count "retries remaining")
-                  (if (pos? retry-count)
-                    (retry (dec retry-count))
-                    (throw (RuntimeException. "Failed to heal network" e)))))
-              (doseq [target @nodes]
-                (let [target-cluster-state (get-in @node-states [target :state :cluster])
-                      target-node-state (get-in @node-states [target :state :node])
-                      target-network-state (get-in @node-states [target :state :network])]
-                  (if (and (= target-cluster-state :inactive) (= target-node-state :running) (= target-network-state :partitioned))
-                    (update-node-state node-states target {:cluster :active :network :connected})
-                    (update-node-state node-states target {:network :connected}))))
-              (info "cluster state: " @node-states)
-              (assoc op :value :network-healed))
+            :isolate-completely (isolate-completely test op)
+            :heal-network (heal-network test op)
 
             :wait-for-autofailover
             (let [target (first target-nodes)

@@ -261,42 +261,16 @@
     generator       (do-n-nemesis-cycles
                      cycles
                      [(gen/sleep 5)
-                      {:type   :info
-                       :f      :partition-network
-                       :f-opts {:partition-type :isolate-completely}
-                       :targeter-opts {:type      :random-subset
-                                       :count     disrupt-count
-                                       :condition (merge {:cluster [:active]
-                                                          :network [:connected]
-                                                          :node [:running]}
-                                                         (when-let [target-sq target-server-groups]
-                                                           {:server-group [random-server-group]}))}}
-
-                      (if (or should-autofailover should-server-group-autofailover)
-                        [{:type :info
-                          :f    :wait-for-autofailover
-                          :targeter-opts {:type      :random
-                                          :condition (merge {:cluster [:active]
-                                                             :network [:connected]
-                                                             :node [:running]}
-                                                            (when-let [target-sq target-server-groups]
-                                                              {:server-group [complementary-server-group]}))}}
-                         (gen/sleep (- disrupt-time autofailover-timeout))]
-                        (gen/sleep disrupt-time))
-
+                      {:type :info
+                       :f :isolate-completely
+                       :targeter cbnemesis/basic-nodes-targeter
+                       :target-count disrupt-count}
+                      (gen/sleep disrupt-time)
                       {:type :info :f :heal-network}
-
-                      (if (or should-autofailover should-server-group-autofailover)
-                        [(gen/sleep 10)
-                         {:type   :info
-                          :f      :recover
-                          :f-opts {:recovery-type recovery-type}
-                          :targeter-opts {:type      :all
-                                          :condition {:cluster [:failed]
-                                                      :network [:connected]
-                                                      :node [:running]}}}
-                         (gen/sleep 5)]
-                        [(gen/sleep 10)])]
+                      {:type :info
+                       :f :recover
+                       :recovery-type recovery-type}
+                      (gen/sleep 10)]
                      client-generator)))
 
 (defn rebalance-workload
