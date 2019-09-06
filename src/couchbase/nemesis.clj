@@ -260,7 +260,10 @@
         exec-path (str (:install-path test) "/bin/couchbase-server")]
     (c/on-many
      target-nodes
-     (c/ssh* {:cmd (str "nohup " exec-path " -- -noinput >> /dev/null 2>&1 &")})
+     (try
+       (c/su (c/exec :systemctl :start :couchbase-server))
+       (catch Exception e
+         (c/ssh* {:cmd (str "nohup " exec-path " -- -noinput >> /dev/null 2>&1 &")})))
      (util/wait-for-daemon))
     (assoc op :value target-nodes)))
 

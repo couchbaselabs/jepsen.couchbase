@@ -480,7 +480,10 @@
     (info "Changing permissions for" install-path)
     (c/su (c/exec :chmod :-R "a+rwx" install-path))
     (info "Starting daemon")
-    (c/ssh* {:cmd (str "nohup " server-path " -- -noinput >> /dev/null 2>&1 &")})
+    (try
+      (c/su (c/exec :systemctl :start :couchbase-server))
+      (catch RuntimeException e
+        (c/ssh* {:cmd (str "nohup " server-path " -- -noinput >> /dev/null 2>&1 &")})))
     (wait-for-daemon)
     (info "Daemon started")
     (if (and (:enable-tcp-capture test) (not (:cluster-run test)))
