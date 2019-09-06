@@ -588,8 +588,9 @@
     generator (do-n-nemesis-cycles cycles
                                    [(gen/sleep 5)
                                     {:type   :info
-                                     :f      :partition-network
+                                     :f      :isolate-completely
                                      :f-opts {:partition-type :isolate-completely}
+                                     :targeter cbnemesis/basic-nodes-targeter
                                      :targeter-opts {:type      :random-subset
                                                      :count     disrupt-count
                                                      :condition (merge {:cluster [:active]
@@ -600,7 +601,8 @@
                                     (gen/sleep 5)
                                     {:type :info
                                      :f    :failover
-                                     :f-opts {:failover-type failover-type}
+                                     :failover-type failover-type
+                                     :targeter cbnemesis/basic-nodes-targeter
                                      :targeter-opts {:type :random-subset
                                                      :count disrupt-count
                                                      :condition (merge {:cluster [:inactive]
@@ -613,7 +615,8 @@
                                     (gen/sleep 10)
                                     {:type :info
                                      :f    :recover
-                                     :f-opts {:recovery-type recovery-type}
+                                     :recovery-type recovery-type
+                                     :targeter cbnemesis/basic-nodes-targeter
                                      :targeter-opts {:type :all
                                                      :condition (merge {:cluster [:failed]
                                                                         :network [:connected]
