@@ -293,6 +293,9 @@
     :default false]
    [nil "--dcp-set-read"
     "Use DCP to read back set keys"
+    :default false]
+   [nil "--collect-data-files"
+    "Use to enable the collection of Couchbase-Servers data directory"
     :default false]])
 
 (defn -main

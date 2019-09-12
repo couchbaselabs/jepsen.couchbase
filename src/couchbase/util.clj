@@ -603,6 +603,9 @@
             logfile "/tmp/jepsen-logs/hashtable_dump.txt"
             loopcmd (format "for i in %s; do (%s; echo) &>> %s; done" vbuckets hashcmd logfile)]
         (c/su (c/exec* loopcmd))))
+    (when (test :collect-data-files)
+      (info "Collect Couchbase Servers data files")
+      (c/su (c/exec* (str "zip -r /tmp/jepsen-logs/data-files.zip " (str (str (:install-path test) "/var/lib/couchbase/data"))))))
     (when (test :enable-tcp-capture)
       (info "Collecting tcp packet capture")
       (c/su (c/exec* (str "kill -s TERM $(pgrep tcpdump)"))
