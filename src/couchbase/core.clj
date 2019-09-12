@@ -362,7 +362,11 @@
            (warn "Encountered clj-ssh issue #59 during log download")
            (if (pos? attempts)
              (retry (dec attempts))
-             (error "Log download failed due to clj-ssh issue #59")))))))
+             (error "Log download failed due to clj-ssh issue #59")))
+         (catch Exception e
+           (if (pos? attempts)
+             (retry (dec attempts))
+             (error (str "Log download failed due to exception " (.getMessage e)))))))))
 
   ;; Now parse args and run the test
   (let [test (cli/single-test-cmd {:test-fn  cbtest
