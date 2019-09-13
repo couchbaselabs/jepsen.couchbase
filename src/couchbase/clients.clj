@@ -40,7 +40,7 @@
                    1 DurabilityLevel/MAJORITY
                    2 DurabilityLevel/MAJORITY_AND_PERSIST_ON_MASTER
                    3 DurabilityLevel/PERSIST_TO_MAJORITY)]
-    (.durabilityLevel mutation-options level)))
+    (.durability mutation-options level)))
 
 (defn apply-observe-options!
   "Helper function to apply the old observe based replicate-to/persist-to"
