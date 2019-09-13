@@ -730,9 +730,13 @@
   (let [install-path (:install-path test)
         ns-server-dir (io/file install-path ".." "ns_server")
         config-data-dir (io/file ns-server-dir "data")
-        cluster-run (io/file ns-server-dir "cluster_run")]
+        cluster-run (io/file ns-server-dir "cluster_run")
+        ns-server-log-dir (io/file ns-server-dir "logs")]
     (assert (.exists cluster-run) "Couldn't find cluster-run script in install")
+    (info "Deleting data directory")
     (shell/sh "rm" "-rf" (.getPath config-data-dir))
+    (info "Deleting log directory")
+    (shell/sh "rm" "-rf" (.getPath ns-server-log-dir))
     (shell/sh "mkdir" (.getPath config-data-dir))
     (info "Starting cluster run")
     (let [ret (future (shell/sh (.getPath cluster-run)
