@@ -608,7 +608,7 @@
       (c/su (c/exec* (str "zip -r /tmp/jepsen-logs/data-files.zip " (str (str (:install-path test) "/var/lib/couchbase/data"))))))
     (when (test :enable-tcp-capture)
       (info "Collecting tcp packet capture")
-      (c/su (c/exec* (str "kill -s TERM $(pgrep tcpdump)"))
+      (c/su (c/exec* (str "if [[ \"$(pgrep tcpdump)\" ]]; then kill -s TERM $(pgrep tcpdump); fi"))
             (c/exec* (str "mv /tmp/packet-capture/*.pcap* /tmp/jepsen-logs/"))))
     (c/su (c/exec :chmod :a+r :-R "/tmp/jepsen-logs"))
     (str/split-lines (c/exec :find "/tmp/jepsen-logs" :-type :f))))
