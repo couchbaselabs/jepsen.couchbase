@@ -1,11 +1,14 @@
 (ns couchbase.clients
   (:require [clojure.tools.logging :refer [info warn error fatal]]
             [couchbase.cbclients :as cbclients]
-            [dom-top.core :refer [with-retry]]
+            [dom-top.core :as domTop]
             [jepsen.client :as client]
             [jepsen.independent :as independent]
             [slingshot.slingshot :refer [try+]])
-  (:import com.couchbase.client.java.kv.CommonDurabilityOptions
+  (:import com.couchbase.client.core.msg.kv.DurabilityLevel
+           com.couchbase.client.java.Collection
+           com.couchbase.client.java.kv.GetResult
+           com.couchbase.client.java.kv.MutationResult
            com.couchbase.client.java.kv.PersistTo
            com.couchbase.client.java.kv.ReplicateTo
            com.couchbase.client.java.kv.InsertOptions
@@ -25,17 +28,19 @@
            com.couchbase.transactions.Transactions
            com.couchbase.transactions.TransactionJsonDocument
            com.couchbase.transactions.error.TransactionFailed
-           com.couchbase.transactions.config.PerTransactionConfig
            com.couchbase.transactions.config.PerTransactionConfigBuilder
            com.couchbase.transactions.TransactionDurabilityLevel
-           java.util.function.Consumer))
+           java.util.function.Consumer
+           java.util.NoSuchElementException
+           com.couchbase.transactions.AttemptContext
+           com.couchbase.client.core.msg.kv.MutationToken))
 
 ;; Helper functions to apply durability options
 
 (defn apply-durability-options!
   "Helper function to apply durability level to perform sync-writes"
   [mutation-options op]
-  (if-let [level (case (op :durability-level 0)
+  (if-let [level (case (int (op :durability-level 0))
                    0 nil
                    1 DurabilityLevel/MAJORITY
                    2 DurabilityLevel/MAJORITY_AND_PERSIST_ON_MASTER
@@ -47,12 +52,12 @@
   [mutation-options op]
   (when (or (pos? (op :replicate-to 0))
             (pos? (op :persist-to 0)))
-    (let [replicate-to (case (op :replicate-to 0)
+    (let [replicate-to (case (int (op :replicate-to 0))
                          0 ReplicateTo/NONE
                          1 ReplicateTo/ONE
                          2 ReplicateTo/TWO
                          3 ReplicateTo/THREE)
-          persist-to   (case (op :persist-to 0)
+          persist-to   (case (int (op :persist-to 0))
                          0 PersistTo/NONE
                          1 PersistTo/ONE
                          2 PersistTo/TWO
@@ -68,11 +73,11 @@
   (let [[rawkey _] (:value op)
         dockey (format "jepsen%04d" rawkey)]
     (try
-      (let [get-result (.get collection dockey)]
+      (let [get-result (.get ^Collection collection dockey)]
         (assoc op
                :type :ok
-               :cas (.cas get-result)
-               :value (independent/tuple rawkey (.contentAs get-result Integer))))
+               :cas (.cas ^GetResult get-result)
+               :value (independent/tuple rawkey (int get-result))))
       (catch KeyNotFoundException _
         (assoc op :type :ok :value (independent/tuple rawkey :nil)))
       ;; Reads are idempotent, so it's ok to just :fail on any exception. Note
@@ -91,18 +96,18 @@
 
 (defn do-register-write [collection op]
   (assert (= (:f op) :write))
-  (let [[rawkey opval] (:value op)
+  (let [[rawkey opVal] (:value op)
         dockey (format "jepsen%04d" rawkey)]
     (try
       (let [opts (doto (UpsertOptions/upsertOptions)
                    (apply-durability-options! op)
                    (apply-observe-options! op))
-            upsert-result (.upsert collection dockey opval opts)
-            mutation-token (.mutationToken upsert-result)]
+            upsert-result (.upsert ^Collection collection dockey opVal opts)
+            mutation-token (.mutationToken ^MutationResult upsert-result)]
         (assoc op
                :type :ok
-               :cas (.cas upsert-result)
-               :mutation-token (-> mutation-token (.orElse nil) (str))))
+               :cas (.cas ^MutationResult upsert-result)
+               :mutation-token (str mutation-token)))
       ;; Certain failures - we know the operations did not take effect
       (catch DurabilityImpossibleException _
         (assoc op :type :fail, :error :DurabilityImpossible))
@@ -123,25 +128,25 @@
 (defn do-register-cas [collection op]
   (assert (= (:f op) :cas))
   (let [[rawkey [swap-from swap-to]] (:value op)
-        dockey (format "jepsen%04d" rawkey)]
+        docKey (format "jepsen%04d" rawkey)]
     (try
-      (let [get-current (.get (.get collection dockey))
-            current-value (.contentAs get-current Integer)
+      (let [get-current ^GetResult (.get ^Collection collection docKey)
+            current-value (int get-current)
             current-cas (.cas get-current)]
         (if (= current-value swap-from)
           (let [opts (doto (ReplaceOptions/replaceOptions)
                        (.cas current-cas)
                        (apply-durability-options! op)
                        (apply-observe-options! op))
-                replace-result (.replace collection dockey swap-to opts)
-                mutation-token (.mutationToken replace-result)]
+                replace-result (.replace ^Collection collection docKey swap-to opts)
+                mutation-token (.mutationToken ^MutationResult replace-result)]
             (assoc op
                    :type :ok
                    :cas (.cas replace-result)
-                   :mutation-token (-> mutation-token (.orElse nil) (str))))
+                   :mutation-token (str mutation-token)))
           (assoc op :type :fail :error :ValueNotSwapFrom)))
       ;; Certain failures - we know the operations did not take effect
-      (catch java.util.NoSuchElementException _
+      (catch NoSuchElementException _
         (assoc op :type :fail, :error :GetFailed))
       (catch CASMismatchException _
         (assoc op :type :fail, :error :CasMismatch))
@@ -162,7 +167,7 @@
         (assoc op :type :info, :error e)))))
 
 (defn per-txn-config [op]
-  (if-let [durability-level (case (op :durability-level 0)
+  (if-let [durability-level (case (int (op :durability-level 0))
                               0 nil
                               1 TransactionDurabilityLevel/MAJORITY
                               2 TransactionDurabilityLevel/MAJORITY_AND_PERSIST_ON_MASTER
@@ -183,27 +188,27 @@
     (let [coll (atom collection)
           coll-index (first (:value op))
           op-attempt-history (atom [])
-          opvals (atom (second (:value op)))]
+          opVals (atom (second (:value op)))]
       (.run
-       txn
+       ^Transactions txn
        (f-to-consumer
-        (fn [ctx]
-          (doseq [op @opvals]
-            (let [[optype rawkey opval] op
-                  dockey (format "jepsen%04d" rawkey)]
-              (case optype
+        (fn [^AttemptContext ctx]
+          (doseq [op @opVals]
+            (let [[opType rawKey opVal] op
+                  docKey (format "jepsen%04d" rawKey)]
+              (case opType
                 :read
-                (let [get-result (.orElse (.get ctx @coll dockey) nil)
-                      get-value (if (nil? get-result) :nil (.contentAs get-result Integer))]
-                  (reset! op-attempt-history (conj @op-attempt-history [optype rawkey get-value])))
+                (let [get-result ^GetResult (.get ctx @coll docKey)
+                      get-value (if (nil? get-result) :nil (int get-result))]
+                  (reset! op-attempt-history (conj @op-attempt-history [opType rawKey get-value])))
                 :write
-                (let [get-result (.orElse (.get ctx @coll dockey) nil)]
+                (let [get-result (.get ctx @coll docKey)]
                   (if (nil? get-result)
-                    (.insert ctx @coll dockey opval)
-                    (.replace ctx get-result opval))
-                  (reset! op-attempt-history (conj @op-attempt-history [optype rawkey opval])))))))) (per-txn-config op))
+                    (.insert ctx @coll docKey opVal)
+                    (.replace ctx get-result opVal))
+                  (reset! op-attempt-history (conj @op-attempt-history [opType rawKey opVal])))))))) (per-txn-config op))
       (assoc op :type :ok,
-             :value (independent/tuple coll-index (take-last (count @opvals) @op-attempt-history))
+             :value (independent/tuple coll-index (take-last (count @opVals) @op-attempt-history))
              :attempt-history @op-attempt-history))
       ;; Certain failures - we know the operations did not take effect
     (catch TransactionFailed e
@@ -226,11 +231,11 @@
 
 (defrecord NewRegisterClient [cluster bucket collection env txn]
   client/Client
-  (open! [this test node]
-    (merge this (cbclients/get-client-from-pool test)))
+  (open! [this testData node]
+    (merge this (cbclients/get-client-from-pool testData)))
 
   (setup! [_ _])
-  (invoke! [_ test op]
+  (invoke! [_ testData op]
     (case (:f op)
       :read (do-register-read collection op)
       :write (do-register-write collection op)
@@ -239,8 +244,8 @@
 
   (close! [_ _])
 
-  (teardown! [_ test]
-    (cbclients/shutdown-pool test)))
+  (teardown! [_ testData]
+    (cbclients/shutdown-pool testData)))
 
 ;; Wrapper as records aren't externally visible
 (defn register-client []
@@ -255,9 +260,9 @@
     (let [opts (doto (InsertOptions/insertOptions)
                  (apply-durability-options! op)
                  (apply-observe-options! op))
-          dockey (format "jepsen%010d" (:value op))
-          result (.insert collection dockey (:value op) opts)
-          token  (.orElse (.mutationToken result) nil)]
+          docKey (format "jepsen%010d" (:value op))
+          result (.insert ^Collection collection docKey (:value op) opts)
+          token  (.orElse (.mutationToken ^MutationResult result) nil)]
       (assoc op
              :type :ok
              :mutation-token (str token)))
@@ -283,12 +288,12 @@
     (let [opts (doto (RemoveOptions/removeOptions)
                  (apply-durability-options! op)
                  (apply-observe-options! op))
-          dockey (format "jepsen%010d" (:value op))
-          result (.remove collection dockey opts)
-          token  (.mutationToken result)]
+          docKey (format "jepsen%010d" (:value op))
+          result (.remove ^Collection collection docKey opts)
+          token  (.mutationToken ^MutationResult result)]
       (assoc op
              :type :ok
-             :mutation-token (str token)))
+             :mutation-token (str ^MutationToken token)))
      ;; Certain failures - we know the operations did not take effect
     (catch DurabilityImpossibleException _
       (assoc op :type :fail, :error :DurabilityImpossible))
@@ -306,12 +311,12 @@
     (catch CouchbaseException e
       (assoc op :type :info, :error e))))
 
-(defn check-if-exists [collection rawkey]
-  (with-retry [attempts 120]
-    (let [key (format "jepsen%010d" rawkey)
-          get (.get collection key)]
+(defn check-if-exists [collection rawKey]
+  (domTop/with-retry [attempts 120]
+    (let [key (format "jepsen%010d" rawKey)]
+      (if (.get ^Collection collection key)
       ;; If the key is found, return it
-      rawkey)
+        rawKey))
     ;; Else if we get a KeyNotFoundException, return nil
     (catch KeyNotFoundException _ nil)
     ;; Retry other failures, throwing an exception if it persists
@@ -319,13 +324,13 @@
       (if (pos? attempts)
         (do (Thread/sleep 1000)
             (retry (dec attempts)))
-        (do (warn "Couldn't read key" rawkey)
+        (do (warn "Couldn't read key" rawKey)
             (throw e))))))
 
-(defrecord NewSetClient [cluster bucket collection dcpclient]
+(defrecord NewSetClient [cluster bucket collection dcpClient]
   client/Client
-  (open! [this test node]
-    (merge this (cbclients/get-client-from-pool test)))
+  (open! [this testData node]
+    (merge this (cbclients/get-client-from-pool testData)))
 
   (setup! [_ _])
   (invoke! [_ test op]
@@ -333,14 +338,14 @@
       :add (do-set-add collection op)
       :del (do-set-del collection op)
 
-      :read (if dcpclient
-              (->> (cbclients/get-all-keys dcpclient test)
+      :read (if dcpClient
+              (->> (cbclients/get-all-keys dcpClient test)
                    (map #(Integer/parseInt (subs % 6)))
                    (sort)
                    (assoc op :type :ok, :value))
               (try
                 (->> @(:history test)
-                     (filter #(and (= (:type %) :invoke)))
+                     (filter #(= (:type %) :invoke))
                      (apply max-key #(or (:value %) -1))
                      (:value)
                      (inc)
@@ -353,7 +358,7 @@
                   (warn "Encountered errors reading some keys, keys might be stuck pending?")
                   (assoc op :type :fail, :error e))))
 
-      :dcp-start-streaming (do (cbclients/start-streaming dcpclient test) op)))
+      :dcp-start-streaming (do (cbclients/start-streaming dcpClient test) op)))
   (close! [_ _])
   (teardown! [_ test]
     (cbclients/shutdown-pool test)))

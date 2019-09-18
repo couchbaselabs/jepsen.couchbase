@@ -4,7 +4,7 @@
             [clojure.java.io :as io]
             [clojure.tools.logging :refer [info warn error fatal]]
             [clojure.string :as str]
-            [dom-top.core :refer [with-retry]]
+            [dom-top.core :as domTop]
             [clj-http.client :as client]
             [cheshire.core :as json]
             [jepsen
@@ -12,8 +12,7 @@
              [net :as net]
              [store :as store]]
             [slingshot.slingshot :refer [try+ throw+]])
-  (:import java.io.File
-           (clojure.lang ExceptionInfo)))
+  (:import java.io.File))
 
 (defn get-node-name
   "Get the ns_server otpNode name for a given node"
@@ -393,8 +392,7 @@
   "Install the given package on the nodes"
   [package]
   (case (:type package)
-    :rpm (let [package-name (.getName (:package package))
-               split-package-name (str/split package-name #"-")]
+    :rpm (let [package-name (.getName ^File (:package package))]
            (try (do (info "checking if couchbase-server already installed...")
                     (c/su (c/exec (str "/opt/couchbase" "/bin/couchbase-server") :-v))
                     (info "couchbase-server is installed, removing...")
@@ -428,7 +426,7 @@
 (defn wait-for-daemon
   "Wait until couchbase server daemon has started"
   []
-  (with-retry [retry-count 30]
+  (domTop/with-retry [retry-count 30]
     (rest-call "/pools/" nil)
     (catch Exception _
       (Thread/sleep 2000)
@@ -524,7 +522,7 @@
           (catch RuntimeException e (info "rm -rf " (str path "/var/lib/couchbase") " failed: " (str e))))
         ;; Remove any leftover iptables rules from Jepsen's network partitions
         (locking teardown
-          (with-retry [retry-count 5]
+          (domTop/with-retry [retry-count 5]
             (net/heal! (:net test) test)
             (catch RuntimeException e
               (warn "Failed to heal network," retry-count "retries remaining")
@@ -553,10 +551,10 @@
     (info "TARing build...")
     (shell/sh "tar"
               "-Pcf"
-              (.getCanonicalPath package-file)
+              (.getCanonicalPath ^File package-file)
               "--owner=root"
               "--group=root"
-              (.getCanonicalPath build))
+              (.getCanonicalPath ^File build))
     (info "TAR complete")
     (.deleteOnExit package-file)
     package-file))
@@ -680,7 +678,7 @@
   if they have been removed from the cluster."
   [test]
   (into {} (keep (fn get-node-info-wrapper [target]
-                   (with-retry [retries 5]
+                   (domTop/with-retry [retries 5]
                      [target (get-node-info target)]
                      (catch Exception e
                        (if (pos? retries)

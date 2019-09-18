@@ -15,13 +15,13 @@
            com.couchbase.client.dcp.message.DcpExpirationMessage
            com.couchbase.client.dcp.message.DcpMutationMessage
            com.couchbase.client.dcp.message.DcpSnapshotMarkerRequest
-           com.couchbase.client.dcp.message.MessageUtil
            com.couchbase.client.dcp.message.RollbackMessage
-           com.couchbase.client.dcp.state.StateFormat
            com.couchbase.transactions.Transactions
            com.couchbase.transactions.config.TransactionConfigBuilder
-           com.couchbase.transactions.TransactionDurabilityLevel
-           java.time.Duration))
+           java.time.Duration
+           (rx.functions Action0 Action1)
+           rx.Completable
+           java.util.List))
 
 ;; Couchbase Java SDK setup
 
@@ -35,7 +35,7 @@
         timeout    (-> (TimeoutConfig/builder)
                        (.kvTimeout  (:kv-timeout test))
                        (.connectTimeout (Duration/ofSeconds (:connect-timeout test))))
-        env        (-> (ClusterEnvironment/builder node "Administrator" "abc123")
+        env        (-> (ClusterEnvironment/builder (str node) "Administrator" "abc123")
                        (.timeoutConfig timeout)
                        (.ioConfig ioConfig)
                        (.build))
@@ -45,7 +45,7 @@
         txn-config (if (:transactions test)
                      (.build (TransactionConfigBuilder/create)))
         txn        (if (:transactions test)
-                     (-> (Transactions/create cluster txn-config)))]
+                     (Transactions/create cluster txn-config))]
     {:cluster cluster :bucket bucket :collection collection :env env :txn txn}))
 
 ;; We want to operate with a large amount of jepsen clients in order to test
@@ -57,34 +57,34 @@
 ;; connections, which is required to detect some linearizability issues where
 ;; different clients see different data.
 (def client-pool (atom nil))
-(defn get-client-from-pool
-  [test]
+(defn  get-client-from-pool
+  [testData]
   (locking client-pool
     (when-not @client-pool
-      (reset! client-pool (->> (partial new-client test)
-                               (repeatedly (test :pool-size))
+      (reset! client-pool (->> (partial new-client testData)
+                               (repeatedly (:pool-size testData))
                                (doall)
                                (cycle)))
       (Thread/sleep 5000)))
   (ffirst (swap-vals! client-pool rest)))
 
 (defn shutdown-pool
-  [test]
+  [testData]
   (locking client-pool
     (when client-pool
-      (doseq [client (take (test :pool-size) @client-pool)]
+      (doseq [client (take (:pool-size testData) @client-pool)]
         (try
-          (some-> client :txn .close)
+          (.close ^Transactions (:txn client))
           (catch Exception e
             (warn "Ignored exception while closing transactions:" e))))
-      (doseq [client (take (test :pool-size) @client-pool)]
+      (doseq [client (take (:pool-size testData) @client-pool)]
         (try
-          (some-> client :cluster .shutdown)
+          (.shutdown ^Cluster (:cluster client))
           (catch Exception e
             (warn "Ignored exception while disconnecting from cluster:" e))))
-      (doseq [client (take (test :pool-size) @client-pool)]
+      (doseq [client (take (:pool-size testData) @client-pool)]
         (try
-          (some-> client :env .shutdown)
+          (.shutdown ^ClusterEnvironment (:env client))
           (catch Exception e
             (warn "Ignored exception while shutting down environment:" e))))
       (reset! client-pool nil))))
@@ -95,16 +95,16 @@
   (let [descr (RollbackMessage/toString event)
         vbid  (RollbackMessage/vbucket event)
         seqno (RollbackMessage/seqno   event)
-        oksub     (reify rx.functions.Action0
+        oksub     (reify Action0
                     (call [_] (info descr "completed ok")))
-        errorsub  (reify rx.functions.Action1
+        errorsub  (reify Action1
                     (call [_ e]
                       (reset! store :INVALID)
                       (throw e)))]
     (assert (not= @store :INVALID) "Store invalid")
     (info "DCPControlEventHandler got:" descr)
     (swap! store (partial remove #(and (= (:vbucket %) vbid) (> (:seqno %) seqno))))
-    (.subscribe (.rollbackAndRestartStream @client vbid seqno) oksub errorsub)))
+    (.subscribe ^Completable (.rollbackAndRestartStream ^Client @client vbid seqno) oksub errorsub)))
 
 (defn dcpControlEventHandler [{:keys [client store idle] :as client-record}]
   (reify ControlEventHandler
@@ -148,23 +148,23 @@
 
 (defn start-streaming [{:keys [client] :as client-record} test]
   (let [server-version (util/get-version (first (test :nodes)))
-        client-builder (-> (Client/configure)
-                           (.hostnames (test :nodes))
-                           (.controlParam DcpControl$Names/SUPPORTS_CURSOR_DROPPING true)
-                           (.controlParam DcpControl$Names/CONNECTION_BUFFER_SIZE 10000)
-                           (.bufferAckWatermark 75)
-                           (.bucket "default"))]
+        client-builder (doto (Client/configure)
+                         (.hostnames ^List (test :nodes))
+                         (.controlParam DcpControl$Names/SUPPORTS_CURSOR_DROPPING true)
+                         (.controlParam DcpControl$Names/CONNECTION_BUFFER_SIZE 10000)
+                         (.bufferAckWatermark 75)
+                         (.bucket "default"))]
     (if (or (>= (first server-version) 5)
             (zero? (first server-version)))
       (-> client-builder
           (.username "Administrator")
           (.password "abc123")))
     (reset! client (.build client-builder))
-    (.controlEventHandler @client (dcpControlEventHandler client-record))
-    (.dataEventHandler @client (dcpDataEventHandler client-record))
-    (-> @client (.connect) (.await))
-    (-> @client (.initializeState StreamFrom/BEGINNING StreamTo/INFINITY) (.await))
-    (-> @client (.startStreaming (make-array Short 0)) (.await))))
+    (.controlEventHandler ^Client @client (dcpControlEventHandler client-record))
+    (.dataEventHandler ^Client @client (dcpDataEventHandler client-record))
+    (-> ^Client @client (.connect) (.await))
+    (-> ^Client @client (.initializeState StreamFrom/BEGINNING StreamTo/INFINITY) (.await))
+    (-> ^Client @client (.startStreaming (make-array Short 0)) (.await))))
 
 (defn get-all-keys [{:keys [client store slow idle] :as client-record} test]
   (if-not @client
@@ -174,7 +174,7 @@
     (Thread/sleep 100)
     (swap! idle inc))
   (info "Finished getting mutations, disconnecting...")
-  (-> @client (.disconnect) (.await))
+  (-> ^Client @client (.disconnect) (.await))
   (info "Parsing results...")
   (if-not (= @store :INVALID)
     (->> (group-by :key @store)

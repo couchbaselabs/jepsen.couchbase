@@ -27,9 +27,9 @@
 (gen/defgenerator set-atom-stop
   []
   []
-  (op [_ test process]
-      (compare-and-set! (:control-atom test) :continue :stop)
-      nil))
+  (gen/op [_ test process]
+          (compare-and-set! (:control-atom test) :continue :stop)
+          nil))
 
 (gen/defgenerator start-timeout
   [timeout]
