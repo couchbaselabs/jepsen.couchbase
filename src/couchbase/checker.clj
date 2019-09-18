@@ -9,21 +9,21 @@
   "Return unknown validity if the test is broken."
   []
   (reify checker/Checker
-    (check [this test history opts]
+    (check [this testData history opts]
       (let [reads   (->> history (filter #(and (= (:f %) :read) (= (:type %) :invoke))) (count))
-            allfail? (fn [ftype] (> (->> history
-                                         (filter #(and (= (:f %) ftype) (= (:type %) :invoke)))
-                                         (count)
-                                         (* 0.01))
-                                    (->> history
-                                         (filter #(and (= (:f %) ftype) (= (:type %) :ok)))
-                                         (count))))
+            all-fail? (fn [ftype] (> (->> history
+                                          (filter #(and (= (:f %) ftype) (= (:type %) :invoke)))
+                                          (count)
+                                          (* 0.01))
+                                     (->> history
+                                          (filter #(and (= (:f %) ftype) (= (:type %) :ok)))
+                                          (count))))
             aborted (= @(:control-atom test) :abort)]
         (cond
           aborted {:valid? :unknown :error "Test aborted"}
-          (allfail? :read) {:valid? :unknown :error "Insufficient read ops returned :ok"}
-          (allfail? :write) {:valid? :unknown :error "Insufficient write ops returned :ok"}
-          (allfail? :add) {:valid? :unknown :error "Insufficient add ops returned :ok"}
+          (all-fail? :read) {:valid? :unknown :error "Insufficient read ops returned :ok"}
+          (all-fail? :write) {:valid? :unknown :error "Insufficient write ops returned :ok"}
+          (all-fail? :add) {:valid? :unknown :error "Insufficient add ops returned :ok"}
           :else   {:valid? true})))))
 
 (defn extended-set-checker
@@ -34,7 +34,7 @@
   the final operation."
   []
   (reify checker/Checker
-    (check [this test history opts]
+    (check [this testData history opts]
       (let [ops         (group-by #(str (name (:f %)) (name (:type %))) history)
             add-invoke  (->> (ops "addinvoke")  (r/map :value) (into #{}))
             add-ok      (->> (ops "addok")      (r/map :value) (into #{}))

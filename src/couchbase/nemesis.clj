@@ -1,10 +1,9 @@
 (ns couchbase.nemesis
   (:require [clojure
-             [set :as set]
-             [string :as string]]
+             [set :as set]]
             [clojure.tools.logging :refer [info warn error fatal]]
             [couchbase [util :as util]]
-            [dom-top.core :refer [with-retry]]
+            [dom-top.core :as domTop]
             [jepsen
              [control :as c]
              [generator :as gen]
@@ -17,15 +16,15 @@
 
 (defn basic-nodes-targeter
   "A basic targeter that selects :target-count (default 1) random nodes"
-  [test op]
-  (->> (:nodes test)
+  [testData op]
+  (->> (:nodes testData)
        (shuffle)
        (take (:target-count op 1))))
 
 (defn target-all-test-nodes
   "A targeter that always targets all the nodes in the test"
-  [test op]
-  (:nodes test))
+  [testData op]
+  (:nodes testData))
 
 (defn start-stop-targeter
   "Create a targeter functions with shared state, such that an op :action can
@@ -35,10 +34,10 @@
   Once a targeted node has received a :stop, it can again receive a :start."
   []
   (let [started (atom #{})]
-    (fn start-stop-targeter-invoke [test op]
+    (fn start-stop-targeter-invoke [testData op]
       (case (:target-action op)
         :start (let [target-count (:target-count op 1)
-                     all-nodes (set (:nodes test))
+                     all-nodes (set (:nodes testData))
                      possible-targets (set/difference all-nodes @started)
                      targets (take target-count (shuffle possible-targets))]
                  (if (not= target-count (count targets))
@@ -54,7 +53,7 @@
                 (swap! started set/difference (set targets))
                 targets)
         :swap (let [target-count (:target-count op 1)
-                    all-nodes (set (:nodes test))
+                    all-nodes (set (:nodes testData))
                     stop-targets (take target-count (shuffle @started))
                     start-targets (->> (set/difference all-nodes @started)
                                        (shuffle)
@@ -70,10 +69,10 @@
 
 (defn failover
   "Using the rest-api trigger a failover of the target nodes"
-  [test op]
+  [testData op]
   (assert (= (:f op) :failover))
   (let [fail-type (:failover-type op)
-        target-nodes ((:targeter op) test op)
+        target-nodes ((:targeter op) testData op)
         endpoint (case fail-type
                    :hard  "/controller/failOver"
                    :graceful "/controller/startGracefulFailover")]
@@ -86,10 +85,10 @@
 (defn recover
   "Attempt to detect and recover all failed-over nodes in the cluster. Note that
   if some failure condition is still applied to the nodes, this will likely fail."
-  [test op]
+  [testData op]
   (assert (= (:f op) :recover))
-  (with-retry [retry-count 10]
-    (let [status-maps (util/get-node-info-map test)
+  (domTop/with-retry [retry-count 10]
+    (let [status-maps (util/get-node-info-map testData)
 
           ;; Assert that all nodes see each other as healthy, if not we can't
           ;; recover. Node may be marked as unhealthy if ns_server has not yet
@@ -161,23 +160,23 @@
 (defn isolate-completely
   "Introduce a network partition that each targeted node is isolated from all
   other nodes in cluster."
-  [test op]
+  [testData op]
   (assert (= (:f op) :isolate-completely))
-  (let [isolate-nodes ((:targeter op) test op)
-        other-nodes (set/difference (set (:nodes test)) (set isolate-nodes))
+  (let [isolate-nodes ((:targeter op) testData op)
+        other-nodes (set/difference (set (:nodes testData)) (set isolate-nodes))
         partitions (conj (partition 1 isolate-nodes) other-nodes)
         grudge (nemesis/complete-grudge partitions)]
     (info "Applying grudge:" grudge)
-    (net/drop-all! test grudge)
+    (net/drop-all! testData grudge)
     (assoc op :value partitions)))
 
 (defn heal-network
   "Remove all active grudges from the network such that all nodes can
   communicate again."
-  [test op]
+  [testData op]
   (assert (= (:f op) :heal-network))
-  (with-retry [retry-count 5]
-    (net/heal! (:net test) test)
+  (domTop/with-retry [retry-count 5]
+    (net/heal! (:net testData) testData)
     (catch RuntimeException e
       (warn "Failed to heal network," retry-count "retries remaining")
       (if (pos? retry-count)
@@ -187,21 +186,21 @@
 
 (defn rebalance-out
   "Rebalance nodes out of the cluster."
-  [test op]
+  [testData op]
   (assert (= (:f op) :rebalance-out))
-  (let [eject-nodes ((:targeter op) test op)
-        cluster-nodes (util/get-cluster-nodes test)]
+  (let [eject-nodes ((:targeter op) testData op)
+        cluster-nodes (util/get-cluster-nodes testData)]
     (c/on (first (set/difference (set cluster-nodes) (set eject-nodes)))
           (util/rebalance cluster-nodes eject-nodes))
     (assoc op :value eject-nodes)))
 
 (defn rebalance-in
   "Rebalance node in to the cluster."
-  [test op]
+  [testData op]
   (assert (= (:f op) :rebalance-in))
-  (let [add-nodes ((:targeter op) test op)
+  (let [add-nodes ((:targeter op) testData op)
         add-options (:add-opts op)
-        cluster-nodes (util/get-cluster-nodes test)
+        cluster-nodes (util/get-cluster-nodes testData)
         new-cluster-nodes (set/union (set cluster-nodes) (set add-nodes))]
     (c/on (first cluster-nodes)
           (util/add-nodes add-nodes add-options)
@@ -210,12 +209,12 @@
 
 (defn swap-rebalance
   "Swap in new nodes for existing nodes."
-  [test op]
+  [testData op]
   (assert (= (:f op) :swap-rebalance))
-  (let [[add-nodes remove-nodes] ((:targeter op) test op)
+  (let [[add-nodes remove-nodes] ((:targeter op) testData op)
         add-count (count add-nodes)
         add-options (:add-opts op)
-        cluster-nodes (util/get-cluster-nodes test)
+        cluster-nodes (util/get-cluster-nodes testData)
         static-nodes (set/difference (set cluster-nodes) (set remove-nodes))]
     (c/on (first static-nodes)
           (util/add-nodes add-nodes add-options)
@@ -226,10 +225,10 @@
 (defn fail-rebalance
   "Start rebalancing nodes out of the cluster, then kill those node to cause
   a rebalance failure."
-  [test op]
+  [testData op]
   (assert (= (:f op) :fail-rebalance))
-  (let [target-nodes ((:targeter op) test op)
-        cluster-nodes (util/get-cluster-nodes test)
+  (let [target-nodes ((:targeter op) testData op)
+        cluster-nodes (util/get-cluster-nodes testData)
         rest-target (first (set/difference (set cluster-nodes)
                                            (set target-nodes)))
         rebalance-f (future (c/on rest-target
@@ -245,19 +244,19 @@
 
 (defn kill-process
   "Kill a process on the targeted noded"
-  [test op]
+  [testData op]
   (assert (= (:f op) :kill-process))
-  (let [target-nodes ((:targeter op) test op)
+  (let [target-nodes ((:targeter op) testData op)
         process (:kill-process op)]
     (doseq [node target-nodes] (util/kill-process node process))
     (assoc op :value target-nodes)))
 
 (defn start-process
   "Restart the Couchbase Server process"
-  [test op]
+  [testData op]
   (assert (= (:f op) :start-process))
-  (let [target-nodes ((:targeter op) test op)
-        exec-path (str (:install-path test) "/bin/couchbase-server")]
+  (let [target-nodes ((:targeter op) testData op)
+        exec-path (str (:install-path testData) "/bin/couchbase-server")]
     (c/on-many
      target-nodes
      (try
@@ -269,34 +268,34 @@
 
 (defn slow-dcp-client
   "Slow down the set workload DCP client"
-  [test op]
+  [testData op]
   (assert (= (:f op) :slow-dcp-client))
-  (assert (:dcp-set-read test))
-  (reset! (->> test :client :dcpclient :slow) true)
+  (assert (:dcp-set-read testData))
+  (reset! (->> testData :client :dcpclient :slow) true)
   op)
 
 (defn reset-dcp-client
   "Reset the set workload DCP client"
-  [test op]
+  [testData op]
   (assert (= (:f op) :reset-dcp-client))
-  (assert (:dcp-set-read test))
-  (reset! (->> test :client :dcpclient :slow) false)
+  (assert (:dcp-set-read testData))
+  (reset! (->> testData :client :dcpclient :slow) false)
   op)
 
 (defn trigger-compaction
   "Trigger compaction on the cluster"
-  [test op]
+  [testData op]
   (assert (= (:f op) :trigger-compaction))
-  (let [cluster-nodes (util/get-cluster-nodes test)]
+  (let [cluster-nodes (util/get-cluster-nodes testData)]
     (util/rest-call (rand-nth cluster-nodes)
                     "/pools/default/buckets/default/controller/compactBucket"
                     "")))
 
 (defn fail-disk
   "Simulate a disk failure on the targeted nodes"
-  [test op]
+  [testData op]
   (assert (= (:f op) :fail-disk))
-  (let [target-nodes ((:targeter op) test op)]
+  (let [target-nodes ((:targeter op) testData op)]
     (c/on-many
      target-nodes
      ;; Load a new (inactive) table that delays all disk IO by 25ms.
@@ -307,9 +306,9 @@
 
 (defn slow-disk
   "Slow down disk operations on the targeted nodes"
-  [test op]
+  [testData op]
   (assert (= (:f op) :slow-disk))
-  (let [target-nodes ((:targeter op) test op)]
+  (let [target-nodes ((:targeter op) testData op)]
     (c/on-many
      target-nodes
      ;; Load a new (inactive) table that delays all disk IO by 25ms.
@@ -320,9 +319,9 @@
 
 (defn reset-disk
   "Reset the virtual disk on the targeted nodes"
-  [test op]
+  [testData op]
   (assert (= (:f op) :reset-disk))
-  (let [target-nodes ((:targeter op) test op)]
+  (let [target-nodes ((:targeter op) testData op)]
     (c/on-many
      target-nodes
      (c/su (c/exec :dmsetup :load :cbdata :--table
@@ -338,33 +337,33 @@
   successive invokation is valid."
   []
   (reify nemesis/Nemesis
-    (setup! [this test] this)
+    (setup! [this testData] this)
 
-    (invoke! [this test op]
+    (invoke! [this testData op]
       (case (:f op)
-        :failover (failover test op)
-        :recover (recover test op)
-        :isolate-completely (isolate-completely test op)
-        :heal-network (heal-network test op)
+        :failover (failover testData op)
+        :recover (recover testData op)
+        :isolate-completely (isolate-completely testData op)
+        :heal-network (heal-network testData op)
 
-        :rebalance-out (rebalance-out test op)
-        :rebalance-in (rebalance-in test op)
-        :swap-rebalance (swap-rebalance test op)
-        :fail-rebalance (fail-rebalance test op)
+        :rebalance-out (rebalance-out testData op)
+        :rebalance-in (rebalance-in testData op)
+        :swap-rebalance (swap-rebalance testData op)
+        :fail-rebalance (fail-rebalance testData op)
 
-        :kill-process (kill-process test op)
-        :start-process (start-process test op)
+        :kill-process (kill-process testData op)
+        :start-process (start-process testData op)
 
-        :slow-dcp-client (slow-dcp-client test op)
-        :reset-dcp-client (reset-dcp-client test op)
+        :slow-dcp-client (slow-dcp-client testData op)
+        :reset-dcp-client (reset-dcp-client testData op)
 
-        :trigger-compaction (trigger-compaction test op)
+        :trigger-compaction (trigger-compaction testData op)
 
-        :fail-disk (fail-disk test op)
-        :slow-disk (slow-disk test op)
-        :reset-disk (reset-disk test op)
+        :fail-disk (fail-disk testData op)
+        :slow-disk (slow-disk testData op)
+        :reset-disk (reset-disk testData op)
 
         :noop op))
 
-    (teardown! [this test])))
+    (teardown! [this testData])))
 

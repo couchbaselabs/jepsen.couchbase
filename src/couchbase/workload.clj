@@ -20,23 +20,23 @@
 (gen/defgenerator while-atom-continue
   [gen]
   [gen]
-  (op [_ test process]
-      (if (= @(:control-atom test) :continue)
-        (gen/op gen test process))))
+  (op [_ testData process]
+      (if (= @(:control-atom testData) :continue)
+        (gen/op gen testData process))))
 
 (gen/defgenerator set-atom-stop
   []
   []
-  (gen/op [_ test process]
-          (compare-and-set! (:control-atom test) :continue :stop)
+  (gen/op [_ testData process]
+          (compare-and-set! (:control-atom testData) :continue :stop)
           nil))
 
 (gen/defgenerator start-timeout
   [timeout]
   [timeout]
-  (op [_ test process]
+  (op [_ testData process]
       (future (do (Thread/sleep timeout)
-                  (if (compare-and-set! (:control-atom test) :continue :abort)
+                  (if (compare-and-set! (:control-atom testData) :continue :abort)
                     (error "TEST TIMEOUT EXCEEDED, ABORTING"))))
       nil))
 

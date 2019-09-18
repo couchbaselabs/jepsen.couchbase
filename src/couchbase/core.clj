@@ -4,7 +4,7 @@
             [couchbase
              [util     :as util]
              [workload :as workload]]
-            [dom-top.core :refer [with-retry]]
+            [dom-top.core :as domTop]
             [jepsen
              [cli     :as cli]
              [control :as c]
@@ -19,16 +19,16 @@
   (let [collected-logs (atom [])]
     (reify
       db/DB
-      (setup!    [_ test node] (util/setup-node test node))
-      (teardown! [_ test node] (util/teardown test))
+      (setup!    [_ testData node] (util/setup-node testData node))
+      (teardown! [_ testData node] (util/teardown testData))
 
       db/Primary
-      (setup-primary! [_ test node]
-        (util/setup-cluster test node)
-        (compare-and-set! (test :db-intialized) false true))
+      (setup-primary! [_ testData node]
+        (util/setup-cluster testData node)
+        (compare-and-set! (:db-intialized testData) false true))
 
       db/LogFiles
-      (log-files [_ test node]
+      (log-files [_ testData node]
         ;; Following the update from Jepsen 0.1.11 -> 0.1.14, this function
         ;; is for some reason being called multiple times for the same
         ;; node. I'm not sure what is triggering this, but it causes issues
@@ -38,7 +38,7 @@
         (if (->> (swap-vals! collected-logs conj node)
                  (first)
                  (not-any? #{node}))
-          (util/get-remote-logs test)
+          (util/get-remote-logs testData)
           (warn "Ignoring duplicate log collection request"))))))
 
 (defn couchbase-cluster-run
@@ -48,23 +48,23 @@
         collected-logs (atom {})]
     (reify
       db/DB
-      (setup! [_ test node] nil)
-      (teardown! [_ test node]
+      (setup! [_ testData node] nil)
+      (teardown! [_ testData node]
         (some-> @cluster-run-future future-cancel))
 
       db/Primary
-      (setup-primary! [_ test node]
-        (reset! cluster-run-future (util/start-cluster-run test))
-        (util/setup-cluster test node))
+      (setup-primary! [_ testData node]
+        (reset! cluster-run-future (util/start-cluster-run testData))
+        (util/setup-cluster testData node))
 
       db/LogFiles
-      (log-files [_ test node]
+      (log-files [_ testData node]
         ;; Avoid the same duplicate logging issue as above
         (when (->> (swap-vals! collected-logs assoc node :started)
                    (first)
                    (keys)
                    (not-any? #{node}))
-          (util/get-cluster-run-logs test node)
+          (util/get-cluster-run-logs testData node)
           ;; Since all node get killed during teardown, we need to hang on
           ;; log-files until all nodes have finished collecting logs.
           (swap! collected-logs assoc node :done)
@@ -331,13 +331,13 @@
   (alter-var-root
    (var jepsen.nemesis/invoke-compat!)
    (fn [invoke-compat!]
-     (fn [nemesis test op]
+     (fn [nemesis testData op]
        (try
-         (invoke-compat! nemesis test op)
+         (invoke-compat! nemesis testData op)
          (catch Exception e
-           (if (:control-atom test)
+           (if (:control-atom testData)
              (do
-               (compare-and-set! (:control-atom test) :continue :abort)
+               (compare-and-set! (:control-atom testData) :continue :abort)
                (error "Caught exception in nemesis, aborting test.")
                (throw e))
              (do
@@ -359,7 +359,7 @@
    (var jepsen.control/download)
    (fn [download]
      (fn [& args]
-       (with-retry [attempts 5]
+       (domTop/with-retry [attempts 5]
          (apply download args)
          (catch ArrayIndexOutOfBoundsException _
            (warn "Encountered clj-ssh issue #59 during log download")
@@ -372,7 +372,7 @@
              (error (str "Log download failed due to exception " (.getMessage e)))))))))
 
   ;; Now parse args and run the test
-  (let [test (cli/single-test-cmd {:test-fn  cbtest
-                                   :opt-spec extra-cli-options})
+  (let [testData (cli/single-test-cmd {:test-fn  cbtest
+                                       :opt-spec extra-cli-options})
         serve (cli/serve-cmd)]
-    (cli/run! (merge test serve) args)))
+    (cli/run! (merge testData serve) args)))

@@ -70,16 +70,16 @@
 
 (defn do-register-read [collection op]
   (assert (= (:f op) :read))
-  (let [[rawkey _] (:value op)
-        dockey (format "jepsen%04d" rawkey)]
+  (let [[rawKey _] (:value op)
+        docKey (format "jepsen%04d" rawKey)]
     (try
-      (let [get-result (.get ^Collection collection dockey)]
+      (let [get-result (.get ^Collection collection docKey)]
         (assoc op
                :type :ok
                :cas (.cas ^GetResult get-result)
-               :value (independent/tuple rawkey (int get-result))))
+               :value (independent/tuple rawKey (int get-result))))
       (catch KeyNotFoundException _
-        (assoc op :type :ok :value (independent/tuple rawkey :nil)))
+        (assoc op :type :ok :value (independent/tuple rawKey :nil)))
       ;; Reads are idempotent, so it's ok to just :fail on any exception. Note
       ;; that we don't :fail on a KeyNotFoundException, since translating between
       ;; the Couchbase and Jepsen models we know the read succeeded, but it wouldn't
@@ -177,8 +177,8 @@
         (.build))
     (.build (PerTransactionConfigBuilder/create))))
 
+;"Converts a function to java.util.function.Consumer."
 (defn ^Consumer f-to-consumer [f]
-  "Converts a function to java.util.function.Consumer."
   (reify Consumer
     (accept [this arg] (f arg))))
 
@@ -333,18 +333,18 @@
     (merge this (cbclients/get-client-from-pool testData)))
 
   (setup! [_ _])
-  (invoke! [_ test op]
+  (invoke! [_ testData op]
     (case (:f op)
       :add (do-set-add collection op)
       :del (do-set-del collection op)
 
       :read (if dcpClient
-              (->> (cbclients/get-all-keys dcpClient test)
+              (->> (cbclients/get-all-keys dcpClient testData)
                    (map #(Integer/parseInt (subs % 6)))
                    (sort)
                    (assoc op :type :ok, :value))
               (try
-                (->> @(:history test)
+                (->> @(:history testData)
                      (filter #(= (:type %) :invoke))
                      (apply max-key #(or (:value %) -1))
                      (:value)
@@ -358,10 +358,10 @@
                   (warn "Encountered errors reading some keys, keys might be stuck pending?")
                   (assoc op :type :fail, :error e))))
 
-      :dcp-start-streaming (do (cbclients/start-streaming dcpClient test) op)))
+      :dcp-start-streaming (do (cbclients/start-streaming dcpClient testData) op)))
   (close! [_ _])
-  (teardown! [_ test]
-    (cbclients/shutdown-pool test)))
+  (teardown! [_ testData]
+    (cbclients/shutdown-pool testData)))
 
 (defn set-client [dcpclient]
   (NewSetClient. nil nil nil dcpclient))

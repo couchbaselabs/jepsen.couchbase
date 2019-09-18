@@ -28,13 +28,13 @@
 (defn new-client
   "Open a new connection to the cluster, returning a map with the cluster,
   bucket, and collection instances"
-  [test]
+  [testData]
   (info "Opening new client")
-  (let [node       (->> test :nodes rand-nth util/get-connection-string)
+  (let [node       (->> testData :nodes rand-nth util/get-connection-string)
         ioConfig   (.mutationTokensEnabled (IoConfig/builder) true)
         timeout    (-> (TimeoutConfig/builder)
-                       (.kvTimeout  (:kv-timeout test))
-                       (.connectTimeout (Duration/ofSeconds (:connect-timeout test))))
+                       (.kvTimeout  (:kv-timeout testData))
+                       (.connectTimeout (Duration/ofSeconds (:connect-timeout testData))))
         env        (-> (ClusterEnvironment/builder (str node) "Administrator" "abc123")
                        (.timeoutConfig timeout)
                        (.ioConfig ioConfig)
@@ -42,9 +42,9 @@
         cluster    (Cluster/connect env)
         bucket     (.bucket cluster "default")
         collection (.defaultCollection bucket)
-        txn-config (if (:transactions test)
+        txn-config (if (:transactions testData)
                      (.build (TransactionConfigBuilder/create)))
-        txn        (if (:transactions test)
+        txn        (if (:transactions testData)
                      (Transactions/create cluster txn-config))]
     {:cluster cluster :bucket bucket :collection collection :env env :txn txn}))
 
@@ -95,16 +95,16 @@
   (let [descr (RollbackMessage/toString event)
         vbid  (RollbackMessage/vbucket event)
         seqno (RollbackMessage/seqno   event)
-        oksub     (reify Action0
+        okSub     (reify Action0
                     (call [_] (info descr "completed ok")))
-        errorsub  (reify Action1
+        errorSub  (reify Action1
                     (call [_ e]
                       (reset! store :INVALID)
                       (throw e)))]
     (assert (not= @store :INVALID) "Store invalid")
     (info "DCPControlEventHandler got:" descr)
     (swap! store (partial remove #(and (= (:vbucket %) vbid) (> (:seqno %) seqno))))
-    (.subscribe ^Completable (.rollbackAndRestartStream ^Client @client vbid seqno) oksub errorsub)))
+    (.subscribe ^Completable (.rollbackAndRestartStream ^Client @client vbid seqno) okSub errorSub)))
 
 (defn dcpControlEventHandler [{:keys [client store idle] :as client-record}]
   (reify ControlEventHandler
@@ -146,10 +146,10 @@
       (.ack flowController event)
       (.release event))))
 
-(defn start-streaming [{:keys [client] :as client-record} test]
-  (let [server-version (util/get-version (first (test :nodes)))
+(defn start-streaming [{:keys [client] :as client-record} testData]
+  (let [server-version (util/get-version (first (:nodes testData)))
         client-builder (doto (Client/configure)
-                         (.hostnames ^List (test :nodes))
+                         (.hostnames ^List (:nodes testData))
                          (.controlParam DcpControl$Names/SUPPORTS_CURSOR_DROPPING true)
                          (.controlParam DcpControl$Names/CONNECTION_BUFFER_SIZE 10000)
                          (.bufferAckWatermark 75)

@@ -85,7 +85,7 @@
          (warn "Rest call to" uri "with params" params "threw exception.")
          (throw e))))))
 
-;; On recent version versions of Couchbase Server /diag/eval is only accesible
+;; On recent version versions of Couchbase Server /diag/eval is only accessible
 ;; from localhost, so we need to ssh into the node and curl from there. In
 ;; cluster-run scenarios we don't have any ssh sessions, in this case we call
 ;; curl from a local shell to keep argument handling identical.
@@ -224,20 +224,20 @@
 
 (defn set-vbucket-count
   "Set the number of vbuckets for new buckets"
-  [test]
-  (if-let [num-vbucket (test :custom-vbucket-count)]
+  [testData]
+  (if-let [num-vbucket (:custom-vbucket-count testData)]
     (diag-eval (format "ns_config:set(couchbase_num_vbuckets_default, %s)."
                        num-vbucket))))
 
 (defn set-autofailover
   "Apply autofailover settings to cluster"
-  [test]
-  (let [enabled (boolean (test :autofailover))
-        sg-enabled (boolean (test :server-group-autofailover))
-        disk-enabled (boolean (test :disk-autofailover))
-        timeout (or (test :autofailover-timeout) 6)
-        disk-timeout (or (test :disk-autofailover-timeout) 6)
-        maxcount (or (test :autofailover-maxcount) 3)]
+  [testData]
+  (let [enabled (boolean (:autofailover testData))
+        sg-enabled (boolean (:server-group-autofailover testData))
+        disk-enabled (boolean (:disk-autofailover testData))
+        timeout (or (:autofailover-timeout testData) 6)
+        disk-timeout (or (:disk-autofailover-timeout testData) 6)
+        maxcount (or (:autofailover-maxcount testData) 3)]
     (rest-call "/settings/autoFailover"
                {:enabled enabled
                 :timeout timeout
@@ -248,10 +248,10 @@
 
 (defn set-autoreprovision
   "Apply ephemeral autoreprovision settings to cluster"
-  [test]
+  [testData]
   (rest-call "/settings/autoReprovision"
-             {:enabled (test :autoreprovision)
-              :maxNodes (test :autoreprovision-maxnodes)}))
+             {:enabled (:autoreprovision testData)
+              :maxNodes (:autoreprovision-maxnodes testData)}))
 
 (defn wait-for-warmup
   "Wait for warmup to complete"
@@ -265,17 +265,17 @@
 
 (defn set-custom-cursor-drop-marks
   "Set the cursor dropping marks to a new value on all nodes"
-  [test]
-  (let [lower_mark (nth (test :custom-cursor-drop-marks) 0)
-        upper_mark (nth (test :custom-cursor-drop-marks) 1)
+  [testData]
+  (let [lower_mark (nth (:custom-cursor-drop-marks testData) 0)
+        upper_mark (nth (:custom-cursor-drop-marks testData) 1)
         config (format "cursor_dropping_lower_mark=%d;cursor_dropping_upper_mark=%d"
                        lower_mark
                        upper_mark)
         props (format "[{extra_config_string, \"%s\"}]" config)
         params (format "ns_bucket:update_bucket_props(\"default\", %s)." props)]
-    (doseq [node (test :nodes)]
+    (doseq [node (:nodes testData)]
       (diag-eval node params)))
-  (c/with-test-nodes test (kill-process c/*host* :memcached))
+  (c/with-test-nodes testData (kill-process c/*host* :memcached))
   ;; Before polling to check if we have warmed up again, we need to wait a while
   ;; for ns_server to detect memcached was killed
   (Thread/sleep 3000)
@@ -291,14 +291,14 @@
 
 (defn populate-server-groups
   "This function will deterministically add nodes to server groups"
-  [test]
+  [testData]
   (let [server-group-info (rest-call "/pools/default/serverGroups" nil)
         server-group-json (json/parse-string server-group-info true)
         revision-uri (:uri server-group-json)
         server-groups (:groups server-group-json)
         nodes (atom #{}) ; this will be used to build up and store the set of nodes in the cluster
         groups (atom []) ; this will be used to build up and store the vector of group json
-        endpoint (str "http://" (first (:nodes test)) ":8091" revision-uri)]
+        endpoint (str "http://" (first (:nodes testData)) ":8091" revision-uri)]
     ; accumulate nodes and groups into respective atoms
     (doseq [group server-groups]
       (reset! nodes (set/union @nodes (set (:nodes group))))
@@ -347,11 +347,11 @@
             (if @node-found group-name (recur (rest groups))))))))
 
 (defn setup-server-groups
-  [test]
-  (let [server-group-count (:server-group-count test)
-        nodes (:nodes test)]
+  [testData]
+  (let [server-group-count (:server-group-count testData)
+        nodes (:nodes testData)]
     (create-server-groups server-group-count)
-    (populate-server-groups test)))
+    (populate-server-groups testData)))
 
 (defn set-debug-log-level
   "Set log level of memcached to debug (1)"
@@ -361,30 +361,30 @@
 
 (defn setup-cluster
   "Setup couchbase cluster"
-  [test node]
+  [testData node]
   (info "Creating couchbase cluster from" node)
-  (let [nodes (test :nodes)
+  (let [nodes (:nodes testData)
         other-nodes (remove #(= node %) nodes)
-        bucket-type (test :bucket-type)
-        num-replicas (test :replicas)
+        bucket-type (:bucket-type testData)
+        num-replicas (:replicas testData)
         eviction-policy (if (= bucket-type :couchbase)
-                          (test :eviction-policy)
+                          (:eviction-policy testData)
                           :noEviction)]
-    (initialise test)
+    (initialise testData)
     (add-nodes other-nodes)
-    (set-vbucket-count test)
+    (set-vbucket-count testData)
     (if (> (count nodes) 1)
       (rebalance nodes))
-    (set-autofailover test)
-    (set-autoreprovision test)
+    (set-autofailover testData)
+    (set-autoreprovision testData)
     (create-bucket bucket-type num-replicas eviction-policy)
     (info "Waiting for bucket warmup to complete...")
     (wait-for-warmup)
-    (if (test :custom-cursor-drop-marks)
-      (set-custom-cursor-drop-marks test))
-    (if (:server-groups-enabled test)
-      (setup-server-groups test))
-    (if (:enable-memcached-debug-log-level test)
+    (if (:custom-cursor-drop-marks testData)
+      (set-custom-cursor-drop-marks testData))
+    (if (:server-groups-enabled testData)
+      (setup-server-groups testData))
+    (if (:enable-memcached-debug-log-level testData)
       (set-debug-log-level))
     (info "Setup complete")))
 
@@ -447,19 +447,19 @@
 
 (defn setup-tcp-packet-capture
   "Function to enable tcp packet capture on eth1"
-  [test node]
+  [testData node]
   (let [packet-capture-dir (str "/tmp/packet-capture/")
-        pack-dump-file (str packet-capture-dir (:name test) "-" node ".pcap")]
+        pack-dump-file (str packet-capture-dir (:name testData) "-" node ".pcap")]
     (c/su (c/exec :mkdir :-p packet-capture-dir))
     (info (str "packet dump file name " pack-dump-file))
     (c/ssh* {:cmd (str "screen -dmS test bash -c \"sudo -b tcpdump -C 500 -w " pack-dump-file " -i eth1 -s 0 tcp \"")})))
 
 (defn setup-node
   "Start Couchbase Server on a node"
-  [test node]
+  [testData node]
   (info "Setting up Couchbase Server")
-  (let [package (:package test)
-        install-path (:install-path test)
+  (let [package (:package testData)
+        install-path (:install-path testData)
         server-path (str install-path "/bin/couchbase-server")
         config-path (str install-path "/var/lib/couchbase")
         data-path (str config-path "/data")]
@@ -472,8 +472,8 @@
           (throw e)))
       (info "Package installed"))
     (info "Setting up data paths")
-    (if (:manipulate-disks test)
-      (setup-devmapper-device test)
+    (if (:manipulate-disks testData)
+      (setup-devmapper-device testData)
       (c/su (c/exec :mkdir :-p data-path)))
     (info "Changing permissions for" install-path)
     (c/su (c/exec :chmod :-R "a+rwx" install-path))
@@ -484,17 +484,17 @@
         (c/ssh* {:cmd (str "nohup " server-path " -- -noinput >> /dev/null 2>&1 &")})))
     (wait-for-daemon)
     (info "Daemon started")
-    (if (and (:enable-tcp-capture test) (not (:cluster-run test)))
-      (setup-tcp-packet-capture test node)
+    (if (and (:enable-tcp-capture testData) (not (:cluster-run testData)))
+      (setup-tcp-packet-capture testData node)
       (info "TCP packet capture is not enabled"))))
 
 (defn teardown
   "Stop the couchbase server instances and delete the data files"
-  [test]
+  [testData]
   (try
-    (if (and (test :skip-teardown) (deref (test :db-intialized)))
+    (if (and (:skip-teardown testData) (deref (:db-intialized testData)))
       (info "Skipping teardown of couchbase node")
-      (let [path (:install-path test)]
+      (let [path (:install-path testData)]
         (info "Tearing down couchbase node")
         (try
           (c/su (c/exec :systemctl :stop :couchbase-server))
@@ -523,7 +523,7 @@
         ;; Remove any leftover iptables rules from Jepsen's network partitions
         (locking teardown
           (domTop/with-retry [retry-count 5]
-            (net/heal! (:net test) test)
+            (net/heal! (:net testData) testData)
             (catch RuntimeException e
               (warn "Failed to heal network," retry-count "retries remaining")
               (if (pos? retry-count)
@@ -579,8 +579,8 @@
 
 (defn get-remote-logs
   "Get a vector of log file paths"
-  [test]
-  (let [install-dir (:install-path test)]
+  [testData]
+  (let [install-dir (:install-path testData)]
     (c/su (c/exec :rm :-rf "/tmp/jepsen-logs")
           (c/exec :mkdir :-m777 "/tmp/jepsen-logs")
           ;; This file is required to ensure consistent behaviour. We want
@@ -588,23 +588,23 @@
           ;; Otherwise, the root would some times be /tmp/jepsen-logs and
           ;; sometime the extracted cbcollect directory.
           (c/exec :touch "/tmp/jepsen-logs/.ignore"))
-    (when (test :cbcollect)
+    (when (:cbcollect testData)
       (info "Running cbcollect_info on" c/*host*)
       (c/su (c/exec (str install-dir "/bin/cbcollect_info") "/tmp/jepsen_cbcollect.zip")
             (c/exec :unzip "/tmp/jepsen_cbcollect.zip" :-d "/tmp/jepsen-logs")
             (c/exec :rm "/tmp/jepsen_cbcollect.zip")))
-    (when (test :hashdump)
+    (when (:hashdump testData)
       (info "Creating hashtable dump on" c/*host*)
-      (let [vbuckets (format "$(seq 0 %d)" (:custom-vbucket-count test 1024))
+      (let [vbuckets (format "$(seq 0 %d)" (:custom-vbucket-count testData 1024))
             cbstats (str install-dir "/bin/cbstats")
             hashcmd (str cbstats " localhost -u Administrator -p abc123 -b default raw \"_hash-dump $i\"")
             logfile "/tmp/jepsen-logs/hashtable_dump.txt"
             loopcmd (format "for i in %s; do (%s; echo) &>> %s; done" vbuckets hashcmd logfile)]
         (c/su (c/exec* loopcmd))))
-    (when (test :collect-data-files)
+    (when (:collect-data-files testData)
       (info "Collect Couchbase Servers data files")
-      (c/su (c/exec* (str "zip -r /tmp/jepsen-logs/data-files.zip " (str (str (:install-path test) "/var/lib/couchbase/data"))))))
-    (when (test :enable-tcp-capture)
+      (c/su (c/exec* (str "zip -r /tmp/jepsen-logs/data-files.zip " (str (str (:install-path testData) "/var/lib/couchbase/data"))))))
+    (when (:enable-tcp-capture testData)
       (info "Collecting tcp packet capture")
       (c/su (c/exec* (str "if [[ \"$(pgrep tcpdump)\" ]]; then kill -s TERM $(pgrep tcpdump); fi"))
             (c/exec* (str "mv /tmp/packet-capture/*.pcap* /tmp/jepsen-logs/"))))
@@ -613,8 +613,8 @@
 
 (defn get-cluster-run-logs
   "Collect logs for all nodes"
-  [test node]
-  (let [install-path (:install-path test)
+  [testData node]
+  (let [install-path (:install-path testData)
         cbcollect_info (.getCanonicalPath (io/file install-path "bin" "cbcollect_info"))
         initargs_file (.getCanonicalPath (io/file install-path
                                                   "../ns_server/data"
@@ -622,21 +622,21 @@
                                                       (str/split #"@")
                                                       (first))
                                                   "initargs"))
-        tmp-collect (.getCanonicalPath (store/path test (str "cbcollect-tmp-" node ".zip")))
-        extract-path (.getCanonicalPath (store/path test node))]
-    (when (test :cbcollect)
+        tmp-collect (.getCanonicalPath (store/path testData (str "cbcollect-tmp-" node ".zip")))
+        extract-path (.getCanonicalPath (store/path testData node))]
+    (when (:cbcollect testData)
       (info "Running cbcollect_info on" node)
       (shell/sh cbcollect_info
                 (str "--initargs=" initargs_file)
                 tmp-collect)
       (shell/sh "unzip" tmp-collect "-d" extract-path)
       (shell/sh "rm" tmp-collect))
-    (when (test :hashdump)
-      (let [vbuckets (format "$(seq 0 %d)" (:custom-vbucket-count test 1024))
+    (when (:hashdump testData)
+      (let [vbuckets (format "$(seq 0 %d)" (or (:custom-vbucket-count testData) 1024))
             cbstats (str install-path "/bin/cbstats")
             nodestr (get-connection-string node)
             hashcmd (str cbstats " " nodestr " -u Administrator -p abc123 -b default raw \"_hash-dump $i\"")
-            logfile (.getCanonicalPath (store/path test node "hashtable_dump.txt"))
+            logfile (.getCanonicalPath (store/path testData node "hashtable_dump.txt"))
             ;; OSX ships with an ancient version of bash that doesn't support &>>
             loopcmd (format "for i in %s; do (%s; echo) >> %s 2>&1 ; done" vbuckets hashcmd logfile)]
         (shell/sh "bash" "-c" loopcmd)))
