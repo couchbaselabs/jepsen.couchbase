@@ -2,7 +2,8 @@
   :description "Jepsen testing for couchbase"
   :main couchbase.core
   :plugins [[lein-cljfmt "0.6.4"]
-            [lein-kibit "0.1.7"]]
+            [lein-kibit "0.1.7"]
+            [jonase/eastwood "0.3.5"]]
   :dependencies [[org.clojure/clojure "1.10.1"]
                  [org.clojure/tools.cli "0.4.2"]
                  [jepsen "0.1.15"]
