@@ -73,10 +73,11 @@
   (locking client-pool
     (when client-pool
       (doseq [client (take (:pool-size testData) @client-pool)]
-        (try
-          (.close ^Transactions (:txn client))
-          (catch Exception e
-            (warn "Ignored exception while closing transactions:" e))))
+        (if (or (:transactions testData) (:mixed-txns testData))
+          (try
+            (.close ^Transactions (:txn client))
+            (catch Exception e
+              (warn "Ignored exception while closing transactions:" e)))))
       (doseq [client (take (:pool-size testData) @client-pool)]
         (try
           (.shutdown ^Cluster (:cluster client))

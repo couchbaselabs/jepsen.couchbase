@@ -18,7 +18,7 @@
                                      (->> history
                                           (filter #(and (= (:f %) ftype) (= (:type %) :ok)))
                                           (count))))
-            aborted (= @(:control-atom test) :abort)]
+            aborted (= @(:control-atom testData) :abort)]
         (cond
           aborted {:valid? :unknown :error "Test aborted"}
           (all-fail? :read) {:valid? :unknown :error "Insufficient read ops returned :ok"}

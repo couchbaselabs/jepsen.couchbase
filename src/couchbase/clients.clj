@@ -77,7 +77,7 @@
         (assoc op
                :type :ok
                :cas (.cas ^GetResult get-result)
-               :value (independent/tuple rawKey (int get-result))))
+               :value (independent/tuple rawKey ^Integer (.contentAs get-result Integer))))
       (catch KeyNotFoundException _
         (assoc op :type :ok :value (independent/tuple rawKey :nil)))
       ;; Reads are idempotent, so it's ok to just :fail on any exception. Note
