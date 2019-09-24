@@ -80,10 +80,12 @@ pass=0
 fail=0
 crash=0
 unknown=0
+memcached_failure=0
 test_num=1
 fail_array=()
 crash_array=()
 unknown_array=()
+memcached_array=()
 
 if [ "$JENKINS_RUN" ]; then
     rm -rf ./store
@@ -167,9 +169,24 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
 	EXITCODE=$?
     fi
 
+    LAST_RUN=$(cd ./store/latest; pwd -P)
+    if [[ "$PREVIOUS_RUN" != "$LAST_RUN" ]]; then
+        current_dir=$(pwd)
+        cd ${LAST_RUN}
+        find . -name "memcached.log*" -exec grep --with-filename --binary-files=text " ERROR \| CRITICAL " {} \; > error_msg_from_memcached.log
+        if [[ $(wc -l < error_msg_from_memcached.log) -gt 0 ]]; then
+            echo "Critical or Error log messages where found in memcached.log's"
+            echo "******************* memcached errors ************************"
+            cat error_msg_from_memcached.log
+            echo "*************************************************************"
+            memcached_failure=$(($memcached_failure+1))
+            memcached_array+=("#$test_num :: $testParams")
+        fi
+        cd ${current_dir}
+    fi
+
     if [ $EXITCODE -ne 0 ]; then
         cat "jepsen-output-$test_num.log"
-        LAST_RUN=$(cd ./store/latest; pwd -P)
         if [ "$PREVIOUS_RUN" != "$LAST_RUN" ] && grep -q -e "^ :valid? false" store/latest/results.edn; then
             grep -m 1 -e ":workload.*" store/latest/jepsen.log | cut -d "\"" -f 2 |
                 xargs printf "\n\nJepsen exited with failure for workload %s\n\n"
@@ -188,11 +205,11 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
             pass=$(($pass+1))
             printf "Test passed!\n"
             if [ "$JENKINS_RUN" ]; then
-                lastrundir=$(ls ./store/Couchbase/ | grep -v 'latest' | grep -v 'pass' | tail -1)
-                mv ./store/Couchbase/$lastrundir ./store/Couchbase/pass
-                ln -s ./store/Couchbase/pass/$lastrundir ./store/latest
+                lastRunDir=$(ls ./store/Couchbase/ | grep -v 'latest' | grep -v 'pass' | tail -1)
+                mv ./store/Couchbase/${lastRunDir} ./store/Couchbase/pass
+                ln -s ./store/Couchbase/pass/${lastRunDir} ./store/latest
             fi
-        elif tail -n 1 $LAST_RUN/results.edn | grep -q ":valid? :unknown" ; then
+        elif tail -n 1 ${LAST_RUN}/results.edn | grep -q ":valid? :unknown" ; then
             unknown=$(($unknown+1))
             unknown_array+=("#$test_num :: $testParams")
             printf "Test history could not be validated\n"
@@ -208,6 +225,7 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
     echo "unknown: $unknown"
     echo "fail: $fail"
     echo "crash: $crash"
+    echo "memcached errors (not reported as total): $memcached_failure"
     echo "$pass/$total = $percent%"
     if [ "$unknown" -gt 0 ]; then
         echo "###### Unknown Tests ######"
@@ -221,7 +239,11 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
         echo "###### Crashed Tests ########"
         printf '%s\n' "${crash_array[@]}"
     fi
-    echo "############################"
+    if [ "$memcached_failure" -gt 0 ]; then
+        echo "###### Memcached errors ######"
+        printf '%s\n' "${memcached_array[@]}"
+    fi
+    echo "################################################################"
 
     if [ "$ISBUILD" = 1 ]; then
         packageParam="--install-path $PACKAGE";
@@ -234,7 +256,7 @@ done < "$SUITE"
 echo "###### Finished Running Suite #########"
 
 if [ $KV_CV_RUN ]; then
-    #Rename this test run to the suite name we just ran
+    # Rename this test run to the suite name we just ran
     if [ -d ./store/Couchbase-$testStoreName ]; then
         mv ./store/Couchbase/*  ./store/Couchbase-$testStoreName/
     else
@@ -250,6 +272,7 @@ echo "pass: $pass" >> ./test_report.txt
 echo "unknown: $unknown" >> ./test_report.txt
 echo "fail: $fail" >> ./test_report.txt
 echo "crash: $crash" >> ./test_report.txt
+echo "memcached errors (not reported as total): $memcached_failure" >> ./test_report.txt
 echo "$pass/$total = $percent%" >> ./test_report.txt
 if [ "$unknown" -gt 0 ]; then
     echo "###### Unknown Tests ########" >> ./test_report.txt
@@ -263,7 +286,11 @@ if [ "$crash" -gt 0 ];then
     echo "###### Crashed Tests ########" >> ./test_report.txt
     printf '%s\n' "${crash_array[@]}" >> ./test_report.txt
 fi
-echo "############################" >> ./test_report.txt
+if [ "$memcached_failure" -gt 0 ]; then
+    echo "###### Memcached errors ######" >> ./test_report.txt
+    printf '%s\n' "${memcached_array[@]}" >> ./test_report.txt
+fi
+echo "################################################################" >> ./test_report.txt
 cat ./test_report.txt
 if [ "$JENKINS_RUN" ]; then
     mv ./test_report.txt ./store/Couchbase
@@ -280,6 +307,8 @@ elif [ "$crash" -gt 0 ]; then
     exit 4
 elif [ "$unknown" -gt 0 ]; then
     exit 2
+elif [ "$memcached_failure" -gt 0 ]; then
+    exit 3
 else
     exit 0
 fi
