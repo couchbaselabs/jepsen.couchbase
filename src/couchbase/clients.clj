@@ -33,7 +33,8 @@
            java.util.function.Consumer
            java.util.NoSuchElementException
            com.couchbase.transactions.AttemptContext
-           com.couchbase.client.core.msg.kv.MutationToken))
+           com.couchbase.client.core.msg.kv.MutationToken
+           com.couchbase.client.core.error.RequestCanceledException))
 
 ;; Helper functions to apply durability options
 
@@ -275,6 +276,8 @@
       (assoc op :type :fail, :error :SyncWriteInProgress))
     (catch TemporaryFailureException _
       (assoc op :type :fail :error :Etmpfail))
+    (catch RequestCanceledException _
+      (assoc op :type :fail :error :RequestCanceledException))
     ;; Ambiguous result - operation may or may not take effect
     (catch DurabilityAmbiguousException _
       (assoc op :type :info, :error :SyncWriteAmbiguous))
