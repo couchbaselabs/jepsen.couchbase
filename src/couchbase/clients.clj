@@ -26,7 +26,6 @@
            com.couchbase.client.core.error.TemporaryFailureException
            com.couchbase.client.core.msg.kv.DurabilityLevel
            com.couchbase.transactions.Transactions
-           com.couchbase.transactions.TransactionJsonDocument
            com.couchbase.transactions.error.TransactionFailed
            com.couchbase.transactions.config.PerTransactionConfigBuilder
            com.couchbase.transactions.TransactionDurabilityLevel

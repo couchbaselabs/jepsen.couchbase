@@ -2,6 +2,7 @@
   (:require [clojure.tools.logging :refer [info warn error fatal]]
             [couchbase.util :as util])
   (:import com.couchbase.client.java.Cluster
+           com.couchbase.client.java.ClusterOptions
            com.couchbase.client.java.env.ClusterEnvironment
            com.couchbase.client.core.env.IoConfig
            com.couchbase.client.core.env.TimeoutConfig
@@ -35,11 +36,14 @@
         timeout    (-> (TimeoutConfig/builder)
                        (.kvTimeout  (:kv-timeout testData))
                        (.connectTimeout (Duration/ofSeconds (:connect-timeout testData))))
-        env        (-> (ClusterEnvironment/builder (str node) "Administrator" "abc123")
+        env        (-> (ClusterEnvironment/builder)
                        (.timeoutConfig timeout)
                        (.ioConfig ioConfig)
                        (.build))
-        cluster    (Cluster/connect env)
+        clusterOps (.environment
+                    (ClusterOptions/clusterOptions "Administrator" "abc123")
+                    env)
+        cluster    (Cluster/connect (str node) clusterOps)
         bucket     (.bucket cluster "default")
         collection (.defaultCollection bucket)
         txn-config (if (:transactions testData)
@@ -80,7 +84,7 @@
               (warn "Ignored exception while closing transactions:" e)))))
       (doseq [client (take (:pool-size testData) @client-pool)]
         (try
-          (.shutdown ^Cluster (:cluster client))
+          (.disconnect ^Cluster (:cluster client))
           (catch Exception e
             (warn "Ignored exception while disconnecting from cluster:" e))))
       (doseq [client (take (:pool-size testData) @client-pool)]

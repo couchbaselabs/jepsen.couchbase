@@ -9,9 +9,11 @@
                  [jepsen "0.1.15"]
                  [cheshire "5.9.0"]
                  [clj-http "3.10.0"]
-                 [com.couchbase.client/core-io "2.0.0-alpha.7"]
-                 [com.couchbase.client/java-client "3.0.0-alpha.7"]]
-  :resource-paths ["./lib/dcp-client-0.23.0-SHADEDCORE.jar"
-                   "./lib/couchbase-transactions-1.0.0-alpha.3.jar"]
+                 [com.couchbase.client/core-io "2.0.0-beta.1"]
+                 [com.couchbase.client/java-client "3.0.0-beta.1"]
+                 [com.couchbase.client/couchbase-transactions "1.0.0-beta.3-SNAPSHOT"]]
+  :resource-paths ["./lib/dcp-client-0.23.0-SHADEDCORE.jar"]
   :repositories [["couchbase-preview" {:url      "https://files.couchbase.com/maven2"
-                                       :checksum :ignore}]])
+                                       :checksum :ignore}]
+                 ["couchbase-snapshot" {:url "https://oss.sonatype.org/content/repositories/snapshots"
+                                        :checksum :ignore}]])
