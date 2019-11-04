@@ -87,7 +87,12 @@
            (or (not= (:replicate-to opts) 0)
                (not= (:persist-to opts) 0)))
     (throw (RuntimeException.
-            "Cannot combine sync-rep --durability with observe based --replicate-to or --persist-to"))))
+            "Cannot combine sync-rep --durability with observe based --replicate-to or --persist-to")))
+  (when (= (:workload opts) "disk-failure")
+    (if-not (:manipulate-disks opts)
+      (throw (RuntimeException. "disk-failover workload requires --manipulate-disks option")))
+    (if (not= (:cycles opts 1) 1)
+      (throw (RuntimeException. "disk-failover workload only supports a single \"cycle\"")))))
 
 ;; The actual testcase, merge the user options, basic parameters and workload
 ;; parameters into something that can be passed into Jepsen to run
