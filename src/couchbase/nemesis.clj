@@ -298,10 +298,11 @@
   (let [target-nodes ((:targeter op) testData op)]
     (c/on-many
      target-nodes
-     ;; Load a new (inactive) table that delays all disk IO by 25ms.
-     (c/su (c/exec :dmsetup :load :cbdata :--table
-                   (c/lit "'0 1048576 delay /dev/loop0 0 25 /dev/loop0 0 25'"))
-           (c/exec :dmsetup :resume :cbdata)))
+     (c/su (c/exec :dmsetup :wipe_table :cbdata :--noflush :--nolockfs)
+           ;; Drop buffers. Since most of our tests use little data we can read
+           ;; everything from the filesystem level buffer despite the block device
+           ;; returning errors.
+           (c/exec :echo "3" :> "/proc/sys/vm/drop_caches")))
     (assoc op :value target-nodes)))
 
 (defn slow-disk
