@@ -96,3 +96,14 @@ Start a server on `http://localhost:8080` to show the results with a simple inte
 ```
 lein trampoline run serve
 ```
+
+#Development
+##Checking your commit
+Before push your code for review its important to check that the patch will pass our commit validation. 
+To do this use:
+```bash
+chmod +x cv-checks.sh
+./cv-checks.sh
+```
+This will run the same checks that are used on our Jenkins commit validation job. Its also important if adding or 
+editing a workload/nemesis that they are tested, as the commit validator is unable to do this.
