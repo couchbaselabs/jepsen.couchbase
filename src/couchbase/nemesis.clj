@@ -266,6 +266,19 @@
      (util/wait-for-daemon))
     (assoc op :value target-nodes)))
 
+(defn hard-reboot
+  "Method to perform a hard reboot of on a set of target nodes"
+  [testData op]
+  (assert (= (:f op) :hard-reboot))
+  (let [target-nodes ((:targeter op) testData op)]
+    (info "About to reboot " (str target-nodes))
+    (c/on-many target-nodes
+               (try
+                 (c/su (c/exec :sudo :poweroff :--reboot))
+                 (catch Exception e
+                   (warn "Nemesis failed " (str e)))))
+    (assoc op :value target-nodes)))
+
 (defn slow-dcp-client
   "Slow down the set workload DCP client"
   [testData op]
@@ -354,6 +367,7 @@
 
         :kill-process (kill-process testData op)
         :start-process (start-process testData op)
+        :hard-reboot (hard-reboot testData op)
 
         :slow-dcp-client (slow-dcp-client testData op)
         :reset-dcp-client (reset-dcp-client testData op)

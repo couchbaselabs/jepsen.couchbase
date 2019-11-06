@@ -464,6 +464,15 @@
                                        :f :recover
                                        :recovery-type recovery-type}
                                       (gen/sleep 5)]
+                                     client-generator)
+                :hard-reboot
+                (do-n-nemesis-cycles cycles
+                                     [(gen/sleep 10)
+                                      {:type :info
+                                       :f :hard-reboot
+                                       :targeter cbnemesis/basic-nodes-targeter
+                                       :target-count disrupt-count}
+                                      (gen/sleep 60)]
                                      client-generator))))
 
 (defn disk-failure-workload
@@ -781,6 +790,15 @@
                                         :f :recover
                                         :recovery-type recovery-type}
                                        (gen/sleep 10)]
+                                      client-gen)
+                 :hard-reboot
+                 (do-n-nemesis-cycles cycles
+                                      [(gen/sleep 10)
+                                       {:type :info
+                                        :f :hard-reboot
+                                        :targeter cbnemesis/basic-nodes-targeter
+                                        :target-count disrupt-count}
+                                       (gen/sleep 60)]
                                       client-gen))
                (gen/clients (gen/once {:type :invoke :f :read :value nil})))))
 
