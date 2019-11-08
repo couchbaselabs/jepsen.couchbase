@@ -40,30 +40,52 @@
     (str "127.0.0.1:" (-> port (Integer/parseInt) (- 9000) (* 2) (+ 12000)))
     node))
 
-(defn kill-process
-  "Kill a Couchbase Server process of the target node"
-  [node process]
-  (if (re-matches #"127.0.0.1:(\d+)" node)
-    (let [node-id (-> (get-node-name node) (str/split #"@") (first))]
+(defn is-cluster-run-node
+  [node-string]
+  (re-matches #"127.0.0.1:(\d+)" node-string))
+
+(defn get-node-id-from-node-hostname
+  [node-string]
+  (-> (get-node-name node-string) (str/split #"@") (first)))
+
+(defn perform-kill-command
+  [node process kill-arg]
+  (if (is-cluster-run-node node)
+    (let [node-id (get-node-id-from-node-hostname node)]
       (case process
         ;; On some systems (notably OSX) pgrep seems to have an issue where with very
         ;; long command argument lists it doesn't search the list, even with the -f
         ;; option, so pipe the output through normal grep
-        :babysitter (shell/sh "kill" "-9" (str "$(pgrep -lf memcached | grep -E \""
-                                               node-id
-                                               "[^0-9]\" cut -d \" \" -f 1 | head -n 1)"))
+        :babysitter (shell/sh "kill" (str kill-arg) (str "$(pgrep -lf memcached | grep -E \""
+                                                         node-id
+                                                         "[^0-9]\" cut -d \" \" -f 1 | head -n 1)"))
 
-        :ns-server (shell/sh "kill" "-9" (str "$(pgrep -lf memcached | grep -E \""
-                                              node-id
-                                              "[^0-9]\" cut -d \" \" -f 1 | tail -n +2)"))
+        :ns-server (shell/sh "kill" (str kill-arg) (str "$(pgrep -lf memcached | grep -E \""
+                                                        node-id
+                                                        "[^0-9]\" cut -d \" \" -f 1 | tail -n +2)"))
 
-        :memcached (shell/sh "kill" "-9" (str "$(pgrep -lf memcached | grep -E \""
-                                              node-id
-                                              "[^0-9]\" cut -d \" \" -f 1)"))))
+        :memcached (shell/sh "kill" (str kill-arg) (str "$(pgrep -lf memcached | grep -E \""
+                                                        node-id
+                                                        "[^0-9]\" cut -d \" \" -f 1)"))))
     (case process
-      :babysitter (c/on node (c/su (c/exec :bash :-c "kill -9 $(pgrep beam.smp | head -n 1)")))
-      :ns-server (c/on node (c/su (c/exec :bash :-c "kill -9 $(pgrep beam.smp | tail -n +2)")))
-      :memcached (c/on node (c/su (c/exec :bash :-c "kill -9 $(pgrep memcached)"))))))
+      :babysitter (c/on node (c/su (c/exec :bash :-c (str "kill " (str kill-arg) " $(pgrep beam.smp | head -n 1)"))))
+      :ns-server (c/on node (c/su (c/exec :bash :-c (str "kill " (str kill-arg) " $(pgrep beam.smp | tail -n +2)"))))
+      :memcached (c/on node (c/su (c/exec :bash :-c (str "kill " (str kill-arg) " $(pgrep memcached)")))))))
+
+(defn kill-process
+  "Kill a Couchbase Server process of the target node"
+  [node process]
+  (perform-kill-command node process "-SIGKILL"))
+
+(defn halt-process
+  "Function to halt a process"
+  [node process]
+  (perform-kill-command node process "-SIGSTOP"))
+
+(defn continue-process
+  "Function to continue a halted process"
+  [node process]
+  (perform-kill-command node process "-SIGCONT"))
 
 (defn rest-call
   "Perform a rest api call"

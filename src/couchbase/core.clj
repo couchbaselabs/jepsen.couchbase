@@ -92,7 +92,12 @@
     (if-not (:manipulate-disks opts)
       (throw (RuntimeException. "disk-failover workload requires --manipulate-disks option")))
     (if (not= (:cycles opts 1) 1)
-      (throw (RuntimeException. "disk-failover workload only supports a single \"cycle\"")))))
+      (throw (RuntimeException. "disk-failover workload only supports a single \"cycle\""))))
+  (when (and (or (= "set-kill" (:workload opts))
+                 (= "kill" (:workload opts)))
+             (= :suspend-process (:scenario opts)))
+    (if (nil? (:process-to-suspend opts))
+      (throw (RuntimeException. "For suspend-process scenario \"--process-to-suspend\" must be specified")))))
 
 ;; The actual testcase, merge the user options, basic parameters and workload
 ;; parameters into something that can be passed into Jepsen to run
@@ -301,7 +306,16 @@
     :default false]
    [nil "--collect-data-files"
     "Use to enable the collection of Couchbase-Servers data directory"
-    :default false]])
+    :default false]
+   [nil "--process-suspend-time"
+    "Use to set the number of seconds we should halt a process for"
+    :default 10
+    :parse-fn parse-int
+    :validate [#(and (number? %) (pos? %)) "Must be a number"]]
+   [nil "--process-to-suspend PROCESS"
+    "Use to specify the name of the process to halt and then continue during a kill or set-kill workload"
+    :parse-fn {"memcached" :memcached "ns-server" :ns-server "babysitter" :babysitter}
+    :validate [some? "Bucket type must be 'memcached', 'ns-server' or 'babysitter'"]]])
 
 (defn -main
   "Run the test specified by the cli arguments"

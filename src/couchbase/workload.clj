@@ -416,7 +416,7 @@
     random-server-group (if sg-enabled (util/random-server-group server-group-count))
     complementary-server-group (if sg-enabled (util/complementary-server-group server-group-count random-server-group))
     nemesis               (cbnemesis/couchbase)
-    babysitter-targeter   (cbnemesis/start-stop-targeter)
+    stop-start-targeter   (cbnemesis/start-stop-targeter)
     client-generator      (client-gen opts)
     generator (case scenario
                 :kill-memcached
@@ -451,7 +451,7 @@
                                       {:type :info
                                        :f :kill-process
                                        :kill-process :babysitter
-                                       :targeter babysitter-targeter
+                                       :targeter stop-start-targeter
                                        :target-count disrupt-count
                                        :target-action :start}
 
@@ -459,7 +459,7 @@
 
                                       {:type :info
                                        :f :start-process
-                                       :targeter babysitter-targeter
+                                       :targeter stop-start-targeter
                                        :target-count disrupt-count
                                        :target-action :stop}
 
@@ -481,6 +481,24 @@
                                       ; against ephemeral so we can read data back see MB-36800
                                       {:type :info
                                        :f :rebalance-cluster}]
+                                     client-generator)
+                :suspend-process
+                (do-n-nemesis-cycles cycles
+                                     [(gen/sleep 10)
+                                      {:type :info
+                                       :f :halt-process
+                                       :target-process (:process-to-suspend opts)
+                                       :targeter stop-start-targeter
+                                       :target-count disrupt-count
+                                       :target-action :start}
+                                      (gen/sleep (:process-suspend-time opts))
+                                      {:type :info
+                                       :f :continue-process
+                                       :target-process  (:process-to-suspend opts)
+                                       :targeter stop-start-targeter
+                                       :target-count disrupt-count
+                                       :target-action :stop}
+                                      (gen/sleep 5)]
                                      client-generator))))
 
 (defn disk-failure-workload
@@ -651,7 +669,7 @@
    disrupt-time          (opts :disrupt-time 30)
    client                (clients/set-client dcpclient)
    nemesis               (cbnemesis/couchbase)
-   babysitter-targeter   (cbnemesis/start-stop-targeter)
+   stop-start-targeter   (cbnemesis/start-stop-targeter)
    control-atom          (atom :continue)
    checker               (checker/compose
                           (merge
@@ -723,7 +741,7 @@
                                        {:type :info
                                         :f :kill-process
                                         :kill-process :babysitter
-                                        :targeter babysitter-targeter
+                                        :targeter stop-start-targeter
                                         :target-count disrupt-count
                                         :target-action :start}
 
@@ -731,7 +749,7 @@
 
                                        {:type :info
                                         :f :start-process
-                                        :targeter babysitter-targeter
+                                        :targeter stop-start-targeter
                                         :target-count disrupt-count
                                         :target-action :stop}
 
@@ -753,6 +771,24 @@
                                        ; against ephemeral so we can read data back see MB-36800
                                        {:type :info
                                         :f :rebalance-cluster}]
+                                      client-gen)
+                 :suspend-process
+                 (do-n-nemesis-cycles cycles
+                                      [(gen/sleep 10)
+                                       {:type           :info
+                                        :f              :halt-process
+                                        :targeter       stop-start-targeter
+                                        :target-process (:process-to-suspend opts)
+                                        :target-count   disrupt-count
+                                        :target-action  :start}
+                                       (gen/sleep (:process-suspend-time opts))
+                                       {:type :info
+                                        :f :continue-process
+                                        :target-process  (:process-to-suspend opts)
+                                        :targeter stop-start-targeter
+                                        :target-count disrupt-count
+                                        :target-action :stop}
+                                       (gen/sleep 5)]
                                       client-gen))
                (gen/clients (gen/once {:type :invoke :f :read :value nil})))))
 

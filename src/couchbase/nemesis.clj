@@ -266,6 +266,26 @@
      (util/wait-for-daemon))
     (assoc op :value target-nodes)))
 
+(defn halt-process
+  "Method suspend a process and resume if for after x number of seconds if :stall-for is not 0"
+  [testData op]
+  (assert (= (:f op) :halt-process))
+  (let [target-nodes ((:targeter op) testData op)
+        process (:target-process op)]
+    (doseq [node target-nodes]
+      (util/halt-process node process))
+    (assoc op :value target-nodes)))
+
+(defn continue-process
+  "Method suspend a process and resume if for after x number of seconds if :stall-for is not 0"
+  [testData op]
+  (assert (= (:f op) :continue-process))
+  (let [target-nodes ((:targeter op) testData op)
+        process (:target-process op)]
+    (doseq [node target-nodes]
+      (util/continue-process node process))
+    (assoc op :value target-nodes)))
+
 (defn hard-reboot
   "Method to perform a hard reboot of on a set of target nodes"
   [testData op]
@@ -375,6 +395,8 @@
 
         :kill-process (kill-process testData op)
         :start-process (start-process testData op)
+        :halt-process (halt-process testData op)
+        :continue-process (continue-process testData op)
         :hard-reboot (hard-reboot testData op)
         :rebalance-cluster (rebalance-cluster-end-of-test testData op)
 
