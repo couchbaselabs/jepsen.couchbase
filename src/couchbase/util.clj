@@ -448,7 +448,7 @@
 (defn setup-tcp-packet-capture
   "Function to enable tcp packet capture on eth1"
   [testData node]
-  (let [packet-capture-dir (str "/tmp/packet-capture/")
+  (let [packet-capture-dir (str "/packet-capture/")
         pack-dump-file (str packet-capture-dir (:name testData) "-" node ".pcap")]
     (c/su (c/exec :mkdir :-p packet-capture-dir))
     (info (str "packet dump file name " pack-dump-file))
@@ -607,7 +607,7 @@
     (when (:enable-tcp-capture testData)
       (info "Collecting tcp packet capture")
       (c/su (c/exec* (str "if [[ \"$(pgrep tcpdump)\" ]]; then kill -s TERM $(pgrep tcpdump); fi"))
-            (c/exec* (str "mv /tmp/packet-capture/*.pcap* /tmp/jepsen-logs/"))))
+            (c/exec* (str "mv /packet-capture/*.pcap* /tmp/jepsen-logs/"))))
     (c/su (c/exec :chmod :a+r :-R "/tmp/jepsen-logs"))
     (str/split-lines (c/exec :find "/tmp/jepsen-logs" :-type :f))))
 
