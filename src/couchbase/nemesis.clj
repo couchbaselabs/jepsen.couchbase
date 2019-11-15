@@ -279,6 +279,14 @@
                    (warn "Nemesis failed " (str e)))))
     (assoc op :value target-nodes)))
 
+(defn rebalance-cluster-end-of-test
+  "function to rebalance a cluster to ensure vbuckets are evenly distributed"
+  [testData op]
+  (when (and (= :ephemeral (:bucket-type testData)) (= (:replicas testData) (:disrupt-count testData)))
+    (info "Healing ephemeral bucket after kill of memcached so we can read back data")
+    (util/rebalance (util/get-cluster-nodes testData)))
+  (assoc op :value :rebalanced))
+
 (defn slow-dcp-client
   "Slow down the set workload DCP client"
   [testData op]
@@ -368,6 +376,7 @@
         :kill-process (kill-process testData op)
         :start-process (start-process testData op)
         :hard-reboot (hard-reboot testData op)
+        :rebalance-cluster (rebalance-cluster-end-of-test testData op)
 
         :slow-dcp-client (slow-dcp-client testData op)
         :reset-dcp-client (reset-dcp-client testData op)

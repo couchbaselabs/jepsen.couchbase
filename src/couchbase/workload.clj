@@ -427,7 +427,11 @@
                                        :kill-process :memcached
                                        :targeter cbnemesis/basic-nodes-targeter
                                        :target-count disrupt-count}
-                                      (gen/sleep 20)]
+                                      (gen/sleep 20)
+                                      ; We might need to rebalance the cluster if we're testing
+                                      ; against ephemeral so we can read data back see MB-36800
+                                      {:type :info
+                                       :f :rebalance-cluster}]
                                      client-generator)
 
                 :kill-ns-server
@@ -472,7 +476,11 @@
                                        :f :hard-reboot
                                        :targeter cbnemesis/basic-nodes-targeter
                                        :target-count disrupt-count}
-                                      (gen/sleep 60)]
+                                      (gen/sleep 60)
+                                      ; We might need to rebalance the cluster if we're testing
+                                      ; against ephemeral so we can read data back see MB-36800
+                                      {:type :info
+                                       :f :rebalance-cluster}]
                                      client-generator))))
 
 (defn disk-failure-workload
@@ -753,7 +761,11 @@
                                         :kill-process :memcached
                                         :targeter cbnemesis/basic-nodes-targeter
                                         :target-count disrupt-count}
-                                       (gen/sleep 20)]
+                                       (gen/sleep 20)
+                                       ; We might need to rebalance the cluster if we're testing
+                                       ; against ephemeral so we can read data back see MB-36800
+                                       {:type :info
+                                        :f :rebalance-cluster}]
                                       client-gen)
 
                  :kill-ns-server
@@ -798,7 +810,11 @@
                                         :f :hard-reboot
                                         :targeter cbnemesis/basic-nodes-targeter
                                         :target-count disrupt-count}
-                                       (gen/sleep 60)]
+                                       (gen/sleep 60)
+                                       ; We might need to rebalance the cluster if we're testing
+                                       ; against ephemeral so we can read data back see MB-36800
+                                       {:type :info
+                                        :f :rebalance-cluster}]
                                       client-gen))
                (gen/clients (gen/once {:type :invoke :f :read :value nil})))))
 
