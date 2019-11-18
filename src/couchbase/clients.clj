@@ -131,7 +131,7 @@
         docKey (format "jepsen%04d" rawkey)]
     (try
       (let [get-current ^GetResult (.get ^Collection collection docKey)
-            current-value (int get-current)
+            current-value (.contentAs get-current Integer)
             current-cas (.cas get-current)]
         (if (= current-value swap-from)
           (let [opts (doto (ReplaceOptions/replaceOptions)
