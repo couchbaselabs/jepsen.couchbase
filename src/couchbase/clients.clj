@@ -118,6 +118,8 @@
       (catch TemporaryFailureException _
         (assoc op :type :fail, :error :Etmpfail))
       ;; Ambiguous result - operation may or may not take effect
+      (catch RequestCanceledException _
+        (assoc op :type :info :error :RequestCanceledException))
       (catch DurabilityAmbiguousException _
         (assoc op :type :info, :error :SyncWriteAmbiguous))
       (catch RequestTimeoutException _
@@ -161,6 +163,8 @@
       (catch TemporaryFailureException _
         (assoc op :type :fail, :error :Etmpfail))
       ;; Ambiguous result - operation may or may not take effect
+      (catch RequestCanceledException _
+        (assoc op :type :info :error :RequestCanceledException))
       (catch DurabilityAmbiguousException _
         (assoc op :type :info, :error :SyncWriteAmbiguous))
       (catch RequestTimeoutException _

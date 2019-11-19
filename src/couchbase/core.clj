@@ -307,7 +307,7 @@
    [nil "--collect-data-files"
     "Use to enable the collection of Couchbase-Servers data directory"
     :default false]
-   [nil "--process-suspend-time"
+   [nil "--process-suspend-time TIME"
     "Use to set the number of seconds we should halt a process for"
     :default 10
     :parse-fn parse-int
