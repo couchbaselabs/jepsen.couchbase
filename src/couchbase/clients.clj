@@ -148,6 +148,8 @@
       ;; Certain failures - we know the operations did not take effect
       (catch NoSuchElementException _
         (assoc op :type :fail, :error :GetFailed))
+      (catch KeyNotFoundException _
+        (assoc op :type :fail :error :KeyNotFoundException))
       (catch CASMismatchException _
         (assoc op :type :fail, :error :CasMismatch))
       (catch DurabilityImpossibleException _
