@@ -1,16 +1,14 @@
 (ns couchbase.clients
   (:require [clojure.tools.logging :refer [info warn error fatal]]
             [couchbase.cbclients :as cbclients]
+            [couchbase.clients-utils :as clientUtils]
             [dom-top.core :as domTop]
             [jepsen.client :as client]
             [jepsen.independent :as independent]
             [slingshot.slingshot :refer [try+]])
-  (:import com.couchbase.client.core.msg.kv.DurabilityLevel
-           com.couchbase.client.java.Collection
+  (:import com.couchbase.client.java.Collection
            com.couchbase.client.java.kv.GetResult
            com.couchbase.client.java.kv.MutationResult
-           com.couchbase.client.java.kv.PersistTo
-           com.couchbase.client.java.kv.ReplicateTo
            com.couchbase.client.java.kv.InsertOptions
            com.couchbase.client.java.kv.RemoveOptions
            com.couchbase.client.java.kv.ReplaceOptions
@@ -24,7 +22,6 @@
            com.couchbase.client.core.error.KeyNotFoundException
            com.couchbase.client.core.error.RequestTimeoutException
            com.couchbase.client.core.error.TemporaryFailureException
-           com.couchbase.client.core.msg.kv.DurabilityLevel
            com.couchbase.transactions.Transactions
            com.couchbase.transactions.error.TransactionFailed
            com.couchbase.transactions.config.PerTransactionConfigBuilder
@@ -34,35 +31,6 @@
            com.couchbase.transactions.AttemptContext
            com.couchbase.client.core.msg.kv.MutationToken
            com.couchbase.client.core.error.RequestCanceledException))
-
-;; Helper functions to apply durability options
-
-(defn apply-durability-options!
-  "Helper function to apply durability level to perform sync-writes"
-  [mutation-options op]
-  (if-let [level (case (int (op :durability-level 0))
-                   0 nil
-                   1 DurabilityLevel/MAJORITY
-                   2 DurabilityLevel/MAJORITY_AND_PERSIST_ON_MASTER
-                   3 DurabilityLevel/PERSIST_TO_MAJORITY)]
-    (.durability mutation-options level)))
-
-(defn apply-observe-options!
-  "Helper function to apply the old observe based replicate-to/persist-to"
-  [mutation-options op]
-  (when (or (pos? (op :replicate-to 0))
-            (pos? (op :persist-to 0)))
-    (let [replicate-to (case (int (op :replicate-to 0))
-                         0 ReplicateTo/NONE
-                         1 ReplicateTo/ONE
-                         2 ReplicateTo/TWO
-                         3 ReplicateTo/THREE)
-          persist-to   (case (int (op :persist-to 0))
-                         0 PersistTo/NONE
-                         1 PersistTo/ONE
-                         2 PersistTo/TWO
-                         3 PersistTo/THREE)]
-      (.durability mutation-options persist-to replicate-to))))
 
 ;; ===============
 ;; Register Client
@@ -77,7 +45,7 @@
         (assoc op
                :type :ok
                :cas (.cas ^GetResult get-result)
-               :value (independent/tuple rawKey ^Integer (.contentAs get-result Integer))))
+               :value (independent/tuple rawKey ^Integer (clientUtils/get-int-from-get-result get-result))))
       (catch KeyNotFoundException _
         (assoc op :type :ok :value (independent/tuple rawKey :nil)))
       ;; Reads are idempotent, so it's ok to just :fail on any exception. Note
@@ -100,9 +68,9 @@
         dockey (format "jepsen%04d" rawkey)]
     (try
       (let [opts (doto (UpsertOptions/upsertOptions)
-                   (apply-durability-options! op)
-                   (apply-observe-options! op))
-            upsert-result (.upsert ^Collection collection dockey opVal opts)
+                   (clientUtils/apply-durability-options! op)
+                   (clientUtils/apply-observe-options! op))
+            upsert-result (.upsert ^Collection collection dockey (clientUtils/create-int-json-obj opVal) opts)
             mutation-token (.mutationToken ^MutationResult upsert-result)]
         (assoc op
                :type :ok
@@ -133,14 +101,14 @@
         docKey (format "jepsen%04d" rawkey)]
     (try
       (let [get-current ^GetResult (.get ^Collection collection docKey)
-            current-value (.contentAs get-current Integer)
+            current-value (clientUtils/get-int-from-get-result get-current)
             current-cas (.cas get-current)]
         (if (= current-value swap-from)
           (let [opts (doto (ReplaceOptions/replaceOptions)
                        (.cas current-cas)
-                       (apply-durability-options! op)
-                       (apply-observe-options! op))
-                replace-result (.replace ^Collection collection docKey swap-to opts)
+                       (clientUtils/apply-durability-options! op)
+                       (clientUtils/apply-observe-options! op))
+                replace-result (.replace ^Collection collection docKey (clientUtils/create-int-json-obj swap-to) opts)
                 mutation-token (.mutationToken ^MutationResult replace-result)]
             (assoc op
                    :type :ok
@@ -264,10 +232,10 @@
 (defn do-set-add [collection op]
   (try
     (let [opts (doto (InsertOptions/insertOptions)
-                 (apply-durability-options! op)
-                 (apply-observe-options! op))
+                 (clientUtils/apply-durability-options! op)
+                 (clientUtils/apply-observe-options! op))
           docKey (format "jepsen%010d" (:value op))
-          result (.insert ^Collection collection docKey (:value op) opts)
+          result (.insert ^Collection collection docKey (clientUtils/create-int-json-obj (:value op)) opts)
           token  (.orElse (.mutationToken ^MutationResult result) nil)]
       (assoc op
              :type :ok
@@ -294,8 +262,8 @@
 (defn do-set-del [collection op]
   (try
     (let [opts (doto (RemoveOptions/removeOptions)
-                 (apply-durability-options! op)
-                 (apply-observe-options! op))
+                 (clientUtils/apply-durability-options! op)
+                 (clientUtils/apply-observe-options! op))
           docKey (format "jepsen%010d" (:value op))
           result (.remove ^Collection collection docKey opts)
           token  (.mutationToken ^MutationResult result)]

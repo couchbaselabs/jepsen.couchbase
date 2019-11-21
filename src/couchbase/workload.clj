@@ -185,7 +185,8 @@
                      :replicate-to (:replicate-to opts)
                      :persist-to (:persist-to opts)
                      :durability-level (util/random-durability-level
-                                        (:durability opts))})
+                                        (:durability opts))
+                     :json (:use-json-docs opts)})
         cas-gen (fn [_ _]
                   {:type :invoke
                    :f :cas
@@ -193,7 +194,8 @@
                    :replicate-to (:replicate-to opts)
                    :persist-to (:persist-to opts)
                    :durability-level (util/random-durability-level
-                                      (:durability opts))})]
+                                      (:durability opts))
+                   :json (:use-json-docs opts)})]
     (independent/concurrent-generator
      (:doc-threads opts)
      (range)
@@ -637,7 +639,8 @@
                                      :value x
                                      :replicate-to replicate-to
                                      :persist-to persist-to
-                                     :durability-level (util/random-durability-level (:durability opts))}))
+                                     :durability-level (util/random-durability-level (:durability opts))
+                                     :json (:use-json-docs opts)}))
                        (gen/seq)
                        (do-n-nemesis-cycles cycles
                                             [(gen/sleep 20)]))

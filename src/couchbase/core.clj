@@ -3,7 +3,8 @@
             [clojure.tools.logging :refer [info warn error fatal]]
             [couchbase
              [util     :as util]
-             [workload :as workload]]
+             [clients-utils :as cUtil]
+             workload]
             [dom-top.core :as domTop]
             [jepsen
              [cli :as cli]
@@ -98,7 +99,9 @@
                  (= "kill" (:workload opts)))
              (= :suspend-process (:scenario opts)))
     (if (nil? (:process-to-suspend opts))
-      (throw (RuntimeException. "For suspend-process scenario \"--process-to-suspend\" must be specified")))))
+      (throw (RuntimeException. "For suspend-process scenario \"--process-to-suspend\" must be specified"))))
+  (when (and (:doc-padding-size opts) (not (:use-json-docs opts)))
+    (throw (RuntimeException. "To use --doc-padding-size \"--use-json-docs\" must be specified"))))
 
 ;; The actual testcase, merge the user options, basic parameters and workload
 ;; parameters into something that can be passed into Jepsen to run
@@ -143,11 +146,22 @@
                  (fatal msg)
                  (throw (RuntimeException. msg))))))))
 
-(defn parse-int [x] (Integer/parseInt x))
+(defn parse-int
+  "Function to check a value can be converted to an int"
+  [x]
+  (Integer/parseInt x))
+
+(defn parse-padding-and-set
+  "Function to take the document padding arg and generate a padding string"
+  [x]
+  (let [padding-size (parse-int x)]
+    (when padding-size
+      (reset! cUtil/document-padding-string (cUtil/gen-string (* padding-size 512))))
+    padding-size))
 
 (def extra-cli-options
   [[nil "--package URL-OR-FILENAME"
-    "Install this couchbase package, use preinstalled version if not given"
+    "Install this couchbase package, use pre-installed version if not given"
     :parse-fn util/get-package]
    [nil "--install-path PATH"
     "The path of the couchbase install on the nodes"
@@ -316,7 +330,13 @@
    [nil "--process-to-suspend PROCESS"
     "Use to specify the name of the process to halt and then continue during a kill or set-kill workload"
     :parse-fn {"memcached" :memcached "ns-server" :ns-server "babysitter" :babysitter}
-    :validate [some? "Bucket type must be 'memcached', 'ns-server' or 'babysitter'"]]])
+    :validate [some? "Bucket type must be 'memcached', 'ns-server' or 'babysitter'"]]
+   [nil "--use-json-docs"
+    :default false]
+   [nil "--doc-padding-size PADDING-IN-KB"
+    "Amount of padding in KB that should be added to the document when performing a write. This is to help create data > memory scenarios"
+    :parse-fn parse-padding-and-set
+    :validate [#(and (number? %) (pos? %)) "Must be a number"]]])
 
 (defn -main
   "Run the test specified by the cli arguments"
