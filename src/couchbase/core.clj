@@ -6,12 +6,13 @@
              [workload :as workload]]
             [dom-top.core :as domTop]
             [jepsen
-             [cli     :as cli]
+             [cli :as cli]
              [control :as c]
-             [db      :as db]
-             [os      :as os]
-             [tests   :as tests]])
-  (:gen-class))
+             [db :as db]
+             [os :as os]
+             [tests :as tests]])
+  (:gen-class)
+  (:import java.time.Duration))
 
 (defn couchbase-remote
   "Initialisation logic for remote Couchbase nodes"
@@ -254,8 +255,8 @@
     :default 10]
    [nil "--kv-timeout KV-TIMEOUT"
     "Timeout for kv operations before aborting with an ambiguous response"
-    :parse-fn #(->> % (Double/parseDouble) (* 1000) (java.time.Duration/ofMillis))
-    :default (java.time.Duration/ofSeconds 10)]
+    :parse-fn #(->> % (Double/parseDouble) (* 1000) (Duration/ofMillis))
+    :default (Duration/ofSeconds 2.5)]
    [nil "--node-count NODE-COUNT"
     "Number of nodes to use for this test"
     :parse-fn parse-int
