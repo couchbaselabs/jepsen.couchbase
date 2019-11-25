@@ -98,13 +98,13 @@
   "Function get IncrementOptions obj given a hash map of durability levels
   {:durability-level, :replicate-to, :persist-to}"
   [levels]
-  (options-builder (IncrementOptions/incrementOptions) {:durability-level 1}))
+  (options-builder (IncrementOptions/incrementOptions) levels))
 
 (defn get-decrement-ops
   "Function get DecrementOptions obj given a hash map of durability levels
   {:durability-level, :replicate-to, :persist-to}"
   [levels]
-  (options-builder (DecrementOptions/decrementOptions) {:durability-level 1}))
+  (options-builder (DecrementOptions/decrementOptions) levels))
 
 (def document-padding-string (atom nil))  ; 4MB for register, 64KB for set
 

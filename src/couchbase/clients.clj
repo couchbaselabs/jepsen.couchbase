@@ -360,7 +360,8 @@
       (assoc op
              :type :ok
              :cas (.cas ^CounterResult result)
-             :mutation-token (str ^MutationToken token)))
+             :mutation-token (str ^MutationToken token)
+             :current-value (.content result)))
     ;; Certain failures - we know the operations did not take effect
     (catch DurabilityImpossibleException _
       (assoc op :type :fail, :error :DurabilityImpossible))
@@ -384,8 +385,7 @@
 
 (defn do-counter-read [collection op]
   (assert (= (:f op) :read))
-  (let [[rawKey _] (:value op)
-        docKey (str "jepsen")]
+  (let [docKey (str "jepsen")]
     (try
       (let [get-obj (.increment ^BinaryCollection (.binary collection)
                                 ^String docKey
@@ -397,7 +397,7 @@
                :mutation-token (str ^MutationToken token)
                :value ^Integer (.content ^CounterResult get-obj)))
       (catch DocumentNotFoundException _
-        (assoc op :type :ok :value (independent/tuple rawKey :nil)))
+        (assoc op :type :ok :value (independent/tuple docKey :nil)))
       ;; Reads are idempotent, so it's ok to just :fail on any exception. Note
       ;; that we don't :fail on a DocumentNotFoundException, since translating between
       ;; the Couchbase and Jepsen models we know the read succeeded, but it wouldn't
@@ -459,11 +459,16 @@
     (merge this (cbclients/get-client-from-pool testData)))
 
   (setup! [this test]
-    (.increment ^BinaryCollection (.binary ^Collection collection)
-                "jepsen"
-                (doto (clientUtils/get-increment-ops {:durability-level 3})
-                  (.initial 0)
-                  (.delta 0))))
+    (do (try
+          (.remove ^Collection collection "jepsen")
+          (catch DocumentNotFoundException _))
+        (try (.increment ^BinaryCollection (.binary ^Collection collection)
+                         "jepsen"
+                         (doto (clientUtils/get-increment-ops {:durability-level 3})
+                           (.initial  (:init-counter-value test))
+                           (.delta 0)))
+             (catch Exception e
+               (warn (.getMessage e))))))
 
   (invoke! [this testData op]
     (case (:f op)

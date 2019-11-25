@@ -3,7 +3,8 @@
             [clojure.set :as set]
             [clojure.tools.logging :refer [info warn error fatal]]
             [jepsen.checker :as checker]
-            [jepsen.util :as util]))
+            [jepsen.util :as util]
+            [knossos.op :as op]))
 
 (defn sanity-check
   "Return unknown validity if the test is broken."
@@ -75,7 +76,7 @@
                 ;; 1) The add was confirmed ok, but the delete was indeterminate
                 ;; 2) The add was indeterminate, and there was no successful delete
                 permitted-keys (set/union (set/intersection add-ok del-info)
-                                          (set/difference   add-info del-ok))
+                                          (set/difference add-info del-ok))
 
                 ;; Keys that were potentially added that we didn't read
                 not-read (set/difference add-invoke final-read)
@@ -118,3 +119,50 @@
              :unexpected          (util/integer-interval-set-str unexpected)
              :recovered           (util/integer-interval-set-str recovered)
              :not-recovered       (util/integer-interval-set-str not-recovered))))))))
+
+(defn sanity-counter
+  "Checker for a counter workload to make sure that the end result is equal to
+  the sum of add (negative or positive) ops performed on a counter. This will
+  also return valid in a situation where the we have ambiguous ops that have
+  succeeded"
+  []
+  (reify checker/Checker
+    (check [this test history opts]
+      (let [okayOps (filter #(and (op/ok? %) (= (:f %) :add)) history)
+            opVals (map :value okayOps)
+            counterSum (apply + opVals)
+            lastCurrVal (:current-value (last okayOps))
+            counterSumWithStartVal (+ counterSum (:init-counter-value test))
+
+            reads (filter #(and (op/ok? %) (= (:f %) :read)) history)
+            readsVals (map :value reads)
+
+            ambiguousOps (filter #(and (op/info? %) (= (:f %) :add)) history)
+            ambiguousOpsVals (map :value ambiguousOps)
+            ambiguousOpsSum (apply + ambiguousOpsVals)
+
+            failedOps (filter #(and (op/fail? %) (= (:f %) :add)) history)
+
+            sum-of-neg-ambig-vals (apply + (filter neg? ambiguousOpsVals))
+            sum-of-pos-ambig-vals (apply + (filter pos? ambiguousOpsVals))
+            min-range (+ counterSumWithStartVal sum-of-neg-ambig-vals)
+            max-range (+ counterSumWithStartVal sum-of-pos-ambig-vals)
+            resultMap {:valid?                        (cond (= counterSumWithStartVal lastCurrVal) true
+                                                            (and (>= lastCurrVal min-range)
+                                                                 (<= lastCurrVal max-range)) (do (error "End values are not equal but end sum is in ambiguous range")
+                                                                                                 :unknown)
+                                                            :else false)
+                       :min-range                     min-range
+                       :max-range                     max-range
+                       :starting-value                (:init-counter-value test)
+                       :attempt-count                 (+ (count okayOps) (count ambiguousOps))
+                       :ok-count                      (count okayOps)
+                       :ambiguous-count               (count ambiguousOps)
+                       :fail-count                    (count failedOps)
+                       :summed-ops                    counterSumWithStartVal
+                       :summed-ambiguous-ops          ambiguousOpsSum
+                       :summed-negative-ambiguous-ops sum-of-neg-ambig-vals
+                       :summed-positive-ambiguous-ops sum-of-pos-ambig-vals
+                       :last-value                    lastCurrVal
+                       :reads                         readsVals}]
+        resultMap))))
