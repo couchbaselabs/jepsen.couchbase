@@ -13,7 +13,10 @@
                                          MutationResult
                                          ReplaceOptions
                                          InsertOptions
-                                         RemoveOptions)
+                                         RemoveOptions
+                                         IncrementOptions
+                                         DecrementOptions
+                                         CounterResult)
            (com.couchbase.client.core.error TemporaryFailureException
                                             CouchbaseException
                                             DurabilityImpossibleException
@@ -28,7 +31,8 @@
                                             TimeoutException
                                             UnambiguousTimeoutException
                                             AmbiguousTimeoutException)
-           (com.couchbase.client.java Collection)
+           (com.couchbase.client.java Collection
+                                      BinaryCollection)
            (java.util NoSuchElementException)
            (com.couchbase.transactions TransactionDurabilityLevel
                                        Transactions
@@ -340,6 +344,76 @@
         (do (warn "Couldn't read key" rawKey)
             (throw e))))))
 
+(defn do-counter-add [collection op]
+  (try
+    (let [docKey (str "jepsen")
+          binaryCollection ^BinaryCollection (.binary collection)
+          result  (if (pos? (:value op))
+                    (.increment ^BinaryCollection binaryCollection
+                                ^String docKey
+                                ^IncrementOptions (clientUtils/get-increment-ops op))
+                    (.decrement ^BinaryCollection binaryCollection
+                                ^String docKey
+                                ^DecrementOptions (clientUtils/get-decrement-ops op)))
+
+          token  (.orElse (.mutationToken ^CounterResult result) nil)]
+      (assoc op
+             :type :ok
+             :cas (.cas ^CounterResult result)
+             :mutation-token (str ^MutationToken token)))
+    ;; Certain failures - we know the operations did not take effect
+    (catch DurabilityImpossibleException _
+      (assoc op :type :fail, :error :DurabilityImpossible))
+    (catch DurabilityLevelNotAvailableException _
+      (assoc op :type :fail, :error :DurabilityLevelNotAvailable))
+    (catch DurableWriteInProgressException _
+      (assoc op :type :fail, :error :SyncWriteInProgress))
+    (catch TemporaryFailureException _
+      (assoc op :type :fail :error :Etmpfail))
+    ;; Ambiguous result - operation may or may not take effect
+    (catch RequestCanceledException _
+      (assoc op :type :info :error :RequestCanceledException))
+    (catch DurabilityAmbiguousException _
+      (assoc op :type :info, :error :SyncWriteAmbiguous))
+    (catch AmbiguousTimeoutException _
+      (assoc op :type :info, :error :AmbiguousTimeoutException))
+    (catch CouchbaseException e
+      (assoc op :type :info, :error e))
+    (catch RuntimeException e
+      (assoc op :type :info, :error e))))
+
+(defn do-counter-read [collection op]
+  (assert (= (:f op) :read))
+  (let [[rawKey _] (:value op)
+        docKey (str "jepsen")]
+    (try
+      (let [get-obj (.increment ^BinaryCollection (.binary collection)
+                                ^String docKey
+                                (.delta ^IncrementOptions (clientUtils/get-increment-ops op) 0))
+            token  (.orElse (.mutationToken ^CounterResult get-obj) nil)]
+        (assoc op
+               :type :ok
+               :cas (.cas ^CounterResult get-obj)
+               :mutation-token (str ^MutationToken token)
+               :value ^Integer (.content ^CounterResult get-obj)))
+      (catch DocumentNotFoundException _
+        (assoc op :type :ok :value (independent/tuple rawKey :nil)))
+      ;; Reads are idempotent, so it's ok to just :fail on any exception. Note
+      ;; that we don't :fail on a DocumentNotFoundException, since translating between
+      ;; the Couchbase and Jepsen models we know the read succeeded, but it wouldn't
+      ;; strictly be wrong if we did return it as a failure (i.e it wouldn't cause
+      ;; false-positive linearizability errors to be detected; it might increase the
+      ;; probability of a linearizability error going undetected, but Jepsen can't
+      ;; prove correctness anyway.
+      (catch UnambiguousTimeoutException e
+        (assoc op :type :fail, :error :UnambiguousTimeoutException :msg (.getMessage e)))
+      (catch TemporaryFailureException e
+        (assoc op :type :fail, :error :Etmpfail :msg (.getMessage e)))
+      (catch ServerOutOfMemoryException _
+        (assoc op :type :fail :error :ServerOutOfMemoryException))
+      (catch CouchbaseException e
+        (assoc op :type :fail, :error e)))))
+
 (defrecord NewSetClient [cluster bucket collection dcpClient]
   client/Client
   (open! [this testData node]
@@ -378,3 +452,27 @@
 
 (defn set-client [dcpclient]
   (NewSetClient. nil nil nil dcpclient))
+
+(defrecord CouchbaseCounterClient [cluster bucket collection]
+  client/Client
+  (open! [this testData node]
+    (merge this (cbclients/get-client-from-pool testData)))
+
+  (setup! [this test]
+    (.increment ^BinaryCollection (.binary ^Collection collection)
+                "jepsen"
+                (doto (clientUtils/get-increment-ops {:durability-level 3})
+                  (.initial 0)
+                  (.delta 0))))
+
+  (invoke! [this testData op]
+    (case (:f op)
+      :add (do-counter-add collection op)
+      :read (do-counter-read collection op)))
+
+  (close! [_ _])
+  (teardown! [this test]
+    (cbclients/shutdown-pool test)))
+
+(defn counter-client []
+  (CouchbaseCounterClient. nil nil nil))

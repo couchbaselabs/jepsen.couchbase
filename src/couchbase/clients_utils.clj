@@ -17,7 +17,9 @@
                                          MutateInSpec
                                          LookupInSpec
                                          RemoveOptions
-                                         ReplaceOptions)
+                                         ReplaceOptions
+                                         IncrementOptions
+                                         DecrementOptions)
            (java.util Collections
                       Arrays)
            (com.couchbase.client.core.msg.kv DurabilityLevel)
@@ -91,6 +93,18 @@
   {:durability-level, :replicate-to, :persist-to}"
   [levels]
   (options-builder (MutateInOptions/mutateInOptions) levels))
+
+(defn get-increment-ops
+  "Function get IncrementOptions obj given a hash map of durability levels
+  {:durability-level, :replicate-to, :persist-to}"
+  [levels]
+  (options-builder (IncrementOptions/incrementOptions) {:durability-level 1}))
+
+(defn get-decrement-ops
+  "Function get DecrementOptions obj given a hash map of durability levels
+  {:durability-level, :replicate-to, :persist-to}"
+  [levels]
+  (options-builder (DecrementOptions/decrementOptions) {:durability-level 1}))
 
 (def document-padding-string (atom nil))  ; 4MB for register, 64KB for set
 
