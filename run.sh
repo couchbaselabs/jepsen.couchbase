@@ -272,10 +272,12 @@ if [ "$JENKINS_RUN" ]; then
     rm -rf ./store/current
 fi
 
-if [ "$crash" -gt 0 ]; then
-    exit 4
-elif [ "$fail" -gt 0 ]; then
+# These exit in the order their written. We need to ensue failures are always reported
+# over a crash or unknown result.
+if [ "$fail" -gt 0 ]; then
     exit 3
+elif [ "$crash" -gt 0 ]; then
+    exit 4
 elif [ "$unknown" -gt 0 ]; then
     exit 2
 else
