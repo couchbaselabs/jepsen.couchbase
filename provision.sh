@@ -7,6 +7,7 @@ Options:
   --type=STRING                 Type of nodes to provision:vagrant or docker
   --action=STRING               Action to take, i.e create, halt, destroy, etc
   --nodes=INT                   Number of nodes to take action against. Default=3
+  --handle-numa-cv              States if we need to pin vcpus against real cpu cores to mitigate against NUMA.
 " >&2
 }
 
@@ -24,6 +25,9 @@ case $i in
     ;;
     --nodes=*)
     NODES="${i#*=}"
+    ;;
+    --handle-numa-cv=*)
+    HANDLE_NUMA_CV=true
     ;;
     --vm-os=*)
     VM_OS="${i#*=}"
@@ -113,8 +117,28 @@ case "$TYPE" in
                             NODES=$(ls -1U ./resources/.vagrant/machines/ | wc -l) vagrant ssh node${i} -c "ifconfig eth1" | grep -o -E "inet [0-9]+(\.[0-9]+){3}" | cut -d " " -f 2- >>  ./nodes
                         fi
                     fi
-
                 done
+                # We now need to check if we need to pin vcpus
+                if [[ ${HANDLE_NUMA_CV} ]]; then
+                        #NUMA node layout for our KV-Engine Jepsen host
+                        #NUMA node0 CPU(s):     0,2,4,6,8,10,12,14
+                        #NUMA node1 CPU(s):     1,3,5,7,9,11,13,15
+
+                        VM_LIST=$(virsh list | awk '/resources/ {print $2}')
+                        VM_NUM=$(echo  ${VM_LIST} | wc -w)
+                        PIN_CPU=0
+                        for VM in ${VM_LIST}; do
+                            if [[ ${VM_NUM} -gt 13 ]]; then
+                                echo "Could not provision Nodes correctly";
+                                exit 1
+                            fi
+                             virsh vcpupin ${VM} --vcpu 0 ${PIN_CPU}
+                             virsh vcpupin ${VM} --vcpu 1 $((PIN_CPU + 2))
+
+                             virsh numatune ${VM} --nodeset $(( PIN_CPU & 1))
+                             PIN_CPU=$((PIN_CPU + 1))
+                        done
+                    fi
                 ;;
             "halt-all")
                 NODES=$(ls -1U ./resources/.vagrant/machines/ | wc -l) vagrant halt
