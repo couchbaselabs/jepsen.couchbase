@@ -26,7 +26,7 @@ case $i in
     --nodes=*)
     NODES="${i#*=}"
     ;;
-    --handle-numa-cv=*)
+    --handle-numa-cv)
     HANDLE_NUMA_CV=true
     ;;
     --vm-os=*)
