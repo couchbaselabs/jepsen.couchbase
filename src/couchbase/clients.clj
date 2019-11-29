@@ -87,10 +87,10 @@
       ;; false-positive linearizability errors to be detected; it might increase the
       ;; probability of a linearizability error going undetected, but Jepsen can't
       ;; prove correctness anyway.
-      (catch RequestTimeoutException _
-        (assoc op :type :fail, :error :Timeout))
-      (catch TemporaryFailureException _
-        (assoc op :type :fail, :error :Etmpfail))
+      (catch RequestTimeoutException e
+        (assoc op :type :fail, :error :RequestTimeoutException :msg (.getMessage e)))
+      (catch TemporaryFailureException e
+        (assoc op :type :fail, :error :Etmpfail :msg (.getMessage e)))
       (catch CouchbaseException e
         (assoc op :type :fail, :error e)))))
 
@@ -109,21 +109,21 @@
                :cas (.cas ^MutationResult upsert-result)
                :mutation-token (str mutation-token)))
       ;; Certain failures - we know the operations did not take effect
-      (catch DurabilityImpossibleException _
-        (assoc op :type :fail, :error :DurabilityImpossible))
-      (catch DurabilityLevelNotAvailableException _
-        (assoc op :type :fail, :error :DurabilityLevelNotAvailable))
-      (catch DurableWriteInProgressException _
-        (assoc op :type :fail, :error :SyncWriteInProgress))
-      (catch TemporaryFailureException _
-        (assoc op :type :fail, :error :Etmpfail))
+      (catch DurabilityImpossibleException e
+        (assoc op :type :fail, :error :DurabilityImpossible :msg (.getMessage e)))
+      (catch DurabilityLevelNotAvailableException e
+        (assoc op :type :fail, :error :DurabilityLevelNotAvailable :msg (.getMessage e)))
+      (catch DurableWriteInProgressException e
+        (assoc op :type :fail, :error :SyncWriteInProgress :msg (.getMessage e)))
+      (catch TemporaryFailureException e
+        (assoc op :type :fail, :error :Etmpfail :msg (.getMessage e)))
       ;; Ambiguous result - operation may or may not take effect
-      (catch RequestCanceledException _
-        (assoc op :type :info :error :RequestCanceledException))
-      (catch DurabilityAmbiguousException _
-        (assoc op :type :info, :error :SyncWriteAmbiguous))
-      (catch RequestTimeoutException _
-        (assoc op :type :info, :error :Timeout))
+      (catch RequestCanceledException e
+        (assoc op :type :info :error :RequestCanceledException :msg (.getMessage e)))
+      (catch DurabilityAmbiguousException e
+        (assoc op :type :info, :error :SyncWriteAmbiguous :msg (.getMessage e)))
+      (catch RequestTimeoutException e
+        (assoc op :type :info, :error :RequestTimeoutException :msg (.getMessage e)))
       (catch CouchbaseException e
         (assoc op :type :info, :error e)))))
 
@@ -146,29 +146,29 @@
                    :type :ok
                    :cas (.cas replace-result)
                    :mutation-token (str mutation-token)))
-          (assoc op :type :fail :error :ValueNotSwapFrom)))
+          (assoc op :type :fail :error :ValueNotSwapFrom :GetResult get-current)))
       ;; Certain failures - we know the operations did not take effect
-      (catch NoSuchElementException _
-        (assoc op :type :fail, :error :GetFailed))
-      (catch KeyNotFoundException _
-        (assoc op :type :fail :error :KeyNotFoundException))
-      (catch CASMismatchException _
-        (assoc op :type :fail, :error :CasMismatch))
-      (catch DurabilityImpossibleException _
-        (assoc op :type :fail, :error :DurabilityImpossible))
-      (catch DurabilityLevelNotAvailableException _
-        (assoc op :type :fail, :error :DurabilityLevelNotAvailable))
-      (catch DurableWriteInProgressException _
-        (assoc op :type :fail, :error :SyncWriteInProgress))
-      (catch TemporaryFailureException _
-        (assoc op :type :fail, :error :Etmpfail))
+      (catch NoSuchElementException e
+        (assoc op :type :fail, :error :GetFailed :msg (.getMessage e)))
+      (catch KeyNotFoundException e
+        (assoc op :type :fail :error :KeyNotFoundException :msg (.getMessage e)))
+      (catch CASMismatchException e
+        (assoc op :type :fail, :error :CASMismatchException :msg (.getMessage e)))
+      (catch DurabilityImpossibleException e
+        (assoc op :type :fail, :error :DurabilityImpossible :msg (.getMessage e)))
+      (catch DurabilityLevelNotAvailableException e
+        (assoc op :type :fail, :error :DurabilityLevelNotAvailable :msg (.getMessage e)))
+      (catch DurableWriteInProgressException e
+        (assoc op :type :fail, :error :SyncWriteInProgress :msg (.getMessage e)))
+      (catch TemporaryFailureException e
+        (assoc op :type :fail, :error :Etmpfail :msg (.getMessage e)))
       ;; Ambiguous result - operation may or may not take effect
-      (catch RequestCanceledException _
-        (assoc op :type :info :error :RequestCanceledException))
-      (catch DurabilityAmbiguousException _
-        (assoc op :type :info, :error :SyncWriteAmbiguous))
-      (catch RequestTimeoutException _
-        (assoc op :type :info, :error :Timeout))
+      (catch RequestCanceledException e
+        (assoc op :type :info :error :RequestCanceledException :msg (.getMessage e)))
+      (catch DurabilityAmbiguousException e
+        (assoc op :type :info, :error :SyncWriteAmbiguous :msg (.getMessage e)))
+      (catch RequestTimeoutException e
+        (assoc op :type :info, :error :RequestTimeoutException :msg (.getMessage e)))
       (catch CouchbaseException e
         (assoc op :type :info, :error e)))))
 
@@ -219,19 +219,19 @@
       ;; Certain failures - we know the operations did not take effect
     (catch TransactionFailed e
       (assoc op :type :fail, :error (str e), :msg (str e)))
-    (catch DurabilityImpossibleException _
-      (assoc op :type :fail, :error :DurabilityImpossible))
-    (catch DurabilityLevelNotAvailableException _
-      (assoc op :type :fail, :error :DurabilityLevelNotAvailable))
-    (catch DurableWriteInProgressException _
-      (assoc op :type :fail, :error :SyncWriteInProgress))
-    (catch TemporaryFailureException _
-      (assoc op :type :fail, :error :Etmpfail))
+    (catch DurabilityImpossibleException e
+      (assoc op :type :fail, :error :DurabilityImpossible :msg (.getMessage e)))
+    (catch DurabilityLevelNotAvailableException e
+      (assoc op :type :fail, :error :DurabilityLevelNotAvailable :msg (.getMessage e)))
+    (catch DurableWriteInProgressException e
+      (assoc op :type :fail, :error :SyncWriteInProgress :msg (.getMessage e)))
+    (catch TemporaryFailureException e
+      (assoc op :type :fail, :error :Etmpfail :msg (.getMessage e)))
     ;; Ambiguous result - operation may or may not take effect
-    (catch DurabilityAmbiguousException _
-      (assoc op :type :info, :error :SyncWriteAmbiguous))
-    (catch RequestTimeoutException _
-      (assoc op :type :info, :error :Timeout))
+    (catch DurabilityAmbiguousException e
+      (assoc op :type :info, :error :SyncWriteAmbiguous :msg (.getMessage e)))
+    (catch RequestTimeoutException e
+      (assoc op :type :info, :error :RequestTimeoutException :msg (.getMessage e)))
     (catch CouchbaseException e
       (assoc op :type :info, :error e))))
 
@@ -273,21 +273,21 @@
              :type :ok
              :mutation-token (str token)))
     ;; Certain failures - we know the operations did not take effect
-    (catch DurabilityImpossibleException _
-      (assoc op :type :fail, :error :DurabilityImpossible))
-    (catch DurabilityLevelNotAvailableException _
-      (assoc op :type :fail, :error :DurabilityLevelNotAvailable))
-    (catch DurableWriteInProgressException _
-      (assoc op :type :fail, :error :SyncWriteInProgress))
-    (catch TemporaryFailureException _
-      (assoc op :type :fail :error :Etmpfail))
+    (catch DurabilityImpossibleException e
+      (assoc op :type :fail, :error :DurabilityImpossible :msg (.getMessage e)))
+    (catch DurabilityLevelNotAvailableException e
+      (assoc op :type :fail, :error :DurabilityLevelNotAvailable :msg (.getMessage e)))
+    (catch DurableWriteInProgressException e
+      (assoc op :type :fail, :error :SyncWriteInProgress :msg (.getMessage e)))
+    (catch TemporaryFailureException e
+      (assoc op :type :fail :error :Etmpfail :msg (.getMessage e)))
     ;; Ambiguous result - operation may or may not take effect
-    (catch RequestCanceledException _
-      (assoc op :type :info :error :RequestCanceledException))
-    (catch DurabilityAmbiguousException _
-      (assoc op :type :info, :error :SyncWriteAmbiguous))
-    (catch RequestTimeoutException _
-      (assoc op :type :info, :error :Timeout))
+    (catch RequestCanceledException e
+      (assoc op :type :info :error :RequestCanceledException :msg (.getMessage e)))
+    (catch DurabilityAmbiguousException e
+      (assoc op :type :info, :error :SyncWriteAmbiguous :msg (.getMessage e)))
+    (catch RequestTimeoutException e
+      (assoc op :type :info, :error :RequestTimeoutException :msg (.getMessage e)))
     (catch CouchbaseException e
       (assoc op :type :info, :error e))))
 
@@ -303,19 +303,19 @@
              :type :ok
              :mutation-token (str ^MutationToken token)))
      ;; Certain failures - we know the operations did not take effect
-    (catch DurabilityImpossibleException _
-      (assoc op :type :fail, :error :DurabilityImpossible))
-    (catch DurabilityLevelNotAvailableException _
-      (assoc op :type :fail, :error :DurabilityLevelNotAvailableException))
-    (catch DurableWriteInProgressException _
-      (assoc op :type :fail, :error :SyncWriteInProgress))
-    (catch TemporaryFailureException _
-      (assoc op :type :fail, :error :Etmpfail))
+    (catch DurabilityImpossibleException e
+      (assoc op :type :fail, :error :DurabilityImpossible :msg (.getMessage e)))
+    (catch DurabilityLevelNotAvailableException e
+      (assoc op :type :fail, :error :DurabilityLevelNotAvailableException :msg (.getMessage e)))
+    (catch DurableWriteInProgressException e
+      (assoc op :type :fail, :error :SyncWriteInProgress :msg (.getMessage e)))
+    (catch TemporaryFailureException e
+      (assoc op :type :fail, :error :Etmpfail :msg (.getMessage e)))
     ;; Ambiguous result - operation may or may not take effect
-    (catch DurabilityAmbiguousException _
-      (assoc op :type :info, :error :SyncWriteAmbiguous))
-    (catch RequestTimeoutException _
-      (assoc op :type :info, :error :Timeout))
+    (catch DurabilityAmbiguousException e
+      (assoc op :type :info, :error :SyncWriteAmbiguous :msg (.getMessage e)))
+    (catch RequestTimeoutException e
+      (assoc op :type :info, :error :RequestTimeoutException :msg (.getMessage e)))
     (catch CouchbaseException e
       (assoc op :type :info, :error e))))
 
