@@ -5,8 +5,8 @@
             [lein-kibit "0.1.7"]
             [jonase/eastwood "0.3.5"]]
   :jvm-opts ["-server"       ; Be more aggressive with optimisations
-             "-Xms24G"       ; Set the starting heap size to 24GB and the max heap size to 24GB so that we never
-             "-Xmx24G"       ; have to re-size the heap which causes the GC to be used. If we go above 24GB we will
+             "-Xms32G"       ; Set the starting heap size to 32GB and the max heap size to 32GB so that we never
+             "-Xmx32G"       ; have to re-size the heap which causes the GC to be used. If we go above 32GB we will
                              ; crash but we shouldn't be using that much memory in a normal situation anyway
              "-XX:+UseG1GC"] ; Use Garbage First (G1) Collector, this should reduce pause time over reducing memory
   :dependencies [[org.clojure/clojure "1.10.1"]
