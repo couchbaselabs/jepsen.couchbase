@@ -10,11 +10,10 @@ apt-get install -y libstdc++6 ntpdate
 
 # enabling core dumps to be written to the vagrants shared directory
 echo "Setting up core dumps"
-echo "Changing core dump location to vagrant shared folder"
-echo "/vagrant/core.%e.%p.%h.%t" > /proc/sys/kernel/core_pattern
-echo "kernel.core_pattern=/vagrant/core.%e.%p.%h.%t" >> /etc/sysctl.conf
+echo "Changing core dump location to /tmp"
+# Disable apport crash reporter, as it will override the core_pattern otherwise.
+systemctl disable apport.service
+echo "kernel.core_pattern=/tmp/core.%e.%p.%h.%t" >> /etc/sysctl.conf
 sysctl -p
-echo "*               soft    core            unlimited" >> /etc/security/limits.conf
-echo "*               hard    core            unlimited" >> /etc/security/limits.conf
-echo "root               soft    core            unlimited" >> /etc/security/limits.conf
-echo "root               hard    core            unlimited" >> /etc/security/limits.conf
+echo "Setting default systemd daemon core limit to Infinity"
+echo "DefaultLimitCORE=infinity" >> /etc/systemd/system.conf
