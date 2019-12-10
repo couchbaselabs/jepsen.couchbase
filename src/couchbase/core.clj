@@ -322,6 +322,9 @@
    [nil "--collect-data-files"
     "Use to enable the collection of Couchbase-Servers data directory"
     :default false]
+   [nil "--collect-core-files"
+    "Use to enable the collection of any core files created during the test"
+    :default false]
    [nil "--process-suspend-time TIME"
     "Use to set the number of seconds we should halt a process for"
     :default 10
