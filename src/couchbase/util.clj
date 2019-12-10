@@ -632,7 +632,8 @@
       (c/su (c/exec* (str "zip -r /tmp/jepsen-logs/data-files.zip " (str (str (:install-path testData) "/var/lib/couchbase/data"))))))
     (when (:collect-core-files testData)
       (info "Collect core dump files")
-      (c/su (c/exec* (str "zip -r /tmp/jepsen-logs/core-files.zip /tmp/core.*"))))
+      ;; zip returns non-zero status (12) if no files match, in which case just treat as success
+      (c/su (c/exec* (str "zip /tmp/jepsen-logs/core-files.zip /tmp/core.* || [[ $? == 12 ]]"))))
     (when (:enable-tcp-capture testData)
       (info "Collecting tcp packet capture")
       (c/su (c/exec* (str "if [[ \"$(pgrep tcpdump)\" ]]; then kill -s TERM $(pgrep tcpdump); fi"))
