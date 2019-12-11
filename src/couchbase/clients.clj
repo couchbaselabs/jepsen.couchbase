@@ -114,14 +114,14 @@
                    :type :ok
                    :cas (.cas replace-result)
                    :mutation-token (str mutation-token)))
-          (assoc op :type :fail :error :ValueNotSwapFrom :GetResult get-current)))
+          (assoc op :type :fail :error :ValueNotSwapFrom :curr-cas current-cas :curr-value current-value)))
       ;; Certain failures - we know the operations did not take effect
       (catch NoSuchElementException e
         (assoc op :type :fail, :error :GetFailed :msg (.getMessage e)))
-      (catch KeyNotFoundException e
-        (assoc op :type :fail :error :KeyNotFoundException :msg (.getMessage e)))
-      (catch CASMismatchException e
-        (assoc op :type :fail, :error :CASMismatchException :msg (.getMessage e)))
+      (catch KeyNotFoundException _
+        (assoc op :type :fail :error :KeyNotFoundException))
+      (catch CASMismatchException _
+        (assoc op :type :fail, :error :CASMismatchException))
       (catch DurabilityImpossibleException e
         (assoc op :type :fail, :error :DurabilityImpossible :msg (.getMessage e)))
       (catch DurabilityLevelNotAvailableException e
