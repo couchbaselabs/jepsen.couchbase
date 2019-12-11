@@ -1,28 +1,28 @@
 (ns couchbase.cbclients
   (:require [clojure.tools.logging :refer [info warn error fatal]]
             [couchbase.util :as util])
-  (:import com.couchbase.client.java.Cluster
-           com.couchbase.client.java.ClusterOptions
-           com.couchbase.client.java.env.ClusterEnvironment
-           com.couchbase.client.core.env.IoConfig
-           com.couchbase.client.core.env.TimeoutConfig
-           com.couchbase.client.dcp.Client
-           com.couchbase.client.dcp.ControlEventHandler
-           com.couchbase.client.dcp.DataEventHandler
-           com.couchbase.client.dcp.StreamFrom
-           com.couchbase.client.dcp.StreamTo
-           com.couchbase.client.dcp.config.DcpControl$Names
-           com.couchbase.client.dcp.message.DcpDeletionMessage
-           com.couchbase.client.dcp.message.DcpExpirationMessage
-           com.couchbase.client.dcp.message.DcpMutationMessage
-           com.couchbase.client.dcp.message.DcpSnapshotMarkerRequest
-           com.couchbase.client.dcp.message.RollbackMessage
-           com.couchbase.transactions.Transactions
-           com.couchbase.transactions.config.TransactionConfigBuilder
-           java.time.Duration
-           (rx.functions Action0 Action1)
-           rx.Completable
-           java.util.List))
+  (:import
+   (rx.functions Action0 Action1)
+   (com.couchbase.client.dcp.message MessageUtil
+                                     RollbackMessage
+                                     DcpSnapshotMarkerRequest
+                                     DcpMutationMessage
+                                     DcpDeletionMessage
+                                     DcpExpirationMessage)
+   (com.couchbase.client.core.env IoConfig TimeoutConfig)
+   (java.time Duration)
+   (com.couchbase.client.java.env ClusterEnvironment)
+   (com.couchbase.client.java ClusterOptions Cluster)
+   (com.couchbase.transactions.config TransactionConfigBuilder)
+   (com.couchbase.transactions Transactions)
+   (com.couchbase.client.dcp ControlEventHandler
+                             Client
+                             DataEventHandler
+                             StreamFrom
+                             StreamTo)
+   (com.couchbase.client.dcp.config DcpControl$Names)
+   (java.util List)
+   (rx Completable)))
 
 ;; Couchbase Java SDK setup
 
@@ -128,14 +128,14 @@
 
 (defn dcpMutationHandler [{:keys [store]} event]
   (assert (not= @store :INVALID) "Store invalid")
-  (let [key (DcpMutationMessage/keyString event)
+  (let [key (MessageUtil/getKeyAsString event)
         vbid (DcpMutationMessage/partition event)
         seqno (DcpMutationMessage/bySeqno   event)]
     (swap! store conj {:key key :seqno seqno :key-status :exists :vbucket vbid})))
 
 (defn dcpDeletionHandler [{:keys [store]} event]
   (assert (not= @store :INVALID) "Store invalid")
-  (let [key (DcpDeletionMessage/keyString event)
+  (let [key (MessageUtil/getKeyAsString event)
         vbid (DcpDeletionMessage/partition event)
         seqno (DcpDeletionMessage/bySeqno   event)]
     (swap! store conj {:key key :seqno seqno :key-status :deleted :vbucket vbid})))
@@ -156,17 +156,15 @@
 
 (defn start-streaming [{:keys [client] :as client-record} testData]
   (let [server-version (util/get-version (first (:nodes testData)))
-        client-builder (doto (Client/configure)
-                         (.hostnames ^List (:nodes testData))
+        client-builder (doto (Client/builder)
+                         (.seedNodes ^List (:nodes testData))
                          (.controlParam DcpControl$Names/SUPPORTS_CURSOR_DROPPING true)
                          (.controlParam DcpControl$Names/CONNECTION_BUFFER_SIZE 10000)
                          (.bufferAckWatermark 75)
                          (.bucket "default"))]
     (if (or (>= (first server-version) 5)
             (zero? (first server-version)))
-      (-> client-builder
-          (.username "Administrator")
-          (.password "abc123")))
+      (.credentials client-builder "Administrator" "abc123"))
     (reset! client (.build client-builder))
     (.controlEventHandler ^Client @client (dcpControlEventHandler client-record))
     (.dataEventHandler ^Client @client (dcpDataEventHandler client-record))
