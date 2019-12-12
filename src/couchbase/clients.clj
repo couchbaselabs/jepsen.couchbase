@@ -2,36 +2,40 @@
   (:require [clojure.tools.logging :refer [info warn error fatal]]
             [couchbase.cbclients :as cbclients]
             [couchbase.clients-utils :as clientUtils]
+            [couchbase.cbjcli :as cbjcli]
             [dom-top.core :as domTop]
             [jepsen.client :as client]
             [jepsen.independent :as independent]
             [slingshot.slingshot :refer [try+]])
-  (:import com.couchbase.client.java.Collection
-           com.couchbase.client.java.kv.GetResult
-           com.couchbase.client.java.kv.MutationResult
-           com.couchbase.client.java.kv.InsertOptions
-           com.couchbase.client.java.kv.RemoveOptions
-           com.couchbase.client.java.kv.ReplaceOptions
-           com.couchbase.client.java.kv.UpsertOptions
-           com.couchbase.client.core.error.CASMismatchException
-           com.couchbase.client.core.error.CouchbaseException
-           com.couchbase.client.core.error.DurabilityAmbiguousException
-           com.couchbase.client.core.error.DurabilityImpossibleException
-           com.couchbase.client.core.error.DurabilityLevelNotAvailableException
-           com.couchbase.client.core.error.DurableWriteInProgressException
-           com.couchbase.client.core.error.KeyNotFoundException
-           com.couchbase.client.core.error.RequestTimeoutException
-           com.couchbase.client.core.error.TemporaryFailureException
-           com.couchbase.transactions.Transactions
-           com.couchbase.transactions.error.TransactionFailed
-           com.couchbase.transactions.config.PerTransactionConfigBuilder
-           com.couchbase.transactions.TransactionDurabilityLevel
-           java.util.function.Consumer
-           java.util.NoSuchElementException
-           com.couchbase.transactions.AttemptContext
-           com.couchbase.client.core.msg.kv.MutationToken
-           com.couchbase.client.core.error.RequestCanceledException
-           com.couchbase.client.core.error.CouchbaseOutOfMemoryException))
+  (:import (com.couchbase.client.java.kv MutateInResult
+                                         GetResult
+                                         LookupInResult
+                                         MutationResult
+                                         ReplaceOptions
+                                         InsertOptions
+                                         RemoveOptions)
+           (com.couchbase.client.core.error KeyExistsException
+                                            KeyNotFoundException
+                                            RequestTimeoutException
+                                            CouchbaseOutOfMemoryException
+                                            TemporaryFailureException
+                                            CouchbaseException
+                                            DurabilityImpossibleException
+                                            DurabilityLevelNotAvailableException
+                                            DurableWriteInProgressException
+                                            RequestCanceledException
+                                            DurabilityAmbiguousException
+                                            CASMismatchException)
+           (com.couchbase.client.java Collection)
+           (java.util NoSuchElementException)
+           (com.couchbase.transactions TransactionDurabilityLevel
+                                       Transactions
+                                       AttemptContext)
+           (java.util.function Consumer)
+           (com.couchbase.transactions.config PerTransactionConfigBuilder)
+           (com.couchbase.transactions.error TransactionFailed)
+           (com.couchbase.client.core.msg.kv MutationToken))
+  (:gen-class))
 
 ;; ===============
 ;; Register Client
@@ -42,11 +46,18 @@
   (let [[rawKey _] (:value op)
         docKey (format "jepsen%04d" rawKey)]
     (try
-      (let [get-result (.get ^Collection collection docKey)]
-        (assoc op
-               :type :ok
-               :cas (.cas ^GetResult get-result)
-               :value (independent/tuple rawKey ^Integer (clientUtils/get-int-from-get-result get-result))))
+      (let [get-obj (if-not cbjcli/*use-subdoc*
+                      (.get ^Collection collection docKey)
+                      (clientUtils/perform-subdoc-get collection docKey))]
+        (if-not cbjcli/*use-subdoc*
+          (assoc op
+                 :type :ok
+                 :cas (.cas ^GetResult get-obj)
+                 :value (independent/tuple rawKey ^Integer (clientUtils/get-int-from-get-result get-obj)))
+          (assoc op
+                 :type :ok
+                 :cas (.cas ^LookupInResult get-obj)
+                 :value (independent/tuple rawKey ^Integer (clientUtils/get-int-from-look-up-obj get-obj)))))
       (catch KeyNotFoundException _
         (assoc op :type :ok :value (independent/tuple rawKey :nil)))
       ;; Reads are idempotent, so it's ok to just :fail on any exception. Note
@@ -67,18 +78,27 @@
 
 (defn do-register-write [collection op]
   (assert (= (:f op) :write))
-  (let [[rawkey opVal] (:value op)
-        dockey (format "jepsen%04d" rawkey)]
+  (let [[rawKey opVal] (:value op)
+        docKey (format "jepsen%04d" rawKey)]
     (try
-      (let [opts (doto (UpsertOptions/upsertOptions)
-                   (clientUtils/apply-durability-options! op)
-                   (clientUtils/apply-observe-options! op))
-            upsert-result (.upsert ^Collection collection dockey (clientUtils/create-int-json-obj opVal) opts)
-            mutation-token (.mutationToken ^MutationResult upsert-result)]
-        (assoc op
-               :type :ok
-               :cas (.cas ^MutationResult upsert-result)
-               :mutation-token (str mutation-token)))
+      (let [mutation-option (select-keys op [:durability-level :replicate-to :persist-to])
+            upsert-result (if-not cbjcli/*use-subdoc*
+                            (.upsert ^Collection collection
+                                     docKey
+                                     (clientUtils/create-int-json-obj opVal)
+                                     (clientUtils/get-upsert-ops op))
+                            (clientUtils/perform-subdoc-upsert ^Collection collection
+                                                               docKey
+                                                               opVal
+                                                               mutation-option))]
+        (if-not cbjcli/*use-subdoc*
+          (assoc op
+                 :type :ok
+                 :cas (.cas ^MutationResult upsert-result)
+                 :mutation-token (str (.mutationToken ^MutationResult upsert-result)))
+          (assoc op
+                 :type :ok
+                 :cas (.cas ^MutateInResult upsert-result))))
       ;; Certain failures - we know the operations did not take effect
       (catch DurabilityImpossibleException e
         (assoc op :type :fail, :error :DurabilityImpossible :msg (.getMessage e)))
@@ -90,6 +110,8 @@
         (assoc op :type :fail, :error :Etmpfail :msg (.getMessage e)))
       (catch CouchbaseOutOfMemoryException _
         (assoc op :type :fail :error :CouchbaseOutOfMemoryException))
+      (catch KeyExistsException _
+        (assoc op :type :fail :error :KeyExistsException))
       ;; Ambiguous result - operation may or may not take effect
       (catch RequestCanceledException e
         (assoc op :type :info :error :RequestCanceledException :msg (.getMessage e)))
@@ -109,11 +131,10 @@
             current-value (clientUtils/get-int-from-get-result get-current)
             current-cas (.cas get-current)]
         (if (= current-value swap-from)
-          (let [opts (doto (ReplaceOptions/replaceOptions)
-                       (.cas current-cas)
-                       (clientUtils/apply-durability-options! op)
-                       (clientUtils/apply-observe-options! op))
-                replace-result (.replace ^Collection collection docKey (clientUtils/create-int-json-obj swap-to) opts)
+          (let [replace-result (.replace ^Collection collection
+                                         ^String docKey
+                                         (clientUtils/create-int-json-obj swap-to)
+                                         ^ReplaceOptions (clientUtils/get-replace-ops op current-cas))
                 mutation-token (.mutationToken ^MutationResult replace-result)]
             (assoc op
                    :type :ok
@@ -240,11 +261,11 @@
 
 (defn do-set-add [collection op]
   (try
-    (let [opts (doto (InsertOptions/insertOptions)
-                 (clientUtils/apply-durability-options! op)
-                 (clientUtils/apply-observe-options! op))
-          docKey (format "jepsen%010d" (:value op))
-          result (.insert ^Collection collection docKey (clientUtils/create-int-json-obj (:value op)) opts)
+    (let [docKey (format "jepsen%010d" (:value op))
+          result (.insert ^Collection collection
+                          ^String docKey
+                          (clientUtils/create-int-json-obj (:value op))
+                          ^InsertOptions (clientUtils/get-insert-ops op))
           token  (.orElse (.mutationToken ^MutationResult result) nil)]
       (assoc op
              :type :ok
@@ -272,11 +293,10 @@
 
 (defn do-set-del [collection op]
   (try
-    (let [opts (doto (RemoveOptions/removeOptions)
-                 (clientUtils/apply-durability-options! op)
-                 (clientUtils/apply-observe-options! op))
-          docKey (format "jepsen%010d" (:value op))
-          result (.remove ^Collection collection docKey opts)
+    (let [docKey (format "jepsen%010d" (:value op))
+          result (.remove ^Collection collection
+                          ^String docKey
+                          ^RemoveOptions (clientUtils/get-remove-ops op))
           token  (.mutationToken ^MutationResult result)]
       (assoc op
              :type :ok

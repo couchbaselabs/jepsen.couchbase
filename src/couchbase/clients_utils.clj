@@ -1,13 +1,28 @@
 (ns couchbase.clients-utils
   (:require [clojure.tools.logging :refer [info warn error fatal]]
             [clojure.string :as string]
-            [slingshot.slingshot :refer [try+]])
-  (:import com.couchbase.client.core.msg.kv.DurabilityLevel
-           com.couchbase.client.java.kv.PersistTo
-           com.couchbase.client.java.kv.ReplicateTo
-           com.couchbase.client.java.kv.CommonDurabilityOptions
-           com.couchbase.client.java.json.JsonObject
-           com.couchbase.client.java.kv.GetResult))
+            [slingshot.slingshot :refer [try+]]
+            [couchbase.util :as util]
+            [couchbase.cbjcli :as cbjcli])
+  (:import (com.couchbase.client.java.kv LookupInSpecStandard
+                                         Upsert
+                                         InsertOptions
+                                         CommonDurabilityOptions
+                                         ReplicateTo
+                                         PersistTo
+                                         UpsertOptions
+                                         GetResult
+                                         LookupInResult
+                                         MutateInOptions
+                                         MutateInSpec
+                                         LookupInSpec RemoveOptions ReplaceOptions)
+           (java.util Collections
+                      Arrays)
+           (com.couchbase.client.core.error KeyNotFoundException)
+           (com.couchbase.client.core.msg.kv DurabilityLevel)
+           (com.couchbase.client.java.json JsonObject)
+           (com.couchbase.client.java Collection))
+  (:gen-class))
 
 ;; Helper functions to apply durability options
 
@@ -38,18 +53,63 @@
                          3 PersistTo/THREE)]
       (.durability ^CommonDurabilityOptions mutation-options persist-to replicate-to))))
 
+; Mutation Option builders
+(defmacro options-builder
+  [obj levels]
+  (doto obj
+    (apply-durability-options! levels)
+    (apply-observe-options! levels)))
+
+(defn get-insert-ops
+  "Function get InsertOptions obj given a hash map of durability levels
+  {:durability-level, :replicate-to, :persist-to}"
+  [levels]
+  (options-builder (InsertOptions/insertOptions) levels))
+
+(defn get-upsert-ops
+  "Function get UpsertOptions obj given a hash map of durability levels
+  {:durability-level, :replicate-to, :persist-to}"
+  [levels]
+  (options-builder (UpsertOptions/upsertOptions) levels))
+
+(defn get-replace-ops
+  "Function get ReplaceOptions obj given a hash map of durability levels
+  {:durability-level, :replicate-to, :persist-to}"
+  [levels cas]
+  (.cas (options-builder (ReplaceOptions/replaceOptions) levels) cas))
+
+(defn get-remove-ops
+  "Function get RemoveOptions obj given a hash map of durability levels
+  {:durability-level, :replicate-to, :persist-to}"
+  [levels]
+  (options-builder (RemoveOptions/removeOptions) levels))
+
+(defn get-mutate-in-ops
+  "Function get MutateInOptions obj given a hash map of durability levels
+  {:durability-level, :replicate-to, :persist-to}"
+  [levels]
+  (options-builder (MutateInOptions/mutateInOptions) levels))
+
+(def document-padding-string (atom nil))  ; 4MB for register, 64KB for set
+
 (defn gen-string
   "Function to generate a random string of char of length n"
   [n]
   (string/join (repeatedly n #(char (+ 65 (rand-int 62))))))
 
-(def document-padding-string (atom nil))  ; 4MB for register, 64KB for set
+(defn parse-padding-and-set
+  "Function to take the document padding arg and generate a padding string"
+  [padding-size]
+  (reset! document-padding-string (gen-string (* padding-size 512))))
 
 (defn create-int-json-obj
   "Creates a JsonObject and stores a int under the key \"val\""
   ([val]
-   (let [jsonDoc (.put (JsonObject/create) (str "val") val)]
-     (when-not (nil? @document-padding-string)
+   (let [jsonDoc (.put (JsonObject/create) (str "val") val)
+         docPaddingSize (:doc-padding-size cbjcli/extra-cli-options)]
+     (when-not (nil? docPaddingSize)
+       (when-not @document-padding-string
+         (parse-padding-and-set docPaddingSize))
        (.put ^JsonObject jsonDoc (str "padding")
              @document-padding-string))
      jsonDoc)))
@@ -59,3 +119,28 @@
   [getResult]
   (let [jsonObj (.contentAsObject ^GetResult getResult)]
     (.getInt ^JsonObject jsonObj (str "val"))))
+
+(defn get-int-from-look-up-obj
+  "Function to get the first value out of a LookupInResult obj as an int"
+  [obj]
+  (.contentAs ^LookupInResult obj 0 Integer))
+
+(defn perform-subdoc-upsert
+  "Function to perform an upsert on a the key \"val\" in a Json document"
+  [collection key val levels]
+  (try (.mutateIn ^Collection collection
+                  ^String key
+                  ^Arrays (Collections/singletonList ^Upsert (MutateInSpec/upsert "val" val))
+                  ^MutateInOptions (get-mutate-in-ops levels))
+       (catch KeyNotFoundException _
+         (.insert ^Collection collection
+                  ^String key
+                  ^JsonObject (create-int-json-obj val)
+                  (get-insert-ops levels)))))
+
+(defn perform-subdoc-get
+  "Function to get value at the key \"val\" in a Json document using a sub-doc get"
+  [collection key]
+  (.lookupIn ^Collection collection
+             ^String key
+             ^Arrays (Collections/singletonList ^LookupInSpecStandard (LookupInSpec/get "val"))))

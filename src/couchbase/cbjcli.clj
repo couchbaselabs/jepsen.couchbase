@@ -4,6 +4,9 @@
             [clojure.string :as str])
   (:import (java.time Duration)))
 
+; GLOBALS
+(def ^:dynamic *use-subdoc* false)
+
 (defn parse-int
   "Function to check a value can be converted to an int"
   [x]
@@ -189,4 +192,8 @@
    [nil "--doc-padding-size PADDING-IN-KB"
     "Amount of padding in KB that should be added to the document when performing a write. This is to help create data > memory scenarios"
     :parse-fn parse-int
-    :validate [#(and (number? %) (pos? %)) "Must be a number"]]])
+    :validate [#(and (number? %) (pos? %)) "Must be a number"]]
+   [nil "--use-subdoc"
+    "Use specify if subdoc mutations should be used"
+    :update-fn (fn [_] (alter-var-root (var *use-subdoc*) (fn [_] true)))
+    :default false]])
