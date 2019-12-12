@@ -30,7 +30,8 @@
            java.util.NoSuchElementException
            com.couchbase.transactions.AttemptContext
            com.couchbase.client.core.msg.kv.MutationToken
-           com.couchbase.client.core.error.RequestCanceledException))
+           com.couchbase.client.core.error.RequestCanceledException
+           com.couchbase.client.core.error.CouchbaseOutOfMemoryException))
 
 ;; ===============
 ;; Register Client
@@ -59,6 +60,8 @@
         (assoc op :type :fail, :error :RequestTimeoutException :msg (.getMessage e)))
       (catch TemporaryFailureException e
         (assoc op :type :fail, :error :Etmpfail :msg (.getMessage e)))
+      (catch CouchbaseOutOfMemoryException _
+        (assoc op :type :fail :error :CouchbaseOutOfMemoryException))
       (catch CouchbaseException e
         (assoc op :type :fail, :error e)))))
 
@@ -85,6 +88,8 @@
         (assoc op :type :fail, :error :SyncWriteInProgress :msg (.getMessage e)))
       (catch TemporaryFailureException e
         (assoc op :type :fail, :error :Etmpfail :msg (.getMessage e)))
+      (catch CouchbaseOutOfMemoryException _
+        (assoc op :type :fail :error :CouchbaseOutOfMemoryException))
       ;; Ambiguous result - operation may or may not take effect
       (catch RequestCanceledException e
         (assoc op :type :info :error :RequestCanceledException :msg (.getMessage e)))
@@ -130,6 +135,8 @@
         (assoc op :type :fail, :error :SyncWriteInProgress :msg (.getMessage e)))
       (catch TemporaryFailureException e
         (assoc op :type :fail, :error :Etmpfail :msg (.getMessage e)))
+      (catch CouchbaseOutOfMemoryException _
+        (assoc op :type :fail :error :CouchbaseOutOfMemoryException))
       ;; Ambiguous result - operation may or may not take effect
       (catch RequestCanceledException e
         (assoc op :type :info :error :RequestCanceledException :msg (.getMessage e)))
@@ -195,6 +202,8 @@
       (assoc op :type :fail, :error :SyncWriteInProgress :msg (.getMessage e)))
     (catch TemporaryFailureException e
       (assoc op :type :fail, :error :Etmpfail :msg (.getMessage e)))
+    (catch CouchbaseOutOfMemoryException _
+      (assoc op :type :fail :error :CouchbaseOutOfMemoryException))
     ;; Ambiguous result - operation may or may not take effect
     (catch DurabilityAmbiguousException e
       (assoc op :type :info, :error :SyncWriteAmbiguous :msg (.getMessage e)))
@@ -249,6 +258,8 @@
       (assoc op :type :fail, :error :SyncWriteInProgress :msg (.getMessage e)))
     (catch TemporaryFailureException e
       (assoc op :type :fail :error :Etmpfail :msg (.getMessage e)))
+    (catch CouchbaseOutOfMemoryException _
+      (assoc op :type :fail :error :CouchbaseOutOfMemoryException))
     ;; Ambiguous result - operation may or may not take effect
     (catch RequestCanceledException e
       (assoc op :type :info :error :RequestCanceledException :msg (.getMessage e)))
@@ -279,6 +290,8 @@
       (assoc op :type :fail, :error :SyncWriteInProgress :msg (.getMessage e)))
     (catch TemporaryFailureException e
       (assoc op :type :fail, :error :Etmpfail :msg (.getMessage e)))
+    (catch CouchbaseOutOfMemoryException _
+      (assoc op :type :fail :error :CouchbaseOutOfMemoryException))
     ;; Ambiguous result - operation may or may not take effect
     (catch DurabilityAmbiguousException e
       (assoc op :type :info, :error :SyncWriteAmbiguous :msg (.getMessage e)))
