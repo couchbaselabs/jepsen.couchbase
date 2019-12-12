@@ -12,7 +12,8 @@
              [net :as net]
              [store :as store]]
             [slingshot.slingshot :refer [try+ throw+]])
-  (:import java.io.File))
+  (:import java.io.File
+           clojure.lang.ExceptionInfo))
 
 (defn get-node-name
   "Get the ns_server otpNode name for a given node"
@@ -103,9 +104,11 @@
                                   :throw-entire-message true})))
        ;; Catch any exception and rethrow any exception so that we can log
        ;; the call which caused the exception.
-       (catch Exception e
+       (catch ExceptionInfo e
          (warn "Rest call to" uri "with params" params "threw exception.")
-         (throw e))))))
+         (if (contains? [503] (:status e))
+           (rest-call target endpoint params)
+           (throw e)))))))
 
 ;; On recent version versions of Couchbase Server /diag/eval is only accessible
 ;; from localhost, so we need to ssh into the node and curl from there. In
