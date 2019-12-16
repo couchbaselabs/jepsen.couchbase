@@ -106,8 +106,9 @@
        ;; the call which caused the exception.
        (catch ExceptionInfo e
          (warn "Rest call to" uri "with params" params "threw exception.")
-         (if (contains? [503] (:status e))
-           (rest-call target endpoint params)
+         (if (= (int 503) (int (:status e)))                ; See if there was a http 503 error
+           (do (Thread/sleep 5000)                          ; Sleep for 5 sec then re-try
+               (rest-call target endpoint params))
            (throw e)))))))
 
 ;; On recent version versions of Couchbase Server /diag/eval is only accessible
