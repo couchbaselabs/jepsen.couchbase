@@ -106,7 +106,7 @@
        ;; the call which caused the exception.
        (catch ExceptionInfo e
          (warn "Rest call to" uri "with params" params "threw exception.")
-         (if (= (int 503) (int (:status e)))                ; See if there was a http 503 error
+         (if (= (int 503) (int (:status (ex-data e))))      ; See if there was a http 503 error
            (do (Thread/sleep 5000)                          ; Sleep for 5 sec then re-try
                (rest-call target endpoint params))
            (throw e)))))))
