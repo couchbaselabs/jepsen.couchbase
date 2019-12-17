@@ -1,5 +1,6 @@
 (ns couchbase.workload
-  (:require [clojure.tools.logging :refer [info warn error fatal]]
+  (:require [clojure.set :as set]
+            [clojure.tools.logging :refer [info warn error fatal]]
             [couchbase [checker   :as cbchecker]
              [clients   :as clients]
              [cbclients :as cbclients]
@@ -542,63 +543,41 @@
     sg-enabled     (opts :server-groups-enabled)
     server-group-count (if sg-enabled (opts :server-group-count))
     target-server-groups      (if (opts :target-server-groups) (do (assert sg-enabled) true) false)
-    should-autofailover (and autofailover
-                             (>= replicas 1)
-                             (= disrupt-count 1)
-                             (> disrupt-time autofailover-timeout)
-                             (>= node-count 3))
-    should-server-group-autofailover (and autofailover
-                                          sg-enabled
-                                          target-server-groups
-                                          server-group-autofailover
-                                          (>= replicas 1)
-                                          (>= server-group-count 3)
-                                          (>= disrupt-count (Math/ceil (/ node-count server-group-count)))
-                                          (> disrupt-time autofailover-timeout)
-                                          (>= node-count 3))
     random-server-group (if sg-enabled (util/random-server-group server-group-count))
     complementary-server-group (if sg-enabled (util/complementary-server-group server-group-count random-server-group))
     nemesis        (cbnemesis/couchbase)
     client-generator (client-gen opts)
+    partition-nodes (atom nil)
+    partition-targeter (fn partition-targeter
+                         [testData op]
+                         (let [target (->> testData :nodes shuffle (take 2))]
+                           (reset! partition-nodes target)
+                           target))
+    failover-targeter (fn failover-targeter
+                        [testData op]
+                        (->> @partition-nodes shuffle (take 1)))
+    failover-call-node (fn failover-call-nodes
+                         [testData target]
+                         (rand-nth (seq (set/difference (set (:nodes testData))
+                                                        (set @partition-nodes)))))
     generator (do-n-nemesis-cycles cycles
                                    [(gen/sleep 5)
-                                    {:type   :info
-                                     :f      :isolate-completely
-                                     :f-opts {:partition-type :isolate-completely}
-                                     :targeter cbnemesis/basic-nodes-targeter
-                                     :targeter-opts {:type      :random-subset
-                                                     :count     disrupt-count
-                                                     :condition (merge {:cluster [:active]
-                                                                        :network [:connected]
-                                                                        :node [:running]}
-                                                                       (when-let [target-sq target-server-groups]
-                                                                         {:server-group [random-server-group]}))}}
+                                    {:type :info
+                                     :f :isolate-two-nodes-from-each-other
+                                     :targeter partition-targeter}
                                     (gen/sleep 5)
                                     {:type :info
-                                     :f    :failover
-                                     :failover-type failover-type
-                                     :targeter cbnemesis/basic-nodes-targeter
-                                     :targeter-opts {:type :random-subset
-                                                     :count disrupt-count
-                                                     :condition (merge {:cluster [:inactive]
-                                                                        :network [:partitioned]
-                                                                        :node [:running]}
-                                                                       (when-let [target-sq target-server-groups]
-                                                                         {:server-group [random-server-group]}))}}
-                                    (gen/sleep 5)
+                                     :f :failover
+                                     :targeter failover-targeter
+                                     :call-node failover-call-node
+                                     :failover-type failover-type}
+                                    (gen/sleep disrupt-time)
                                     {:type :info :f :heal-network}
                                     (gen/sleep 10)
                                     {:type :info
-                                     :f    :recover
-                                     :recovery-type recovery-type
-                                     :targeter cbnemesis/basic-nodes-targeter
-                                     :targeter-opts {:type :all
-                                                     :condition (merge {:cluster [:failed]
-                                                                        :network [:connected]
-                                                                        :node [:running]}
-                                                                       (when-let [target-sq target-server-groups]
-                                                                         {:server-group [random-server-group]}))}}
-                                    (gen/sleep 5)]  client-generator)))
+                                     :f :recover
+                                     :recovery-type recovery-type}]
+                                   client-generator)))
 
 ;; =============
 ;; Set Workloads

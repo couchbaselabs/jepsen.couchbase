@@ -74,11 +74,12 @@
   (let [fail-type (:failover-type op)
         target-nodes ((:targeter op) testData op)
         endpoint (case fail-type
-                   :hard  "/controller/failOver"
+                   :hard "/controller/failOver"
                    :graceful "/controller/startGracefulFailover")]
     (doseq [target target-nodes]
-      (info "Failing over node" target)
-      (util/rest-call target endpoint {:otpNode (util/get-node-name target)})
+      (let [call-node ((:call-node op (fn [_ t] t)) testData target)]
+        (info "Failing over node" target "with rest-call to" call-node)
+        (util/rest-call call-node endpoint {:otpNode (util/get-node-name target)}))
       (if (= fail-type :graceful) (util/wait-for-rebalance-complete target)))
     (assoc op :value target-nodes)))
 
@@ -169,6 +170,20 @@
     (info "Applying grudge:" grudge)
     (net/drop-all! testData grudge)
     (assoc op :value partitions)))
+
+(defn isolate-two-nodes-from-each-other
+  "Introduce a network partition such that two nodes cannot communicate with
+  each other, but are able to communicate with all other nodes."
+  [testData op]
+  (assert (= (:f op) :isolate-two-nodes-from-each-other))
+  (let [isolate-nodes ((:targeter op) testData op)
+        isolate-1 (first isolate-nodes)
+        isolate-2 (second isolate-nodes)]
+    (assert (= (count isolate-nodes) 2)
+            "isolate-two-nodes-from-each-other targeter must return exactly 2 nodes")
+    (jepsen.net/drop-all! testData
+                          {isolate-1 #{isolate-2} isolate-2 #{isolate-1}})
+    (assoc op :value isolate-nodes)))
 
 (defn heal-network
   "Remove all active grudges from the network such that all nodes can
@@ -386,6 +401,7 @@
         :failover (failover testData op)
         :recover (recover testData op)
         :isolate-completely (isolate-completely testData op)
+        :isolate-two-nodes-from-each-other (isolate-two-nodes-from-each-other testData op)
         :heal-network (heal-network testData op)
 
         :rebalance-out (rebalance-out testData op)
