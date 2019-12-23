@@ -54,7 +54,7 @@
       (.durability ^CommonDurabilityOptions mutation-options persist-to replicate-to))))
 
 ; Mutation Option builders
-(defmacro options-builder
+(defn options-builder
   [obj levels]
   (doto obj
     (apply-durability-options! levels)
