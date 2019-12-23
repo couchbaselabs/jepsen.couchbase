@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -e
 lein check
 lein cljfmt check
 lein eastwood
