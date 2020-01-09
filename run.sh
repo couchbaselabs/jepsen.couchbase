@@ -46,21 +46,21 @@ done
 
 # parameter checks
 
-if [ -z "$SUITE" ]; then
+if [[ -z "$SUITE" ]]; then
     echo "--suite not provided"
     exit 1
 fi
 
-if [ -z "$PACKAGE" ]; then
+if [[ -z "$PACKAGE" ]]; then
     echo "--package not provided"
     exit 1
 fi
 
-if [ "$PROVISIONER" != "vagrant" -a "$PROVISIONER" != "docker" -a "$PROVISIONER" != "vmpool" -a "$PROVISIONER" != "cluster-run" ]; then
+if [[ "$PROVISIONER" != "vagrant" && "$PROVISIONER" != "docker" && "$PROVISIONER" != "vmpool" && "$PROVISIONER" != "cluster-run" ]]; then
     echo "Provisioner must be either vagrant, docker, or cluster-run, but got $PROVISIONER"
 fi
 
-case $PACKAGE in
+case ${PACKAGE} in
     *.rpm)
         ISBUILD=0 ;;
     *.deb)
@@ -87,30 +87,30 @@ crash_array=()
 unknown_array=()
 memcached_array=()
 
-if [ "$JENKINS_RUN" ]; then
+if [[ "$JENKINS_RUN" ]]; then
     rm -rf ./store
     mkdir ./store
     mkdir ./store/Couchbase
     mkdir ./store/Couchbase/pass
 fi
 
-suiteConfigName=$(basename $SUITE)
+suiteConfigName=$(basename ${SUITE})
 suiteName=${suiteConfigName%.*}
 
-if [ -z $BUILD_TAG ] ; then
-    testStoreName=$suiteName
+if [[ -z ${BUILD_TAG} ]] ; then
+    testStoreName=${suiteName}
 else
-    testStoreName=$BUILD_TAG
+    testStoreName=${BUILD_TAG}
 fi
 
-if [[ $KV_CV_RUN ]]; then
+if [[ ${KV_CV_RUN} ]]; then
     rm -f ./jepsen-output-*.log
 fi
 
 while IFS='' read -r line || [[ -n "$line" ]]; do
 
     # ignore commented out tests in conf file
-    if [[ $line == \#* ]]; then
+    if [[ ${line} == \#* ]]; then
         continue
     fi
 
@@ -120,7 +120,7 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
 
     # parse conf file line for workload and parameters
     IFS=,
-    ary=($line)
+    ary=(${line})
     testParams=""
     for key in "${!ary[@]}"
     do
@@ -128,7 +128,7 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
     done
 
     IFS=,
-    ary=($GLOBAL)
+    ary=(${GLOBAL})
     for key in "${!ary[@]}"
     do
         global_param=${ary[$key]}
@@ -138,34 +138,34 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
 
     # run test using vagrants or docker
     PREVIOUS_RUN=$(cd ./store/latest; pwd -P)
-    if [ "$PROVISIONER" == "vagrant" ]; then
+    if [[ "$PROVISIONER" == "vagrant" ]]; then
         command="$vagrantBaseCommand $vagrantParams $packageParam $testParams &> jepsen-output-$test_num.log"
         echo "Test command: $command"
         echo ""
-        eval $command
+        eval ${command}
         EXITCODE=$?
     fi
-    if [ "$PROVISIONER" == "docker" ]; then
+    if [[ "$PROVISIONER" == "docker" ]]; then
         docker exec -it jepsen-control bash -c "rm -rf /jepsen/store"
         command="$dockerBaseCommand $dockerParams $packageParam $testParams &> jepsen-output-$test_num.log"
         echo "Test command: $command"
         echo ""
-        eval $command
+        eval ${command}
         EXITCODE=$?
         docker cp jepsen-control:/jepsen/store .
     fi
-    if [ "$PROVISIONER" == "vmpool" ]; then
+    if [[ "$PROVISIONER" == "vmpool" ]]; then
         command="$vmpoolBaseCommand $vmpoolParams $packageParam $testParams &> jepsen-output-$test_num.log"
         echo "Test command: $command"
         echo ""
-        eval $command
+        eval ${command}
         EXITCODE=$?
     fi
-    if [ "$PROVISIONER" == "cluster-run" ]; then
+    if [[ "$PROVISIONER" == "cluster-run" ]]; then
 	command="lein trampoline run test --cluster-run $packageParam $testParams &> jepsen-output-$test_num.log"
 	echo "Test command: $command"
 	echo ""
-	eval $command
+	eval ${command}
 	EXITCODE=$?
     fi
 
@@ -185,9 +185,9 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
         cd ${current_dir}
     fi
 
-    if [ $EXITCODE -ne 0 ]; then
+    if [[ ${EXITCODE} -ne 0 ]]; then
         cat "jepsen-output-$test_num.log"
-        if [ "$PREVIOUS_RUN" != "$LAST_RUN" ] && grep -q -e "^ :valid? false" store/latest/results.edn; then
+        if [[ "$PREVIOUS_RUN" != "$LAST_RUN" ]] && grep -q -e "^ :valid? false" store/latest/results.edn; then
             grep -m 1 -e ":workload.*" store/latest/jepsen.log | cut -d "\"" -f 2 |
                 xargs printf "\n\nJepsen exited with failure for workload %s\n\n"
             printf "Test failed!\n\n"
@@ -201,10 +201,10 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
         fi
     else
         LAST_RUN=$(cd ./store/latest; pwd -P)
-        if tail -n 1 $LAST_RUN/results.edn | grep -q ":valid? true" ; then
+        if tail -n 1 ${LAST_RUN}/results.edn | grep -q ":valid? true" ; then
             pass=$(($pass+1))
             printf "Test passed!\n"
-            if [ "$JENKINS_RUN" ]; then
+            if [[ "$JENKINS_RUN" ]]; then
                 lastRunDir=$(ls ./store/Couchbase/ | grep -v 'latest' | grep -v 'pass' | tail -1)
                 mv ./store/Couchbase/${lastRunDir} ./store/Couchbase/pass
                 ln -s ./store/Couchbase/pass/${lastRunDir} ./store/latest
@@ -227,25 +227,25 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
     echo "crash: $crash"
     echo "memcached errors (not reported as total): $memcached_failure"
     echo "$pass/$total = $percent%"
-    if [ "$unknown" -gt 0 ]; then
+    if [[ "$unknown" -gt 0 ]]; then
         echo "###### Unknown Tests ######"
         printf '%s\n' "${unknown_array[@]}"
     fi
-    if [ "$fail" -gt 0 ];then
+    if [[ "$fail" -gt 0 ]];then
         echo "###### Failed Tests #########"
         printf '%s\n' "${fail_array[@]}"
     fi
-    if [ "$crash" -gt 0 ];then
+    if [[ "$crash" -gt 0 ]];then
         echo "###### Crashed Tests ########"
         printf '%s\n' "${crash_array[@]}"
     fi
-    if [ "$memcached_failure" -gt 0 ]; then
+    if [[ "$memcached_failure" -gt 0 ]]; then
         echo "###### Memcached errors ######"
         printf '%s\n' "${memcached_array[@]}"
     fi
     echo "################################################################"
 
-    if [ "$ISBUILD" = 1 ]; then
+    if [[ "$ISBUILD" = 1 ]]; then
         packageParam="--install-path $PACKAGE";
     else
         packageParam="";
@@ -255,12 +255,12 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
 done < "$SUITE"
 echo "###### Finished Running Suite #########"
 
-if [ $KV_CV_RUN ]; then
+if [[ ${KV_CV_RUN} ]]; then
     # Rename this test run to the suite name we just ran
-    if [ -d ./store/Couchbase-$testStoreName ]; then
-        mv ./store/Couchbase/*  ./store/Couchbase-$testStoreName/
+    if [[ -d ./store/Couchbase-${testStoreName} ]]; then
+        mv ./store/Couchbase/*  ./store/Couchbase-${testStoreName}/
     else
-        mv ./store/Couchbase/ ./store/Couchbase-$testStoreName
+        mv ./store/Couchbase/ ./store/Couchbase-${testStoreName}
     fi
 fi
 
@@ -274,25 +274,25 @@ echo "fail: $fail" >> ./test_report.txt
 echo "crash: $crash" >> ./test_report.txt
 echo "memcached errors (not reported as total): $memcached_failure" >> ./test_report.txt
 echo "$pass/$total = $percent%" >> ./test_report.txt
-if [ "$unknown" -gt 0 ]; then
+if [[ "$unknown" -gt 0 ]]; then
     echo "###### Unknown Tests ########" >> ./test_report.txt
     printf '%s\n' "${unknown_array[@]}" >> ./test_report.txt
 fi
-if [ "$fail" -gt 0 ];then
+if [[ "$fail" -gt 0 ]];then
     echo "###### Failed Tests #########" >> ./test_report.txt
     printf '%s\n' "${fail_array[@]}" >> ./test_report.txt
 fi
-if [ "$crash" -gt 0 ];then
+if [[ "$crash" -gt 0 ]];then
     echo "###### Crashed Tests ########" >> ./test_report.txt
     printf '%s\n' "${crash_array[@]}" >> ./test_report.txt
 fi
-if [ "$memcached_failure" -gt 0 ]; then
+if [[ "$memcached_failure" -gt 0 ]]; then
     echo "###### Memcached errors ######" >> ./test_report.txt
     printf '%s\n' "${memcached_array[@]}" >> ./test_report.txt
 fi
 echo "################################################################" >> ./test_report.txt
 cat ./test_report.txt
-if [ "$JENKINS_RUN" ]; then
+if [[ "$JENKINS_RUN" ]]; then
     mv ./test_report.txt ./store/Couchbase
     rm -rf ./store/Couchbase/latest
     rm -rf ./store/latest
@@ -301,13 +301,13 @@ fi
 
 # These exit in the order their written. We need to ensue failures are always reported
 # over a crash or unknown result.
-if [ "$fail" -gt 0 ]; then
+if [[ "$fail" -gt 0 ]]; then
     exit 3
-elif [ "$crash" -gt 0 ]; then
+elif [[ "$crash" -gt 0 ]]; then
     exit 4
-elif [ "$unknown" -gt 0 ]; then
+elif [[ "$unknown" -gt 0 ]]; then
     exit 2
-elif [ "$memcached_failure" -gt 0 ]; then
+elif [[ "$memcached_failure" -gt 0 ]]; then
     exit 3
 else
     exit 0

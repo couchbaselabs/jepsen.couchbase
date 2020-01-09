@@ -43,12 +43,12 @@ case $i in
 esac
 done
 
-if [ -z "$TYPE" ]; then
+if [[ -z "$TYPE" ]]; then
     echo "--type not provided"
     exit 1
 fi
 
-if [ -z "$ACTION" ]; then
+if [[ -z "$ACTION" ]]; then
     echo "--action not provided"
     exit 1
 fi
@@ -62,7 +62,7 @@ case "$TYPE" in
                     echo "--nodes must be greater than 0"
                 fi
 
-                if [ -z "$VM_OS" ]; then
+                if [[ -z "$VM_OS" ]]; then
                     echo "--vm-os not provided, defaulting to ubuntu1604"
                     VM_OS="ubuntu1604"
                 else
@@ -83,7 +83,7 @@ case "$TYPE" in
                 # create will ensure that the number of nodes requested is the number of nodes present
                 # and will extract ips into nodes file
                 currentNodes=0
-                if [ -d "./resources/.vagrant/machines/" ]; then
+                if [[ -d "./resources/.vagrant/machines/" ]]; then
                   currentNodes=$(ls -1U ./resources/.vagrant/machines/ | wc -l)
                 fi
 
@@ -93,24 +93,24 @@ case "$TYPE" in
 
 
                 if [[ NODES -ge currentNodes ]]; then
-                    NODES=$NODES vagrant up
+                    NODES=${NODES} vagrant up
                 else
                     for (( i=currentNodes; i>NODES; i-- ))
                     do
                         NODES=${i} vagrant destroy node${i} --force && rm -rf ./resources/.vagrant/machines/node${i}
                     done
-		            NODES=$NODES vagrant up
+		            NODES=${NODES} vagrant up
                 fi
                 for (( i=1; i<=$(ls -1U ./resources/.vagrant/machines/ | wc -l); i++ ))
                 do
-                    if [ "$VM_OS" = "ubuntu1604" ]; then
+                    if [[ "$VM_OS" = "ubuntu1604" ]]; then
                         if [[ i -eq 1 ]]; then
                             NODES=$(ls -1U ./resources/.vagrant/machines/ | wc -l) vagrant ssh node${i} -c "ifconfig eth1" | grep -o -E "inet addr:[0-9]+(\.[0-9]+){3}" | cut -d ":" -f 2- >  ./nodes
                         else
                             NODES=$(ls -1U ./resources/.vagrant/machines/ | wc -l) vagrant ssh node${i} -c "ifconfig eth1" | grep -o -E "inet addr:[0-9]+(\.[0-9]+){3}" | cut -d ":" -f 2- >>  ./nodes
                         fi
                     fi
-                    if [ "$VM_OS" = "centos7" ]; then
+                    if [[ "$VM_OS" = "centos7" ]]; then
                         if [[ i -eq 1 ]]; then
                             NODES=$(ls -1U ./resources/.vagrant/machines/ | wc -l) vagrant ssh node${i} -c "ifconfig eth1" | grep -o -E "inet [0-9]+(\.[0-9]+){3}" | cut -d " " -f 2- >  ./nodes
                         else
@@ -154,7 +154,7 @@ case "$TYPE" in
                 for (( i=1; i<=$(ls -1U ./resources/.vagrant/machines/ | wc -l); i++ ))
                 do
 
-                    if [ "$is_ubuntu1604" ]; then
+                    if [[ "$is_ubuntu1604" ]]; then
                         if [[ i -eq 1 ]]; then
                             NODES=$(ls -1U ./resources/.vagrant/machines/ | wc -l) vagrant ssh node${i} -c "ifconfig eth1" | grep -o -E "inet addr:[0-9]+(\.[0-9]+){3}" | cut -d ":" -f 2- >  ./nodes
                         else
@@ -162,7 +162,7 @@ case "$TYPE" in
                         fi
                     fi
 
-                    if [ "$is_centos7" ]; then
+                    if [[ "$is_centos7" ]]; then
                         if [[ i -eq 1 ]]; then
                             NODES=$(ls -1U ./resources/.vagrant/machines/ | wc -l) vagrant ssh node${i} -c "ifconfig eth1" | grep -o -E "inet [0-9]+(\.[0-9]+){3}" | cut -d " " -f 2- >  ./nodes
                         else
@@ -182,7 +182,7 @@ case "$TYPE" in
     "docker")
         case "$ACTION" in
 	    "create")
-		(cd ./resources/docker/ && sh docker.sh --start --nodes=$NODES)
+		(cd ./resources/docker/ && sh docker.sh --start --nodes=${NODES})
 		;;
 	    "halt-all")
 		(cd ./resources/docker/ && sh docker.sh --stop)
