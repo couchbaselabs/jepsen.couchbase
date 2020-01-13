@@ -14,18 +14,20 @@
                                          ReplaceOptions
                                          InsertOptions
                                          RemoveOptions)
-           (com.couchbase.client.core.error KeyExistsException
-                                            KeyNotFoundException
-                                            RequestTimeoutException
-                                            CouchbaseOutOfMemoryException
-                                            TemporaryFailureException
+           (com.couchbase.client.core.error TemporaryFailureException
                                             CouchbaseException
                                             DurabilityImpossibleException
                                             DurabilityLevelNotAvailableException
                                             DurableWriteInProgressException
                                             RequestCanceledException
                                             DurabilityAmbiguousException
-                                            CASMismatchException)
+                                            DocumentNotFoundException
+                                            CasMismatchException
+                                            ServerOutOfMemoryException
+                                            DocumentExistsException
+                                            TimeoutException
+                                            UnambiguousTimeoutException
+                                            AmbiguousTimeoutException)
            (com.couchbase.client.java Collection)
            (java.util NoSuchElementException)
            (com.couchbase.transactions TransactionDurabilityLevel
@@ -58,21 +60,21 @@
                  :type :ok
                  :cas (.cas ^LookupInResult get-obj)
                  :value (independent/tuple rawKey ^Integer (clientUtils/get-int-from-look-up-obj get-obj)))))
-      (catch KeyNotFoundException _
+      (catch DocumentNotFoundException _
         (assoc op :type :ok :value (independent/tuple rawKey :nil)))
       ;; Reads are idempotent, so it's ok to just :fail on any exception. Note
-      ;; that we don't :fail on a KeyNotFoundException, since translating between
+      ;; that we don't :fail on a DocumentNotFoundException, since translating between
       ;; the Couchbase and Jepsen models we know the read succeeded, but it wouldn't
       ;; strictly be wrong if we did return it as a failure (i.e it wouldn't cause
       ;; false-positive linearizability errors to be detected; it might increase the
       ;; probability of a linearizability error going undetected, but Jepsen can't
       ;; prove correctness anyway.
-      (catch RequestTimeoutException e
-        (assoc op :type :fail, :error :RequestTimeoutException :msg (.getMessage e)))
+      (catch UnambiguousTimeoutException e
+        (assoc op :type :fail, :error :UnambiguousTimeoutException :msg (.getMessage e)))
       (catch TemporaryFailureException e
         (assoc op :type :fail, :error :Etmpfail :msg (.getMessage e)))
-      (catch CouchbaseOutOfMemoryException _
-        (assoc op :type :fail :error :CouchbaseOutOfMemoryException))
+      (catch ServerOutOfMemoryException _
+        (assoc op :type :fail :error :ServerOutOfMemoryException))
       (catch CouchbaseException e
         (assoc op :type :fail, :error e)))))
 
@@ -108,16 +110,16 @@
         (assoc op :type :fail, :error :SyncWriteInProgress :msg (.getMessage e)))
       (catch TemporaryFailureException e
         (assoc op :type :fail, :error :Etmpfail :msg (.getMessage e)))
-      (catch CouchbaseOutOfMemoryException _
-        (assoc op :type :fail :error :CouchbaseOutOfMemoryException))
-      (catch KeyExistsException _
-        (assoc op :type :fail :error :KeyExistsException))
+      (catch ServerOutOfMemoryException _
+        (assoc op :type :fail :error :ServerOutOfMemoryException))
+      (catch DocumentExistsException _
+        (assoc op :type :fail :error :DocumentExistsException))
       ;; Ambiguous result - operation may or may not take effect
       (catch RequestCanceledException e
         (assoc op :type :info :error :RequestCanceledException :msg (.getMessage e)))
       (catch DurabilityAmbiguousException e
         (assoc op :type :info, :error :SyncWriteAmbiguous :msg (.getMessage e)))
-      (catch RequestTimeoutException e
+      (catch TimeoutException e
         (assoc op :type :info, :error :RequestTimeoutException :msg (.getMessage e)))
       (catch CouchbaseException e
         (assoc op :type :info, :error e)))))
@@ -144,9 +146,9 @@
       ;; Certain failures - we know the operations did not take effect
       (catch NoSuchElementException e
         (assoc op :type :fail, :error :GetFailed :msg (.getMessage e)))
-      (catch KeyNotFoundException _
-        (assoc op :type :fail :error :KeyNotFoundException))
-      (catch CASMismatchException _
+      (catch DocumentNotFoundException _
+        (assoc op :type :fail :error :DocumentNotFoundException))
+      (catch CasMismatchException _
         (assoc op :type :fail, :error :CASMismatchException))
       (catch DurabilityImpossibleException e
         (assoc op :type :fail, :error :DurabilityImpossible :msg (.getMessage e)))
@@ -156,15 +158,17 @@
         (assoc op :type :fail, :error :SyncWriteInProgress :msg (.getMessage e)))
       (catch TemporaryFailureException e
         (assoc op :type :fail, :error :Etmpfail :msg (.getMessage e)))
-      (catch CouchbaseOutOfMemoryException _
-        (assoc op :type :fail :error :CouchbaseOutOfMemoryException))
+      (catch ServerOutOfMemoryException _
+        (assoc op :type :fail :error :ServerOutOfMemoryException))
+      (catch UnambiguousTimeoutException e
+        (assoc op :type :fail :error :UnambiguousTimeoutException :msg (.getMessage e)))
       ;; Ambiguous result - operation may or may not take effect
       (catch RequestCanceledException e
         (assoc op :type :info :error :RequestCanceledException :msg (.getMessage e)))
       (catch DurabilityAmbiguousException e
         (assoc op :type :info, :error :SyncWriteAmbiguous :msg (.getMessage e)))
-      (catch RequestTimeoutException e
-        (assoc op :type :info, :error :RequestTimeoutException :msg (.getMessage e)))
+      (catch AmbiguousTimeoutException e
+        (assoc op :type :info, :error :AmbiguousTimeoutException :msg (.getMessage e)))
       (catch CouchbaseException e
         (assoc op :type :info, :error e)))))
 
@@ -223,13 +227,13 @@
       (assoc op :type :fail, :error :SyncWriteInProgress :msg (.getMessage e)))
     (catch TemporaryFailureException e
       (assoc op :type :fail, :error :Etmpfail :msg (.getMessage e)))
-    (catch CouchbaseOutOfMemoryException _
-      (assoc op :type :fail :error :CouchbaseOutOfMemoryException))
+    (catch ServerOutOfMemoryException _
+      (assoc op :type :fail :error :ServerOutOfMemoryException))
     ;; Ambiguous result - operation may or may not take effect
     (catch DurabilityAmbiguousException e
       (assoc op :type :info, :error :SyncWriteAmbiguous :msg (.getMessage e)))
-    (catch RequestTimeoutException e
-      (assoc op :type :info, :error :RequestTimeoutException :msg (.getMessage e)))
+    (catch AmbiguousTimeoutException e
+      (assoc op :type :info, :error :AmbiguousTimeoutException :msg (.getMessage e)))
     (catch CouchbaseException e
       (assoc op :type :info, :error e))))
 
@@ -279,15 +283,15 @@
       (assoc op :type :fail, :error :SyncWriteInProgress :msg (.getMessage e)))
     (catch TemporaryFailureException e
       (assoc op :type :fail :error :Etmpfail :msg (.getMessage e)))
-    (catch CouchbaseOutOfMemoryException _
-      (assoc op :type :fail :error :CouchbaseOutOfMemoryException))
+    (catch ServerOutOfMemoryException _
+      (assoc op :type :fail :error :ServerOutOfMemoryException))
     ;; Ambiguous result - operation may or may not take effect
     (catch RequestCanceledException e
       (assoc op :type :info :error :RequestCanceledException :msg (.getMessage e)))
     (catch DurabilityAmbiguousException e
       (assoc op :type :info, :error :SyncWriteAmbiguous :msg (.getMessage e)))
-    (catch RequestTimeoutException e
-      (assoc op :type :info, :error :RequestTimeoutException :msg (.getMessage e)))
+    (catch AmbiguousTimeoutException e
+      (assoc op :type :info, :error :AmbiguousTimeoutException :msg (.getMessage e)))
     (catch CouchbaseException e
       (assoc op :type :info, :error e))))
 
@@ -310,13 +314,13 @@
       (assoc op :type :fail, :error :SyncWriteInProgress :msg (.getMessage e)))
     (catch TemporaryFailureException e
       (assoc op :type :fail, :error :Etmpfail :msg (.getMessage e)))
-    (catch CouchbaseOutOfMemoryException _
-      (assoc op :type :fail :error :CouchbaseOutOfMemoryException))
+    (catch ServerOutOfMemoryException _
+      (assoc op :type :fail :error :ServerOutOfMemoryException))
     ;; Ambiguous result - operation may or may not take effect
     (catch DurabilityAmbiguousException e
       (assoc op :type :info, :error :SyncWriteAmbiguous :msg (.getMessage e)))
-    (catch RequestTimeoutException e
-      (assoc op :type :info, :error :RequestTimeoutException :msg (.getMessage e)))
+    (catch AmbiguousTimeoutException e
+      (assoc op :type :info, :error :AmbiguousTimeoutException :msg (.getMessage e)))
     (catch CouchbaseException e
       (assoc op :type :info, :error e))))
 
@@ -326,8 +330,8 @@
       (if (.get ^Collection collection key)
       ;; If the key is found, return it
         rawKey))
-    ;; Else if we get a KeyNotFoundException, return nil
-    (catch KeyNotFoundException _ nil)
+    ;; Else if we get a DocumentNotFoundException, return nil
+    (catch DocumentNotFoundException _ nil)
     ;; Retry other failures, throwing an exception if it persists
     (catch Exception e
       (if (pos? attempts)

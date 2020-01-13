@@ -32,7 +32,7 @@
   [testData]
   (info "Opening new client")
   (let [node       (->> testData :nodes rand-nth util/get-connection-string)
-        ioConfig   (.mutationTokensEnabled (IoConfig/builder) true)
+        ioConfig   (.enableMutationTokens (IoConfig/builder) true)
         timeout    (-> (TimeoutConfig/builder)
                        (.kvTimeout  (:kv-timeout testData))
                        (.connectTimeout (Duration/ofSeconds (:connect-timeout testData))))

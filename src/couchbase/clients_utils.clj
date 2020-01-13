@@ -15,13 +15,15 @@
                                          LookupInResult
                                          MutateInOptions
                                          MutateInSpec
-                                         LookupInSpec RemoveOptions ReplaceOptions)
+                                         LookupInSpec
+                                         RemoveOptions
+                                         ReplaceOptions)
            (java.util Collections
                       Arrays)
-           (com.couchbase.client.core.error KeyNotFoundException)
            (com.couchbase.client.core.msg.kv DurabilityLevel)
            (com.couchbase.client.java.json JsonObject)
-           (com.couchbase.client.java Collection))
+           (com.couchbase.client.java Collection)
+           (com.couchbase.client.core.error DocumentNotFoundException))
   (:gen-class))
 
 ;; Helper functions to apply durability options
@@ -30,9 +32,9 @@
   "Helper function to apply durability level to perform sync-writes"
   [mutation-options op]
   (if-let [level (case (int (op :durability-level 0))
-                   0 nil
+                   0 DurabilityLevel/NONE
                    1 DurabilityLevel/MAJORITY
-                   2 DurabilityLevel/MAJORITY_AND_PERSIST_ON_MASTER
+                   2 DurabilityLevel/MAJORITY_AND_PERSIST_TO_ACTIVE
                    3 DurabilityLevel/PERSIST_TO_MAJORITY)]
     (.durability ^CommonDurabilityOptions mutation-options level)))
 
@@ -132,7 +134,7 @@
                   ^String key
                   ^Arrays (Collections/singletonList ^Upsert (MutateInSpec/upsert "val" val))
                   ^MutateInOptions (get-mutate-in-ops levels))
-       (catch KeyNotFoundException _
+       (catch DocumentNotFoundException _
          (.insert ^Collection collection
                   ^String key
                   ^JsonObject (create-int-json-obj val)
