@@ -808,13 +808,15 @@
    autofailover  (opts :autofailover true)
    autofailover-timeout  (opts :autofailover-timeout 6)
    autofailover-maxcount (opts :autofailover-maxcount 3)
+   init-counter-value (opts :init-counter-value 0)
    control-atom  (atom :continue)
    checker   (checker/compose
               {:timeline (timeline/html)
                :counter  (checker/counter)})
-   client-generator  (->> [counter-add counter-read]
+   client-generator  (->> (repeat 10 counter-add)
+                          (cons counter-read)
                           gen/mix
-                          (gen/delay 1/10)
+                          (gen/delay 1/50)
                           (set-durability-level opts))
    generator (do-n-nemesis-cycles cycles [(gen/sleep 5)] client-generator)))
 

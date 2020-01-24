@@ -397,7 +397,7 @@
                :mutation-token (str ^MutationToken token)
                :value ^Integer (.content ^CounterResult get-obj)))
       (catch DocumentNotFoundException _
-        (assoc op :type :ok :value (independent/tuple docKey :nil)))
+        (assoc op :type :ok :value :nil))
       ;; Reads are idempotent, so it's ok to just :fail on any exception. Note
       ;; that we don't :fail on a DocumentNotFoundException, since translating between
       ;; the Couchbase and Jepsen models we know the read succeeded, but it wouldn't
@@ -461,13 +461,13 @@
   (setup! [this test]
     (do (try
           (.remove ^Collection collection "jepsen")
-          (catch DocumentNotFoundException _))
+          (catch CouchbaseException _))
         (try (.increment ^BinaryCollection (.binary ^Collection collection)
                          "jepsen"
-                         (doto (clientUtils/get-increment-ops {:durability-level 3})
+                         (doto (clientUtils/get-increment-ops {:durability-level 1})
                            (.initial  (:init-counter-value test))
                            (.delta 0)))
-             (catch Exception e
+             (catch CouchbaseException e
                (warn (.getMessage e))))))
 
   (invoke! [this testData op]
