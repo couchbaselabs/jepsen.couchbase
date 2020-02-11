@@ -196,4 +196,7 @@
    [nil "--use-subdoc"
     "Use specify if subdoc mutations should be used"
     :update-fn (fn [_] (alter-var-root (var *use-subdoc*) (fn [_] true)))
+    :default false]
+   [nil "--disable-auto-compaction"
+    "Use to disable auto-compaction"
     :default false]])

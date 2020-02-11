@@ -385,6 +385,14 @@
   (info "Setting memcached log level to debug")
   (rest-call "/pools/default/settings/memcached/global" {:verbosity 1}))
 
+(defn disable-auto-compaction
+  "Disables auto-compaction"
+  []
+  (info "Disabling auto-compaction")
+  (rest-call "/controller/setAutoCompaction"
+             {"databaseFramgentationThreshold[size]" "undefined"
+              "parallelDBAndViewCompaction" false}))
+
 (defn setup-cluster
   "Setup couchbase cluster"
   [testData node]
@@ -412,6 +420,8 @@
       (setup-server-groups testData))
     (if (:enable-memcached-debug-log-level testData)
       (set-debug-log-level))
+    (if (:disable-auto-compaction testData)
+      (disable-auto-compaction))
     (info "Setup complete")))
 
 (defn install-package
