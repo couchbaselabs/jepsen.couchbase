@@ -1,5 +1,6 @@
 (ns couchbase.checker
   (:require [clojure.core.reducers :as r]
+            [clojure.core :as c]
             [clojure.set :as set]
             [clojure.tools.logging :refer [info warn error fatal]]
             [jepsen.checker :as checker]
@@ -26,6 +27,114 @@
           (all-fail? :write) {:valid? :unknown :error "Insufficient write ops returned :ok"}
           (all-fail? :add) {:valid? :unknown :error "Insufficient add ops returned :ok"}
           :else   {:valid? true})))))
+
+(defn set-upsert-checker
+  "Given a set of :add operations followed by a final :read, verifies that
+ 1. every successfully upserted or added set is present in the read.
+   a. If upsert for a set was not successful, then read for that set should
+       have the corresponding set-add's value.
+   b. If add for a set was not successful, then read for that set should
+       have the corresponding upsert's value.
+ 2. and that the read contains only elements for which an add or upsert was attempted."
+  []
+  (reify checker/Checker
+    (check [this test history opts]
+      (let [add-attempts (->> history
+                              (r/filter op/invoke?)
+                              (r/filter #(= :add (:f %)))
+                              (r/map :value)
+                              (into #{}))
+            upsert-attempts (->> history
+                                 (r/filter op/invoke?)
+                                 (r/filter #(= :upsert (:f %)))
+                                 (r/map :value)
+                                 (into #{}))
+
+            add-ok (->> history
+                        (r/filter op/ok?)
+                        (r/filter #(= :add (:f %)))
+                        (r/map :value)
+                        (into #{}))
+
+            upsert-ok (->> history
+                           (r/filter op/ok?)
+                           (r/filter #(= :upsert (:f %)))
+                           (r/map :value)
+                           (into #{}))
+
+            final-read (into (hash-map) (->> history
+                                             (r/filter op/ok?)
+                                             (r/filter #(= :read (:f %)))
+                                             (r/map :value)
+                                             (reduce (fn [_ x] x) nil)))
+
+            final-read-keys (into (sorted-set) (keys final-read))
+
+            add-ok-values (into (sorted-set) add-ok)
+
+            upsert-ok-values (->> history
+                                  (r/filter op/ok?)
+                                  (r/filter #(= :upsert (:f %)))
+                                  (r/map :insert-value)
+                                  (into (sorted-set)))]
+
+        (if-not final-read-keys
+          {:valid? :unknown
+           :error  "Set was never read"}
+
+          (let [final-read-keys (c/set final-read-keys)
+
+                ; The OK set is every read value which we tried to add
+                ok          (set/intersection final-read-keys add-attempts)
+
+                ; Unexpected records are those we *never* attempted.
+                unexpected  (set/difference final-read-keys (set/union add-attempts upsert-attempts))
+
+                ; Lost records are those we definitely added or upserted but weren't read
+                lost        (set/difference (set/union add-ok upsert-ok) final-read-keys)
+
+                ;upsert-lost are those we definitely added but weren't upserted
+                upsert-lost (set/difference add-ok upsert-ok)
+
+                ;add-lost are those we definitely upserted but weren't added
+                add-lost     (set/difference upsert-ok add-ok)
+
+                ;;Its ok for upserts to be lost as long as the corresponding values of those keys were read from add operation.
+                upsert-not-rolled-back          (set (remove nil? (map (fn [x] (if-not (contains? add-ok-values (get final-read x))
+                                                                                 x)) upsert-lost)))
+                ;;Its ok for adds to be lost as long as the corresponding values of those keys were read from upsert operation
+                add-not-rolled-back             (set (remove nil? (map (fn [x] (if-not (contains? upsert-ok-values (get final-read x))
+                                                                                 x)) add-lost)))
+
+                upsert-rolled-back  (set/difference upsert-lost upsert-not-rolled-back)
+                add-rolled-back     (set/difference add-lost add-not-rolled-back)
+
+
+                ; Recovered records are those where we didn't know if the add
+                ; succeeded or not, but we found them in the final set.
+
+
+                recovered   (set/difference ok add-ok)]
+
+            {:valid?              (and (empty? lost) (empty? unexpected) (empty? upsert-not-rolled-back) (empty? add-not-rolled-back))
+             :add-attempt-count     (count add-attempts)
+             :upsert-attempt-count (count upsert-attempts)
+             :add-acknowledged-count  (count add-ok)
+             :upsert-acknowledged-count  (count upsert-ok)
+             :ok-count            (count ok)
+             :lost-count          (count lost)
+             :recovered-count     (count recovered)
+             :unexpected-count    (count unexpected)
+             :upsert-not-rolled-back-count  (count upsert-not-rolled-back)
+             :add-not-rolled-back-count     (count add-not-rolled-back)
+             :ok                  (util/integer-interval-set-str ok)
+             :lost                (util/integer-interval-set-str lost)
+             :unexpected          (util/integer-interval-set-str unexpected)
+             :upsert-not-rolled-back  (util/integer-interval-set-str upsert-not-rolled-back)
+             :add-not-rolled-back (util/integer-interval-set-str add-not-rolled-back)
+             :upsert-rolled-back   (util/integer-interval-set-str upsert-rolled-back)
+             :add-rolled-back  (util/integer-interval-set-str add-rolled-back)
+             :recovered           (util/integer-interval-set-str recovered)}))))))
 
 (defn extended-set-checker
   "Checker for operations over a set. A given key must have exactly one add

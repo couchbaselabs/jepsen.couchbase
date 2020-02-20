@@ -13,6 +13,7 @@
                                          MutationResult
                                          ReplaceOptions
                                          InsertOptions
+                                         UpsertOptions
                                          RemoveOptions
                                          IncrementOptions
                                          DecrementOptions
@@ -299,6 +300,36 @@
     (catch CouchbaseException e
       (assoc op :type :info, :error e))))
 
+(defn do-set-upsert [collection op]
+  (try
+    (let [docKey (format "jepsen%010d" (:value op))
+          result (.upsert ^Collection collection
+                          ^String docKey
+                          (clientUtils/create-int-json-obj (:insert-value op))
+                          ^UpsertOptions (clientUtils/get-upsert-ops op))
+          token  (.orElse (.mutationToken ^MutationResult result) nil)]
+      (assoc op
+             :type :ok
+             :mutation-token (str token)))
+    ;; Certain failures - we know the operations did not take effect
+    (catch DurabilityImpossibleException e
+      (assoc op :type :fail, :error :DurabilityImpossible :msg (.getMessage e)))
+    (catch DurabilityLevelNotAvailableException e
+      (assoc op :type :fail, :error :DurabilityLevelNotAvailable :msg (.getMessage e)))
+    (catch DurableWriteInProgressException e
+      (assoc op :type :fail, :error :SyncWriteInProgress :msg (.getMessage e)))
+    (catch TemporaryFailureException e
+      (assoc op :type :fail :error :Etmpfail :msg (.getMessage e)))
+    ;; Ambiguous result - operation may or may not take effect
+    (catch RequestCanceledException e
+      (assoc op :type :info :error :RequestCanceledException :msg (.getMessage e)))
+    (catch DurabilityAmbiguousException e
+      (assoc op :type :info, :error :SyncWriteAmbiguous :msg (.getMessage e)))
+    (catch AmbiguousTimeoutException e
+      (assoc op :type :info, :error :AmbiguousTimeoutException :msg (.getMessage e)))
+    (catch CouchbaseException e
+      (assoc op :type :info, :error e))))
+
 (defn do-set-del [collection op]
   (try
     (let [docKey (format "jepsen%010d" (:value op))
@@ -343,6 +374,48 @@
             (retry (dec attempts)))
         (do (warn "Couldn't read key" rawKey)
             (throw e))))))
+
+(defn check-and-return-if-exists [collection rawKey]
+  (domTop/with-retry [attempts 120]
+    (let [key (format "jepsen%010d" rawKey)]
+      (when (.get ^Collection collection key)
+                    ;; If the key is found, return the value
+        (let [get-obj (.get ^Collection collection key)
+
+              result (independent/tuple
+                      rawKey
+                      ^Integer (clientUtils/get-int-from-get-result get-obj))]
+          result)))
+                     ;; Else if we get a DocumentNotFoundException, return nil
+    (catch DocumentNotFoundException _ nil)
+                     ;; Retry other failures, throwing an exception if it persists
+    (catch Exception e
+      (if (pos? attempts)
+        (do (Thread/sleep 1000)
+            (retry (dec attempts)))
+        (do (warn "Couldn't read key" rawKey)
+            (throw e))))))
+
+(defn do-set-read [collection op dcpClient testData]
+  (if dcpClient
+    (->> (cbclients/get-all-keys dcpClient testData)
+         (map #(Integer/parseInt (subs % 6)))
+         (sort)
+         (assoc op :type :ok, :value))
+    (try
+      (->> @(:history testData)
+           (filter #(= (:type %) :invoke))
+           (apply max-key #(or (:value %) -1))
+           (:value)
+           (inc)
+           (range)
+           (pmap (if (= (:check op) :upsert-set-checker) #(check-and-return-if-exists collection %) #(check-if-exists collection %)))
+           (filter some?)
+           (doall)
+           (assoc op :type :ok, :value))
+      (catch CouchbaseException e
+        (warn "Encountered errors reading some keys, keys might be stuck pending?")
+        (assoc op :type :fail, :error e)))))
 
 (defn do-counter-add [collection op]
   (try
@@ -424,26 +497,8 @@
     (case (:f op)
       :add (do-set-add collection op)
       :del (do-set-del collection op)
-
-      :read (if dcpClient
-              (->> (cbclients/get-all-keys dcpClient testData)
-                   (map #(Integer/parseInt (subs % 6)))
-                   (sort)
-                   (assoc op :type :ok, :value))
-              (try
-                (->> @(:history testData)
-                     (filter #(= (:type %) :invoke))
-                     (apply max-key #(or (:value %) -1))
-                     (:value)
-                     (inc)
-                     (range)
-                     (pmap #(check-if-exists collection %))
-                     (filter some?)
-                     (doall)
-                     (assoc op :type :ok, :value))
-                (catch CouchbaseException e
-                  (warn "Encountered errors reading some keys, keys might be stuck pending?")
-                  (assoc op :type :fail, :error e))))
+      :upsert (do-set-upsert collection op)
+      :read (do-set-read collection op dcpClient testData)
 
       :dcp-start-streaming (do (cbclients/start-streaming dcpClient testData) op)))
   (close! [_ _])

@@ -774,6 +774,214 @@
                                       client-gen))
                (gen/clients (gen/once {:type :invoke :f :read :value nil})))))
 
+(defn set-add-gen
+  "Standard set-add operations with value denoting the set and insert-value
+  denoting the value to be added to that set"
+  [opts]
+  (map
+   (fn [x]
+     {:type :invoke,
+      :f :add,
+      :value x,
+      :insert-value x,
+      :replicate-to (:replicate-to opts),
+      :persist-to (:persist-to opts),
+      :durability-level
+      (util/random-durability-level (:durability opts)),
+      :json (:use-json-docs opts)})
+   (range (opts :doc-count 10000))))
+
+(defn set-upsert-gen
+  "Standard set-upsert operations with value denoting the set and insert-value
+  denoting the value to be upserted to that set"
+  [opts]
+  (map
+   (fn [x]
+     {:type :invoke,
+      :f :upsert,
+      :value x,
+      :insert-value (inc x),
+      :replicate-to (:replicate-to opts),
+      :persist-to (:persist-to opts),
+      :durability-level
+      (util/random-durability-level (:durability opts)),
+      :json (:use-json-docs opts)})
+   (range (opts :doc-count 10000))))
+
+(defn upset-workload
+  "Generic set upsert workload. We model the set with a bucket, adding(or upserting) an item to the
+  set corresponds to inserting(or upserting) a key . To read the set we use a dcp client to
+  stream all mutations, keeping track of which keys exist"
+  [opts]
+  (let-and-merge
+   opts
+   dcpclient     (if (:dcp-set-read opts)
+                   (cbclients/dcp-client))
+   cycles        (opts :cycles 1)
+   client        (clients/set-client dcpclient)
+   concurrency   250
+   pool-size     4
+   replicas      (opts :replicas 0)
+   replicate-to  (opts :replicate-to 0)
+   persist-to    (opts :persist-to 0)
+   autofailover  (opts :autofailover true)
+   autofailover-timeout  (opts :autofailover-timeout 6)
+   autofailover-maxcount (opts :autofailover-maxcount 3)
+
+   control-atom  (atom :continue)
+   checker       (checker/compose
+                  (merge
+                   {:timeline (timeline/html)
+                    :set (cbchecker/set-upsert-checker)
+                    :sanity (cbchecker/sanity-check)}
+                   (if (opts :perf-graphs)
+                     {:perf (checker/perf)})))
+   client-gen    (gen/seq (concat (set-add-gen opts) (set-upsert-gen opts)))
+   generator     (gen/phases
+                  (do-n-nemesis-cycles (:cycles opts) [] client-gen)
+                  (gen/clients (gen/once {:type :invoke :f :read :value nil :check :upsert-set-checker})))))
+
+(defn upset-kill-workload
+  "Set upsert workload that repeatedly kills memcached while hammering inserts and upserts against
+  the cluster"
+  [opts]
+  (let-and-merge
+   opts
+   scenario              (opts :scenario)
+   dcpclient             (if (:dcp-set-read opts)
+                           (cbclients/dcp-client))
+   cycles                (opts :cycles 1)
+   concurrency           1000
+   pool-size             16
+   custom-vbucket-count  (opts :custom-vbucket-count 64)
+   replicas              (opts :replicas 1)
+   replicate-to          (opts :replicate-to 0)
+   persist-to            (opts :persist-to 0)
+   disrupt-count         (opts :disrupt-count 1)
+   recovery-type         (opts :recovery-type :delta)
+   autofailover          (opts :autofailover false)
+   autofailover-timeout  (opts :autofailover-timeout  6)
+   autofailover-maxcount (opts :autofailover-maxcount 3)
+   disrupt-count         (opts :disrupt-count 1)
+   disrupt-time          (opts :disrupt-time 30)
+   client                (clients/set-client dcpclient)
+   nemesis               (cbnemesis/couchbase)
+   stop-start-targeter   (cbnemesis/start-stop-targeter)
+   control-atom          (atom :continue)
+   checker               (checker/compose
+                          (merge
+                           {:timeline (timeline/html)
+                            :set (cbchecker/set-upsert-checker)
+                            :sanity (cbchecker/sanity-check)}
+                           (if (opts :perf-graphs)
+                             {:perf (checker/perf)})))
+   client-gen (gen/seq (concat (set-add-gen opts) (set-upsert-gen opts)))
+   generator  (gen/phases
+               (case scenario
+                 :kill-memcached-on-slow-disk
+                 (do-n-nemesis-cycles cycles
+                                      [(gen/sleep 10)
+                                       {:type :info
+                                        :f :slow-disk
+                                        :targeter cbnemesis/target-all-test-nodes}
+
+                                       (gen/sleep 4)
+                                       {:type :info
+                                        :f :kill-process
+                                        :kill-process :memcached
+                                        :targeter cbnemesis/basic-nodes-targeter
+                                        :target-count disrupt-count}
+
+                                       {:type :info
+                                        :f :reset-disk
+                                        :targeter cbnemesis/target-all-test-nodes}
+
+                                       (gen/sleep 10)]
+                                      client-gen)
+
+                 :kill-memcached
+                 (do-n-nemesis-cycles cycles
+                                      [(gen/sleep 10)
+                                       {:type :info
+                                        :f :kill-process
+                                        :kill-process :memcached
+                                        :targeter cbnemesis/basic-nodes-targeter
+                                        :target-count disrupt-count}
+                                       (gen/sleep 20)
+                                         ; We might need to rebalance the cluster if we're testing
+                                         ; against ephemeral so we can read data back see MB-36800
+                                       {:type :info
+                                        :f :rebalance-cluster}]
+                                      client-gen)
+
+                 :kill-ns-server
+                 (do-n-nemesis-cycles cycles
+                                      [(gen/sleep 10)
+                                       {:type :info
+                                        :f :kill-process
+                                        :kill-process :ns-server
+                                        :targeter cbnemesis/basic-nodes-targeter
+                                        :target-count disrupt-count}
+                                       (gen/sleep 20)]
+                                      client-gen)
+
+                 :kill-babysitter
+                 (do-n-nemesis-cycles cycles
+                                      [(gen/sleep 5)
+                                       {:type :info
+                                        :f :kill-process
+                                        :kill-process :babysitter
+                                        :targeter stop-start-targeter
+                                        :target-count disrupt-count
+                                        :target-action :start}
+
+                                       (gen/sleep disrupt-time)
+
+                                       {:type :info
+                                        :f :start-process
+                                        :targeter stop-start-targeter
+                                        :target-count disrupt-count
+                                        :target-action :stop}
+
+                                       (gen/sleep 5)
+                                       {:type :info
+                                        :f :recover
+                                        :recovery-type recovery-type}
+                                       (gen/sleep 10)]
+                                      client-gen)
+                 :hard-reboot
+                 (do-n-nemesis-cycles cycles
+                                      [(gen/sleep 10)
+                                       {:type :info
+                                        :f :hard-reboot
+                                        :targeter cbnemesis/basic-nodes-targeter
+                                        :target-count disrupt-count}
+                                       (gen/sleep 60)
+                                         ; We might need to rebalance the cluster if we're testing
+                                         ; against ephemeral so we can read data back see MB-36800
+                                       {:type :info
+                                        :f :rebalance-cluster}]
+                                      client-gen)
+                 :suspend-process
+                 (do-n-nemesis-cycles cycles
+                                      [(gen/sleep 10)
+                                       {:type           :info
+                                        :f              :halt-process
+                                        :targeter       stop-start-targeter
+                                        :target-process (:process-to-suspend opts)
+                                        :target-count   disrupt-count
+                                        :target-action  :start}
+                                       (gen/sleep (:process-suspend-time opts))
+                                       {:type :info
+                                        :f :continue-process
+                                        :target-process  (:process-to-suspend opts)
+                                        :targeter stop-start-targeter
+                                        :target-count disrupt-count
+                                        :target-action :stop}
+                                       (gen/sleep 5)]
+                                      client-gen))
+               (gen/clients (gen/once {:type :invoke :f :read :value nil :check :upsert-set-checker})))))
+
 ;; ==================
 ;; Counter workloads
 ;; ==================
