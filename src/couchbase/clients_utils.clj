@@ -121,11 +121,10 @@
 (defn create-int-json-obj
   "Creates a JsonObject and stores a int under the key \"val\""
   ([val]
-   (let [jsonDoc (.put (JsonObject/create) (str "val") val)
-         docPaddingSize (:doc-padding-size cbjcli/extra-cli-options)]
-     (when-not (nil? docPaddingSize)
+   (let [jsonDoc (.put (JsonObject/create) (str "val") val)]
+     (when-not (nil? cbjcli/*padding-size*)
        (when-not @document-padding-string
-         (parse-padding-and-set docPaddingSize))
+         (parse-padding-and-set cbjcli/*padding-size*))
        (.put ^JsonObject jsonDoc (str "padding")
              @document-padding-string))
      jsonDoc)))

@@ -6,6 +6,7 @@
 
 ; GLOBALS
 (def ^:dynamic *use-subdoc* false)
+(def ^:dynamic *padding-size* 0)
 
 (defn parse-int
   "Function to check a value can be converted to an int"
@@ -191,11 +192,11 @@
     :default false]
    [nil "--doc-padding-size PADDING-IN-KB"
     "Amount of padding in KB that should be added to the document when performing a write. This is to help create data > memory scenarios"
-    :parse-fn parse-int
+    :parse-fn #(alter-var-root #'*padding-size* (constantly (parse-int %)))
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
    [nil "--use-subdoc"
     "Use specify if subdoc mutations should be used"
-    :update-fn (fn [_] (alter-var-root (var *use-subdoc*) (fn [_] true)))
+    :parse-fn (fn [_] (alter-var-root #'*use-subdoc* (constantly true)))
     :default false]
    [nil "--disable-auto-compaction"
     "Use to disable auto-compaction"
