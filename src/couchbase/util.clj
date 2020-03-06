@@ -488,7 +488,7 @@
         pack-dump-file (str packet-capture-dir (:name testData) "-" node ".pcap")]
     (c/su (c/exec :mkdir :-p packet-capture-dir))
     (info (str "packet dump file name " pack-dump-file))
-    (c/ssh* {:cmd (str "screen -dmS test bash -c \"sudo -b tcpdump -C 500 -w " pack-dump-file " -i eth1 -s 0 tcp \"")})))
+    (c/ssh* {:cmd (str "screen -dmS test bash -c \"tcpdump -C 500 -w " pack-dump-file " -i eth1 -s 0 tcp \"")})))
 
 (defn setup-node
   "Start Couchbase Server on a node"
