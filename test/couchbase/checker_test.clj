@@ -14,17 +14,18 @@
   (testing "add-roll-backs"
     (is (= (checker/check (set-upsert-checker) nil
                           [{:value 1, :time 1, :process 1,  :type :invoke, :f :add, :insert-value 1}
-                           {:value 1, :time 2, :process 2,  :type :invoke, :f :upsert, :insert-value 2}
-                           {:value 1, :time 3, :process 2,  :type :ok, :f :upsert, :insert-value 2}
-                           {:value 2, :time 4, :process 3,  :type :invoke, :f :add, :insert-value 2}
-                           {:value 2, :time 5, :process 3,  :type :ok, :f :add, :insert-value 2}
-                           {:value 2, :time 6, :process 1,  :type :invoke, :f :upsert, :insert-value 3}
-                           {:value 2, :time 7, :process 1,  :type :ok, :f :upsert, :insert-value 3}
-                           {:value 3, :time 8, :process 2,  :type :invoke, :f :add, :insert-value 3}
-                           {:value 3, :time 9, :process 2,  :type :ok, :f :add, :insert-value 3}
-                           {:value 3, :time 10, :process 3,  :type :invoke, :f :upsert, :insert-value 4}
-                           {:value 3, :time 11, :process 3,  :type :ok, :f :upsert, :insert-value 4}
-                           {:value nil, :time 12, :process 1,  :type :invoke, :f :read}
+                           {:value 1, :time 2, :process 1,  :type :fail, :f :add, :msg "TemporaryFailure"}
+                           {:value 1, :time 3, :process 2,  :type :invoke, :f :upsert, :insert-value 2}
+                           {:value 1, :time 4, :process 2,  :type :ok, :f :upsert, :insert-value 2}
+                           {:value 2, :time 5, :process 3,  :type :invoke, :f :add, :insert-value 2}
+                           {:value 2, :time 6, :process 3,  :type :ok, :f :add, :insert-value 2}
+                           {:value 2, :time 7, :process 1,  :type :invoke, :f :upsert, :insert-value 3}
+                           {:value 2, :time 8, :process 1,  :type :ok, :f :upsert, :insert-value 3}
+                           {:value 3, :time 9, :process 2,  :type :invoke, :f :add, :insert-value 3}
+                           {:value 3, :time 10, :process 2,  :type :ok, :f :add, :insert-value 3}
+                           {:value 3, :time 11, :process 3,  :type :invoke, :f :upsert, :insert-value 4}
+                           {:value 3, :time 12, :process 3,  :type :ok, :f :upsert, :insert-value 4}
+                           {:value nil, :time 13, :process 1,  :type :invoke, :f :read}
                            {:value [[1 2] [2 3] [3 4]], :time 13, :process 1,  :type :ok, :f :read}]
                           ;;key 1 was not committed for add operation. So read for key 3 should give
                           ;;it's upserted value which is 4.
@@ -36,7 +37,7 @@
             :upsert-acknowledged-count  3
             :ok-count            3
             :lost-count          0
-            :recovered-count     1
+            :recovered-count     0
             :unexpected-count    0
             :upsert-not-rolled-back-count  0
             :add-not-rolled-back-count     0
@@ -47,7 +48,7 @@
             :add-not-rolled-back  "#{}"
             :upsert-rolled-back    "#{}"
             :add-rolled-back   "#{1}"
-            :recovered            "#{1}"})))
+            :recovered            "#{}"})))
 
   (testing "upsert-roll-backs"
     (is (= (checker/check (set-upsert-checker) nil
@@ -62,8 +63,9 @@
                            {:value 3, :time 9, :process 2,  :type :invoke, :f :add, :insert-value 3}
                            {:value 3, :time 10, :process 2,  :type :ok, :f :add, :insert-value 3}
                            {:value 3, :time 11, :process 3,  :type :invoke, :f :upsert, :insert-value 4}
-                           {:value nil, :time 12, :process 1,  :type :invoke, :f :read}
-                           {:value [[1 2] [2 3] [3 3]], :time 13, :process 1,  :type :ok, :f :read}]
+                           {:value 3, :time 12, :process 3,  :type :fail, :f :upsert, :msg "TemporaryFailure"}
+                           {:value nil, :time 13, :process 1,  :type :invoke, :f :read}
+                           {:value [[1 2] [2 3] [3 3]], :time 14, :process 1,  :type :ok, :f :read}]
                           ;;key 3 was not committed when upserted. So read for key 3 should be the insert-value of
                           ;;add operation which is 3.
                           {})

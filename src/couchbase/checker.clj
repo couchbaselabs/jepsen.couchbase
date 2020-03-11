@@ -62,6 +62,30 @@
                            (r/map :value)
                            (into #{}))
 
+            add-fail    (->> history
+                             (r/filter op/fail?)
+                             (r/filter #(= :add (:f %)))
+                             (r/map :value)
+                             (into #{}))
+
+            upsert-fail (->> history
+                             (r/filter op/fail?)
+                             (r/filter #(= :upsert (:f %)))
+                             (r/map :value)
+                             (into #{}))
+
+            add-info    (->> history
+                             (r/filter op/info?)
+                             (r/filter #(= :add (:f %)))
+                             (r/map :value)
+                             (into #{}))
+
+            upsert-info (->> history
+                             (r/filter op/info?)
+                             (r/filter #(= :upsert (:f %)))
+                             (r/map :value)
+                             (into #{}))
+
             final-read (into (hash-map) (->> history
                                              (r/filter op/ok?)
                                              (r/filter #(= :read (:f %)))
@@ -84,20 +108,29 @@
 
           (let [final-read-keys (c/set final-read-keys)
 
-                ; The OK set is every read value which we tried to add
-                ok          (set/intersection final-read-keys add-attempts)
-
-                ; Unexpected records are those we *never* attempted.
-                unexpected  (set/difference final-read-keys (set/union add-attempts upsert-attempts))
+                ;; Unexpected records are those we
+                ;; 1. *never* attempted.
+                ;; 2. both add and upsert definitely failed
+                unexpected  (set/union (set/difference final-read-keys (set/union add-attempts upsert-attempts))
+                                       (set/intersection add-fail upsert-fail))
 
                 ; Lost records are those we definitely added or upserted but weren't read
                 lost        (set/difference (set/union add-ok upsert-ok) final-read-keys)
 
-                ;upsert-lost are those we definitely added but weren't upserted
-                upsert-lost (set/difference add-ok upsert-ok)
+                ;; There are three cases where the keys may or may not be present
+                ;; in the read, either
+                ;; 1) The add failed, but the upsert was indeterminate
+                ;; 2) The upsert failed, but the add was indeterminate
+                ;; 3) Both add and upsert were indeterminate
+                permitted-keys (set/union (set/intersection add-fail upsert-info)
+                                          (set/intersection upsert-fail add-info)
+                                          (set/intersection add-info upsert-info))
 
-                ;add-lost are those we definitely upserted but weren't added
-                add-lost     (set/difference upsert-ok add-ok)
+                ;upsert-lost are those we definitely added but weren't upserted *definitely*
+                upsert-lost (set/intersection add-ok upsert-fail)
+
+                ;add-lost are those we definitely upserted but weren't added *definitely*
+                add-lost     (set/intersection upsert-ok add-fail)
 
                 ;;Its ok for upserts to be lost as long as the corresponding values of those keys were read from add operation.
                 upsert-not-rolled-back          (set (remove nil? (map (fn [x] (if-not (contains? add-ok-values (get final-read x))
@@ -110,11 +143,15 @@
                 add-rolled-back     (set/difference add-lost add-not-rolled-back)
 
 
-                ; Recovered records are those where we didn't know if the add
-                ; succeeded or not, but we found them in the final set.
+                ;; Recovered records are those where we didn't know if the add
+                ;; (or upserts) succeeded or not, but we found them in the final set.
+                ;; These are basically those keys whose status was unsure,, until we found them in the read.
 
 
-                recovered   (set/difference ok add-ok)]
+                recovered   (set/intersection permitted-keys final-read-keys)
+
+                ;; Keys that are neither lost nor unexpected
+                ok (set/difference add-attempts (set/union lost unexpected))]
 
             {:valid?              (and (empty? lost) (empty? unexpected) (empty? upsert-not-rolled-back) (empty? add-not-rolled-back))
              :add-attempt-count     (count add-attempts)
