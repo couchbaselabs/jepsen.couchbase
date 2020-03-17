@@ -647,7 +647,10 @@
     (when (:enable-tcp-capture testData)
       (info "Collecting tcp packet capture")
       (c/su (c/exec* (str "if [[ \"$(pgrep tcpdump)\" ]]; then kill -s TERM $(pgrep tcpdump); fi"))
-            (c/exec* (str "mv /packet-capture/*.pcap* /tmp/jepsen-logs/"))))
+            ;; clean up old gz files, if any
+            (c/exec* (str "rm -f /packet-capture/*.gz*"))
+            (c/exec* (str "gzip -f /packet-capture/*.pcap*"))
+            (c/exec* (str "mv /packet-capture/*.gz* /tmp/jepsen-logs/"))))
     (c/su (c/exec :chmod :a+r :-R "/tmp/jepsen-logs"))
     (str/split-lines (c/exec :find "/tmp/jepsen-logs" :-type :f))))
 
