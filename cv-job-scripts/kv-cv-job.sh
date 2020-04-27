@@ -2,6 +2,7 @@
 
 EXIT_CODE=0
 GIT_ROOT_TEST="$(git rev-parse --show-toplevel)"
+PROVISIONER=""
 
 function print_usage() {
   echo "$(basename "$0") - Running Jepsen CV Job in the Jenkins environment.
@@ -54,6 +55,7 @@ if [[ -z "$WORKSPACE" ]]; then
 fi
 
 function provision_vms() {
+    PROVISIONER="vagrant"
     ${GIT_ROOT_TEST}/provision.sh --type=vagrant --action=destroy-all
     rm -f ${GIT_ROOT_TEST}/nodes
     ${GIT_ROOT_TEST}/provision.sh --type=vagrant --action=create --nodes=4 --handle-numa-cv
@@ -65,6 +67,7 @@ function provision_vms() {
 }
 
 function setup_node_file() {
+    PROVISIONER="vmpool"
     if [[ -f ${GIT_ROOT_TEST}/nodes ]]; then
         echo "Using Node IPs"
         cat ${GIT_ROOT_TEST}/nodes
@@ -98,7 +101,7 @@ function download_build() {
 }
 
 function run_test_suite() {
-    ./run.sh --suite=suites/kv-engine-cv/cv-nightly-ex.conf --provisioner=vagrant --package=${PACKAGE_NAME} --kv-cv-jenkins-run --global="enable-tcp-capture,hashdump,enable-memcached-debug-log-level"
+    ./run.sh --suite=suites/kv-engine-cv/cv-nightly-ex.conf --provisioner=${PROVISIONER} --package=${PACKAGE_NAME} --kv-cv-jenkins-run --global="enable-tcp-capture,hashdump,enable-memcached-debug-log-level"
     EXIT_CODE=$?
 }
 
