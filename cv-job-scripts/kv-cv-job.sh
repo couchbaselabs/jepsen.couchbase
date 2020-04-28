@@ -54,6 +54,11 @@ if [[ -z "$WORKSPACE" ]]; then
     exit 1
 fi
 
+if [[ -z "$NETWORK_INTERFACE" ]]; then
+    NETWORK_INTERFACE="eth0"
+    echo "Setting NETWORK_INTERFACE to ${NETWORK_INTERFACE}"
+fi
+
 function provision_vms() {
     PROVISIONER="vagrant"
     ${GIT_ROOT_TEST}/provision.sh --type=vagrant --action=destroy-all
@@ -101,7 +106,11 @@ function download_build() {
 }
 
 function run_test_suite() {
-    ./run.sh --suite=suites/kv-engine-cv/cv-nightly-ex.conf --provisioner=${PROVISIONER} --package=${PACKAGE_NAME} --kv-cv-jenkins-run --global="enable-tcp-capture,hashdump,enable-memcached-debug-log-level"
+    GLOBAL_RUN_ARGS="enable-tcp-capture,hashdump,enable-memcached-debug-log-level"
+    if [[ ${USE_VMS} != "true" ]]; then
+        GLOBAL_RUN_ARGS="${GLOBAL_RUN_ARGS},net-interface=${NETWORK_INTERFACE}"
+    fi
+    ./run.sh --suite=suites/kv-engine-cv/cv-nightly-ex.conf --provisioner=${PROVISIONER} --package=${PACKAGE_NAME} --kv-cv-jenkins-run --global="${GLOBAL_RUN_ARGS}"
     EXIT_CODE=$?
 }
 
@@ -172,7 +181,7 @@ else
     setup_node_file;
 fi
 run_test_suite
-if [[ ${USE_VMS} ]]; then
+if [[ ${USE_VMS} == "true" ]]; then
     destory_vms;
 fi
 check_memcached_logs;

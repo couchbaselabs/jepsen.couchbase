@@ -167,6 +167,9 @@
    [nil "--enable-tcp-capture"
     "Enable the tcp packet capture on eth1 for Couchbase Server running on a VM use a vagrant and is not supported for --cluster-run"
     :default false]
+   [nil "--net-interface INTERFACE"
+    "Name of the interface to perform packet capture on by default this is eth1"
+    :default "eth1"]
    [nil "--cluster-run"
     "Start a cluster-run of the provided package on the host rather than using provided nodes"
     :default false]

@@ -485,10 +485,11 @@
   "Function to enable tcp packet capture on eth1"
   [testData node]
   (let [packet-capture-dir (str "/packet-capture/")
-        pack-dump-file (str packet-capture-dir (:name testData) "-" node ".pcap")]
+        pack-dump-file (str packet-capture-dir (:name testData) "-" node ".pcap")
+        tcp-dump-interface (:net-interface testData)]
     (c/su (c/exec :mkdir :-p packet-capture-dir))
     (info (str "packet dump file name " pack-dump-file))
-    (c/ssh* {:cmd (str "screen -dmS test bash -c \"sudo -b tcpdump -C 500 -w " pack-dump-file " -i eth1 -s 0 tcp \"")})))
+    (c/ssh* {:cmd (str "screen -dmS test bash -c \"sudo -b tcpdump -C 500 -w " pack-dump-file " -i " tcp-dump-interface " -s 0 tcp \"")})))
 
 (defn setup-node
   "Start Couchbase Server on a node"
@@ -520,7 +521,7 @@
         (c/ssh* {:cmd (str "nohup " server-path " -- -noinput >> /dev/null 2>&1 &")})))
     (wait-for-daemon)
     (info "Daemon started")
-    (if (and (:enable-tcp-capture testData) (not (:cluster-run testData)))
+    (if (and (and (:enable-tcp-capture testData) (:net-interface testData)) (not (:cluster-run testData)))
       (setup-tcp-packet-capture testData node)
       (info "TCP packet capture is not enabled"))))
 
