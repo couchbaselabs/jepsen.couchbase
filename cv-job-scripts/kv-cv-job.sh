@@ -3,6 +3,7 @@
 EXIT_CODE=0
 GIT_ROOT_TEST="$(git rev-parse --show-toplevel)"
 PROVISIONER=""
+PACKAGE_NAME=""
 
 function print_usage() {
   echo "$(basename "$0") - Running Jepsen CV Job in the Jenkins environment.
@@ -10,6 +11,7 @@ Usage: $(basename "$0") [options...]
 Options:
   --use-vms=BOOL                 If the job should provision vms on the Jepsen master build machine
   --branch=STRING                Branch name of the build e.g. mad-hatter or cheshire-cat (in lowercase)
+  --test-suit=STRING             Path from the root of this repo to the test conf file that should but used
 " >&2
 }
 
@@ -22,6 +24,9 @@ case ${i} in
     ;;
     --branch=*)
     BRANCH="${i#*=}"
+    ;;
+    --test-suit=*)
+    TEST_SUIT="${i#*=}"
     ;;
     -h|--help)
       print_usage
@@ -40,6 +45,11 @@ if [[ -z "$USE_VMS" ]]; then
 fi
 
 if [[ -z "$BRANCH" ]]; then
+    print_usage
+    exit 1
+fi
+
+if [[ -z "$TEST_SUIT" ]]; then
     print_usage
     exit 1
 fi
@@ -110,7 +120,11 @@ function run_test_suite() {
     if [[ ${USE_VMS} != "true" ]]; then
         GLOBAL_RUN_ARGS="${GLOBAL_RUN_ARGS},net-interface=${NETWORK_INTERFACE}"
     fi
-    ./run.sh --suite=suites/kv-engine-cv/cv-nightly-ex.conf --provisioner=${PROVISIONER} --package=${PACKAGE_NAME} --kv-cv-jenkins-run --global="${GLOBAL_RUN_ARGS}"
+    echo "################################################################"
+    echo "Running test suit: ${TEST_SUIT}"
+    cat ${TEST_SUIT}
+    echo "################################################################"
+    ./run.sh --suite=${TEST_SUIT} --provisioner=${PROVISIONER} --package=${PACKAGE_NAME} --kv-cv-jenkins-run --global="${GLOBAL_RUN_ARGS}"
     EXIT_CODE=$?
 }
 
