@@ -484,12 +484,13 @@
 (defn setup-tcp-packet-capture
   "Function to enable tcp packet capture on eth1"
   [testData node]
-  (let [packet-capture-dir (str "/packet-capture/")
-        pack-dump-file (str packet-capture-dir (:name testData) "-" node ".pcap")
+  (let [packet-capture-dir (str "/packet-capture")
+        pack-dump-file (str (:name testData) "-" node ".pcap")
         tcp-dump-interface (:net-interface testData)]
     (c/su (c/exec :mkdir :-p packet-capture-dir))
     (info (str "packet dump file name " pack-dump-file))
-    (c/ssh* {:cmd (str "screen -dmS test bash -c \"sudo -b tcpdump -C 500 -w " pack-dump-file " -i " tcp-dump-interface " -s 0 tcp \"")})))
+    (c/su (c/exec :rm :-f "/var/run/daemonlogger.pid"))
+    (c/ssh* {:cmd  (str "nohup sudo daemonlogger -d -l \"" packet-capture-dir "\" -n \"" pack-dump-file "\" -i " tcp-dump-interface " -S 262144 tcp > nohup-daemonlogger.log ")})))
 
 (defn setup-node
   "Start Couchbase Server on a node"
@@ -647,7 +648,7 @@
       (c/su (c/exec* (str "zip /tmp/jepsen-logs/core-files.zip /tmp/core.* || [[ $? == 12 ]]"))))
     (when (:enable-tcp-capture testData)
       (info "Collecting tcp packet capture")
-      (c/su (c/exec* (str "if [[ \"$(pgrep tcpdump)\" ]]; then kill -s TERM $(pgrep tcpdump); fi"))
+      (c/su (c/exec* (str "if [[ -f \"/var/run/daemonlogger.pid\" ]]; then kill -s TERM $(cat /var/run/daemonlogger.pid); fi"))
             ;; clean up old gz files, if any
             (c/exec* (str "rm -f /packet-capture/*.gz*"))
             (c/exec* (str "gzip -f /packet-capture/*.pcap*"))
