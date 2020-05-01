@@ -12,6 +12,7 @@ Options:
   --use-vms=BOOL                 If the job should provision vms on the Jepsen master build machine
   --branch=STRING                Branch name of the build e.g. mad-hatter or cheshire-cat (in lowercase)
   --test-suit=STRING             Path from the root of this repo to the test conf file that should but used
+  --web-server=STRING            Url of where a user can find the test run logs.
 " >&2
 }
 
@@ -27,6 +28,9 @@ case ${i} in
     ;;
     --test-suit=*)
     TEST_SUIT="${i#*=}"
+    ;;
+    --web-server=*)
+    WEB_URL="${i#*=}"
     ;;
     -h|--help)
       print_usage
@@ -200,7 +204,9 @@ if [[ ${USE_VMS} == "true" ]]; then
 fi
 check_memcached_logs;
 process_exit_code;
-echo "You can view the test logs here:http://172.23.120.13:8080/"
+if [[ -z "$WEB_URL" ]]; then
+    echo "You can view the test logs here:${WEB_URL}"
+fi
 
 
 
