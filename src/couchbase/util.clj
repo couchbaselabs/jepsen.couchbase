@@ -559,8 +559,8 @@
           (c/su (c/exec :rm :-rf (str path "/var/lib/couchbase")))
           (catch RuntimeException e (info "rm -rf " (str path "/var/lib/couchbase") " failed: " (str e))))
         (try
-          (c/su (c/exec* "pgrep daemonlogger | xargs sudo kill -s 9"))
-          (catch RuntimeException e (info "Ensure daemonlogger is killed failed: " (str e))))
+          (c/su (c/exec* "pkill -9 daemonlogger"))
+          (catch Exception e))
         ;; Remove any leftover iptables rules from Jepsen's network partitions
         (locking teardown
           (domTop/with-retry [retry-count 5]
