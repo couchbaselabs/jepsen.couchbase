@@ -120,8 +120,8 @@ function download_build() {
     wget -4 -o download.log "http://latestbuilds.service.couchbase.com/builds/latestbuilds/couchbase-server/$BRANCH/latest/$PACKAGE_NAME"
     BUILD_VERSION=$(dpkg-deb -f ${PACKAGE_NAME} Version)
     echo "Couchbase Server: $BUILD_VERSION"
-    rm -fv "${GIT_ROOT_TEST}/*.deb"
-    rm -fv "${GIT_ROOT_TEST}/*.rpm"
+    rm -vf ${GIT_ROOT_TEST}/*.deb
+    rm -vf ${GIT_ROOT_TEST}/*.rpm
     mv -f ./${PACKAGE_NAME} ${GIT_ROOT_TEST}
 }
 
