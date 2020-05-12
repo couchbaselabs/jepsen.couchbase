@@ -11,6 +11,7 @@ Usage: $(basename "$0") [options...]
 Options:
   --use-vms=BOOL                 If the job should provision vms on the Jepsen master build machine
   --branch=STRING                Branch name of the build e.g. mad-hatter or cheshire-cat (in lowercase)
+  --platform-build-string        String of the platform suffix needed to download the relevant build, e.g. 'ubuntu18.04_amd64.deb' or 'centos7.x86_64.rpm'.
   --test-suit=STRING             Path from the root of this repo to the test conf file that should but used
   --web-server=STRING            Url of where a user can find the test run logs.
 " >&2
@@ -25,6 +26,9 @@ case ${i} in
     ;;
     --branch=*)
     BRANCH="${i#*=}"
+    ;;
+    --platform-build-string=*)
+    PLATFORM_BINARY_STR="${i#*=}"
     ;;
     --test-suit=*)
     TEST_SUIT="${i#*=}"
@@ -108,7 +112,7 @@ function destory_vms() {
 }
 
 function download_build() {
-    PACKAGE_NAME="couchbase-server-enterprise_$BRANCH-ubuntu16.04_amd64.deb"
+    PACKAGE_NAME="couchbase-server-enterprise_$BRANCH-${PLATFORM_BINARY_STR}"
     if [[ -f ${GIT_ROOT_TEST}/${PACKAGE_NAME} ]]; then
         rm -rf ${GIT_ROOT_TEST}/${PACKAGE_NAME}
     fi
