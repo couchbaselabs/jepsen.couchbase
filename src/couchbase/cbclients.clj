@@ -31,6 +31,8 @@
   bucket, and collection instances"
   [testData]
   (info "Opening new client")
+  (when (:disable-out-of-order-execution testData)
+    (System/setProperty "com.couchbase.unorderedExecutionEnabled" "false"))
   (let [node       (->> testData :nodes rand-nth util/get-connection-string)
         ioConfig   (.enableMutationTokens (IoConfig/builder) true)
         timeout    (-> (TimeoutConfig/builder)
@@ -50,6 +52,7 @@
                      (.build (TransactionConfigBuilder/create)))
         txn        (if (:transactions testData)
                      (Transactions/create cluster txn-config))]
+    (info "Checking value of 'com.couchbase.unorderedExecutionEnabled' :" (System/getProperty "com.couchbase.unorderedExecutionEnabled"))
     {:cluster cluster :bucket bucket :collection collection :env env :txn txn}))
 
 ;; We want to operate with a large amount of jepsen clients in order to test

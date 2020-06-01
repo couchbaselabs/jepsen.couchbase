@@ -203,4 +203,7 @@
     :default false]
    [nil "--disable-auto-compaction"
     "Use to disable auto-compaction"
+    :default false]
+   [nil "--disable-out-of-order-execution"
+    "Use to disable out of order execution by Couchbase server"
     :default false]])
