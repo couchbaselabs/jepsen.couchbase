@@ -130,7 +130,7 @@
    [nil "--connect-timeout CONNECT-TIMEOUT"
     "Number of second what the java client will wait when trying to connect to Couchbase Server"
     :parse-fn parse-int
-    :valid? [#(and (number? %) (pos? %)) "Must be a positive int"]
+    :validate [#(and (number? %) (pos? %)) "Must be a positive int"]
     :default 10]
    [nil "--kv-timeout KV-TIMEOUT"
     "Timeout for kv operations before aborting with an ambiguous response"
