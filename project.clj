@@ -18,5 +18,6 @@
                  [com.couchbase.client/java-client "3.0.3"]
                  [com.couchbase.client/couchbase-transactions "1.0.0-beta.3-SNAPSHOT"]]
   :resource-paths ["./lib/dcp-client-0.23.0-SHADEDCORE.jar"]
+  :profiles {:dev {:resource-paths ["./test/couchbase/resources"]}}
   :repositories [["couchbase-snapshot" {:url      "https://oss.sonatype.org/content/repositories/snapshots"
                                         :checksum :ignore}]])

@@ -1,0 +1,310 @@
+{:persist-to 0, :index 1401, :value 353, :time 11534381638, :process 1, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=1, bucket=default}]", :index 1407, :value 353, :time 11536504403, :process 1, :replicate-to 0, :type :ok, :cas 1595795910656065536, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 1572, :value 395, :time 11852857342, :process 0, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=2, bucket=default}]", :index 1573, :value 395, :time 11854682518, :process 0, :replicate-to 0, :type :ok, :cas 1595795910974177280, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 2, :time 12051798995, :index 1654}
+{:type :ok, :f :read, :value 395, :process 2, :time 12053077483, :cas 1595795910974177280, :index 1655}
+{:type :invoke, :f :read, :value nil, :process 5, :time 12061729051, :index 1659}
+{:type :ok, :f :read, :value 395, :process 5, :time 12063013587, :cas 1595795910974177280, :index 1661}
+{:type :info, :f :isolate-completely, :targeter #object[couchbase.nemesis$basic_nodes_targeter 0x4892d85e "couchbase.nemesis$basic_nodes_targeter@4892d85e"], :target-count 1, :process :nemesis, :time 12318412576, :index 1787}
+{:persist-to 0, :index 1919, :value 496, :time 12643250249, :process 3, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=3, bucket=default}]", :index 1920, :value 496, :time 12644862528, :process 3, :replicate-to 0, :type :ok, :cas 1595795911764410368, :f :write, :json false, :durability-level 0}
+{:type :info, :f :isolate-completely, :targeter #object[couchbase.nemesis$basic_nodes_targeter 0x4892d85e "couchbase.nemesis$basic_nodes_targeter@4892d85e"], :target-count 1, :process :nemesis, :time 12963159967, :value (#{"172.28.128.177" "172.28.128.235" "172.28.128.170" "172.28.128.17" "172.28.128.108"} ("172.28.128.219")), :index 2102}
+{:persist-to 0, :index 2254, :value 583, :time 13182464536, :process 4, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=4, bucket=default}]", :index 2256, :value 583, :time 13183943755, :process 4, :replicate-to 0, :type :ok, :cas 1595795912303509504, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 5, :time 13361612793, :index 2366}
+{:type :ok, :f :read, :value 583, :process 5, :time 13362847144, :cas 1595795912303509504, :index 2367}
+{:persist-to 0, :index 2448, :value 629, :time 13506371626, :process 5, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=5, bucket=default}]", :index 2451, :value 629, :time 13507727189, :process 5, :replicate-to 0, :type :ok, :cas 1595795912627322880, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 3058, :value 770, :time 14824308260, :process 3, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=6, bucket=default}]", :index 3059, :value 770, :time 14825570227, :process 3, :replicate-to 0, :type :ok, :cas 1595795913945251840, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 1, :time 16022938882, :index 3630}
+{:type :ok, :f :read, :value 770, :process 1, :time 16023853407, :cas 1595795913945251840, :index 3631}
+{:persist-to 0, :index 3668, :value 938, :time 16099991897, :process 3, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=7, bucket=default}]", :index 3669, :value 938, :time 16101585466, :process 3, :replicate-to 0, :type :ok, :cas 1595795915220975616, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 2, :time 16290450426, :index 3724}
+{:type :ok, :f :read, :value 938, :process 2, :time 16291566811, :cas 1595795915220975616, :index 3725}
+{:type :invoke, :f :read, :value nil, :process 3, :time 16714986317, :index 3932}
+{:type :ok, :f :read, :value 938, :process 3, :time 16716208971, :cas 1595795915220975616, :index 3933}
+{:persist-to 0, :index 4166, :value 1068, :time 17239235686, :process 5, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=8, bucket=default}]", :index 4172, :value 1068, :time 17250054944, :process 5, :replicate-to 0, :type :ok, :cas 1595795916369756160, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 1, :time 17301174938, :index 4200}
+{:type :ok, :f :read, :value 1068, :process 1, :time 17302506057, :cas 1595795916369756160, :index 4201}
+{:persist-to 0, :index 4288, :value 1100, :time 17501203032, :process 0, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=9, bucket=default}]", :index 4289, :value 1100, :time 17502517833, :process 0, :replicate-to 0, :type :ok, :cas 1595795916622135296, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 4520, :value 1165, :time 17969424805, :process 4, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=10, bucket=default}]", :index 4522, :value 1165, :time 17970679608, :process 4, :replicate-to 0, :type :ok, :cas 1595795917090324480, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 0, :time 18152917916, :index 4622}
+{:type :ok, :f :read, :value 1165, :process 0, :time 18154031684, :cas 1595795917090324480, :index 4624}
+{:persist-to 0, :index 4848, :value 1250, :time 18707053304, :process 4, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=11, bucket=default}]", :index 4849, :value 1250, :time 18708168355, :process 4, :replicate-to 0, :type :ok, :cas 1595795917827801088, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 1, :time 19827361684, :index 5396}
+{:type :ok, :f :read, :value 1250, :process 1, :time 19828117868, :cas 1595795917827801088, :index 5397}
+{:type :invoke, :f :read, :value nil, :process 2, :time 20404910100, :index 5688}
+{:type :ok, :f :read, :value 1250, :process 2, :time 20405832454, :cas 1595795917827801088, :index 5689}
+{:persist-to 0, :index 5718, :value 1478, :time 20454448759, :process 4, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=12, bucket=default}]", :index 5719, :value 1478, :time 20455227228, :process 4, :replicate-to 0, :type :ok, :cas 1595795919574925312, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 5858, :value 1504, :time 20738203454, :process 2, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=13, bucket=default}]", :index 5859, :value 1504, :time 20739256664, :process 2, :replicate-to 0, :type :ok, :cas 1595795919858958336, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 1, :time 21694448649, :index 6284}
+{:type :ok, :f :read, :value 1504, :process 1, :time 21711943247, :cas 1595795919858958336, :index 6290}
+{:persist-to 0, :index 6367, :value 1626, :time 21828552559, :process 3, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=14, bucket=default}]", :index 6370, :value 1626, :time 21832905898, :process 3, :replicate-to 0, :type :ok, :cas 1595795920952426496, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 6401, :value 1632, :time 21930383712, :process 5, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=15, bucket=default}]", :index 6403, :value 1632, :time 21937215335, :process 5, :replicate-to 0, :type :ok, :cas 1595795921056432128, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 6716, :value 1715, :time 22627532183, :process 4, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=16, bucket=default}]", :index 6718, :value 1715, :time 22628894717, :process 4, :replicate-to 0, :type :ok, :cas 1595795921748492288, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 0, :time 23318350815, :index 7055}
+{:type :ok, :f :read, :value 1715, :process 0, :time 23319149950, :cas 1595795921748492288, :index 7058}
+{:type :invoke, :f :read, :value nil, :process 4, :time 23398226333, :index 7102}
+{:type :ok, :f :read, :value 1715, :process 4, :time 23399152623, :cas 1595795921748492288, :index 7103}
+{:type :invoke, :f :read, :value nil, :process 1, :time 23933411292, :index 7362}
+{:type :ok, :f :read, :value 1715, :process 1, :time 23934301236, :cas 1595795921748492288, :index 7363}
+{:type :invoke, :f :read, :value nil, :process 2, :time 24042679701, :index 7412}
+{:type :ok, :f :read, :value 1715, :process 2, :time 24043672550, :cas 1595795921748492288, :index 7413}
+{:type :invoke, :f :read, :value nil, :process 3, :time 25032220546, :index 7862}
+{:type :ok, :f :read, :value 1715, :process 3, :time 25033293498, :cas 1595795921748492288, :index 7863}
+{:type :invoke, :f :read, :value nil, :process 5, :time 25835584166, :index 8212}
+{:type :ok, :f :read, :value 1715, :process 5, :time 25836395803, :cas 1595795921748492288, :index 8213}
+{:type :invoke, :f :read, :value nil, :process 1, :time 26307567546, :index 8456}
+{:type :ok, :f :read, :value 1715, :process 1, :time 26308406797, :cas 1595795921748492288, :index 8458}
+{:type :invoke, :f :read, :value nil, :process 0, :time 26602465908, :index 8606}
+{:type :ok, :f :read, :value 1715, :process 0, :time 26603446179, :cas 1595795921748492288, :index 8607}
+{:type :invoke, :f :read, :value nil, :process 1, :time 27028659447, :index 8822}
+{:type :ok, :f :read, :value 1715, :process 1, :time 27029671555, :cas 1595795921748492288, :index 8826}
+{:type :invoke, :f :read, :value nil, :process 2, :time 27516994924, :index 9054}
+{:type :ok, :f :read, :value 1715, :process 2, :time 27517927332, :cas 1595795921748492288, :index 9056}
+{:persist-to 0, :index 9206, :value 2314, :time 27816531620, :process 4, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=17, bucket=default}]", :index 9207, :value 2314, :time 27817660182, :process 4, :replicate-to 0, :type :ok, :cas 1595795926937239552, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 9296, :value 2339, :time 28043819643, :process 0, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=18, bucket=default}]", :index 9298, :value 2339, :time 28044824851, :process 0, :replicate-to 0, :type :ok, :cas 1595795927164583936, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 9456, :value 2387, :time 28421262524, :process 0, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=19, bucket=default}]", :index 9459, :value 2387, :time 28422392319, :process 0, :replicate-to 0, :type :ok, :cas 1595795927542071296, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 1, :time 30202083050, :index 10318}
+{:type :ok, :f :read, :value 2387, :process 1, :time 30204224359, :cas 1595795927542071296, :index 10319}
+{:type :invoke, :f :read, :value nil, :process 3, :time 30777745732, :index 10562}
+{:type :ok, :f :read, :value 2387, :process 3, :time 30778674381, :cas 1595795927542071296, :index 10563}
+{:persist-to 0, :index 10626, :value 2677, :time 30949755148, :process 5, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=20, bucket=default}]", :index 10628, :value 2677, :time 30950813551, :process 5, :replicate-to 0, :type :ok, :cas 1595795930070515712, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 1, :time 31556581869, :index 10938}
+{:type :ok, :f :read, :value 2677, :process 1, :time 31557435200, :cas 1595795930070515712, :index 10939}
+{:persist-to 0, :index 11314, :value 2852, :time 32332335766, :process 2, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=21, bucket=default}]", :index 11315, :value 2852, :time 32333362528, :process 2, :replicate-to 0, :type :ok, :cas 1595795931452997632, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 4, :time 33324961062, :index 11780}
+{:type :ok, :f :read, :value 2852, :process 4, :time 33325976593, :cas 1595795931452997632, :index 11781}
+{:type :invoke, :f :read, :value nil, :process 0, :time 33345751392, :index 11788}
+{:type :ok, :f :read, :value 2852, :process 0, :time 33347062593, :cas 1595795931452997632, :index 11789}
+{:persist-to 0, :index 11952, :value 3029, :time 33681371724, :process 0, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=22, bucket=default}]", :index 11953, :value 3029, :time 33682162646, :process 0, :replicate-to 0, :type :ok, :cas 1595795932801859584, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 3, :time 34381037776, :index 12276}
+{:type :ok, :f :read, :value 3029, :process 3, :time 34392895204, :cas 1595795932801859584, :index 12284}
+{:persist-to 0, :index 12334, :value 3111, :time 34492170282, :process 5, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=23, bucket=default}]", :index 12337, :value 3111, :time 34493225339, :process 5, :replicate-to 0, :type :ok, :cas 1595795933612867584, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 1, :time 34603619121, :index 12391}
+{:type :ok, :f :read, :value 3111, :process 1, :time 34604692545, :cas 1595795933612867584, :index 12393}
+{:persist-to 0, :index 12518, :value 3158, :time 34786483603, :process 5, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=24, bucket=default}]", :index 12519, :value 3158, :time 34787273222, :process 5, :replicate-to 0, :type :ok, :cas 1595795933906993152, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 2, :time 35075673680, :index 12637}
+{:type :ok, :f :read, :value 3158, :process 2, :time 35076487643, :cas 1595795933906993152, :index 12638}
+{:persist-to 0, :index 13172, :value 3326, :time 36137618852, :process 5, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=25, bucket=default}]", :index 13173, :value 3326, :time 36138515663, :process 5, :replicate-to 0, :type :ok, :cas 1595795935258148864, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 4, :time 36159320931, :index 13190}
+{:type :ok, :f :read, :value 3326, :process 4, :time 36160423140, :cas 1595795935258148864, :index 13191}
+{:persist-to 0, :index 13654, :value 3445, :time 37207818949, :process 5, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=26, bucket=default}]", :index 13655, :value 3445, :time 37208816192, :process 5, :replicate-to 0, :type :ok, :cas 1595795936328417280, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 3, :time 37546201386, :index 13802}
+{:type :ok, :f :read, :value 3445, :process 3, :time 37546837135, :cas 1595795936328417280, :index 13803}
+{:persist-to 0, :index 14014, :value 3539, :time 38077116989, :process 5, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=27, bucket=default}]", :index 14015, :value 3539, :time 38078279546, :process 5, :replicate-to 0, :type :ok, :cas 1595795937197948928, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 2, :time 38535790008, :index 14230}
+{:type :ok, :f :read, :value 3539, :process 2, :time 38536585877, :cas 1595795937197948928, :index 14231}
+{:persist-to 0, :index 14536, :value 3671, :time 39229470751, :process 0, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=28, bucket=default}]", :index 14537, :value 3671, :time 39230486428, :process 0, :replicate-to 0, :type :ok, :cas 1595795938350137344, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 2, :time 39531870313, :index 14708}
+{:type :ok, :f :read, :value 3671, :process 2, :time 39532759272, :cas 1595795938350137344, :index 14709}
+{:type :invoke, :f :read, :value nil, :process 1, :time 39668242410, :index 14777}
+{:type :ok, :f :read, :value 3671, :process 1, :time 39669006454, :cas 1595795938350137344, :index 14779}
+{:type :invoke, :f :read, :value nil, :process 0, :time 39940765477, :index 14897}
+{:type :ok, :f :read, :value 3671, :process 0, :time 39941576746, :cas 1595795938350137344, :index 14900}
+{:type :invoke, :f :read, :value nil, :process 0, :time 40564957170, :index 15230}
+{:type :ok, :f :read, :value 3671, :process 0, :time 40565852008, :cas 1595795938350137344, :index 15231}
+{:type :invoke, :f :read, :value nil, :process 2, :time 40614039166, :index 15254}
+{:type :ok, :f :read, :value 3671, :process 2, :time 40614822271, :cas 1595795938350137344, :index 15255}
+{:persist-to 0, :index 15272, :value 3847, :time 40639880990, :process 4, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=29, bucket=default}]", :index 15273, :value 3847, :time 40641029554, :process 4, :replicate-to 0, :type :ok, :cas 1595795939760734208, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 3, :time 40691159116, :index 15298}
+{:type :ok, :f :read, :value 3847, :process 3, :time 40692118638, :cas 1595795939760734208, :index 15299}
+{:type :invoke, :f :read, :value nil, :process 3, :time 41259433697, :index 15566}
+{:type :ok, :f :read, :value 3847, :process 3, :time 41260573800, :cas 1595795939760734208, :index 15567}
+{:persist-to 0, :index 15610, :value 3938, :time 41328256642, :process 4, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=30, bucket=default}]", :index 15619, :value 3938, :time 41344924895, :process 4, :replicate-to 0, :type :ok, :cas 1595795940464721920, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 16292, :value 4115, :time 42704658363, :process 5, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=31, bucket=default}]", :index 16293, :value 4115, :time 42705538085, :process 5, :replicate-to 0, :type :ok, :cas 1595795941825249280, :f :write, :json false, :durability-level 0}
+{:type :info, :f :heal-network, :process :nemesis, :time 42974063391, :index 16454}
+{:type :invoke, :f :read, :value nil, :process 1, :time 43045265988, :index 16488}
+{:type :ok, :f :read, :value 4115, :process 1, :time 43048868143, :cas 1595795941825249280, :index 16490}
+{:type :info, :f :heal-network, :process :nemesis, :time 43190963611, :value :healed, :index 16549}
+{:type :info, :f :recover, :recovery-type :delta, :process :nemesis, :time 43191311901, :index 16550}
+{:type :invoke, :f :read, :value nil, :process 0, :time 44389089396, :index 17023}
+{:type :ok, :f :read, :value 4115, :process 0, :time 44390138030, :cas 1595795941825249280, :index 17024}
+{:type :invoke, :f :read, :value nil, :process 1, :time 44434092095, :index 17033}
+{:type :ok, :f :read, :value 4115, :process 1, :time 44434877882, :cas 1595795941825249280, :index 17034}
+{:type :invoke, :f :read, :value nil, :process 4, :time 44795242133, :index 17195}
+{:type :ok, :f :read, :value 4115, :process 4, :time 44796056382, :cas 1595795941825249280, :index 17196}
+{:type :invoke, :f :read, :value nil, :process 2, :time 45610153860, :index 17561}
+{:type :ok, :f :read, :value 4115, :process 2, :time 45611068691, :cas 1595795941825249280, :index 17562}
+{:type :invoke, :f :read, :value nil, :process 5, :time 45813765834, :index 17657}
+{:type :ok, :f :read, :value 4115, :process 5, :time 45814775749, :cas 1595795941825249280, :index 17658}
+{:persist-to 0, :index 18167, :value 4574, :time 46771109981, :process 1, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=32, bucket=default}]", :index 18168, :value 4574, :time 46771935261, :process 1, :replicate-to 0, :type :ok, :cas 1595795945891627008, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 18357, :value 4624, :time 47065007041, :process 3, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=33, bucket=default}]", :index 18358, :value 4624, :time 47066154978, :process 3, :replicate-to 0, :type :ok, :cas 1595795946185752576, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 18618, :value 4691, :time 47655531167, :process 2, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=34, bucket=default}]", :index 18621, :value 4691, :time 47656566245, :process 2, :replicate-to 0, :type :ok, :cas 1595795946776166400, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 18837, :value 4744, :time 48076547442, :process 0, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=35, bucket=default}]", :index 18838, :value 4744, :time 48077468241, :process 0, :replicate-to 0, :type :ok, :cas 1595795947197169664, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 5, :time 48465040617, :index 19019}
+{:type :ok, :f :read, :value 4744, :process 5, :time 48465818847, :cas 1595795947197169664, :index 19020}
+{:persist-to 0, :index 19357, :value 4874, :time 49176605100, :process 3, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=36, bucket=default}]", :index 19358, :value 4874, :time 49177820445, :process 3, :replicate-to 0, :type :ok, :cas 1595795948297519104, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 2, :time 49294862795, :index 19407}
+{:type :ok, :f :read, :value 4874, :process 2, :time 49295819971, :cas 1595795948297519104, :index 19408}
+{:type :invoke, :f :read, :value nil, :process 4, :time 49845346634, :index 19675}
+{:type :ok, :f :read, :value 4874, :process 4, :time 49846368627, :cas 1595795948297519104, :index 19676}
+{:persist-to 0, :index 20351, :value 5117, :time 51246098701, :process 5, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=37, bucket=default}]", :index 20354, :value 5117, :time 51251965991, :process 5, :replicate-to 0, :type :ok, :cas 1595795950371536896, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 5, :time 51610306440, :index 20509}
+{:type :ok, :f :read, :value 5117, :process 5, :time 51611163559, :cas 1595795950371536896, :index 20512}
+{:type :invoke, :f :read, :value nil, :process 1, :time 52081224976, :index 20753}
+{:type :ok, :f :read, :value 5117, :process 1, :time 52082187152, :cas 1595795950371536896, :index 20754}
+{:persist-to 0, :index 20823, :value 5237, :time 52215484085, :process 1, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=38, bucket=default}]", :index 20824, :value 5237, :time 52216396981, :process 1, :replicate-to 0, :type :ok, :cas 1595795951336095744, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 0, :time 52314658897, :index 20859}
+{:type :ok, :f :read, :value 5237, :process 0, :time 52315587927, :cas 1595795951336095744, :index 20861}
+{:type :invoke, :f :read, :value nil, :process 1, :time 53493658629, :index 21411}
+{:type :ok, :f :read, :value 5237, :process 1, :time 53494438514, :cas 1595795951336095744, :index 21412}
+{:type :invoke, :f :read, :value nil, :process 4, :time 53974769412, :index 21654}
+{:type :ok, :f :read, :value 5237, :process 4, :time 53975548730, :cas 1595795951336095744, :index 21655}
+{:type :invoke, :f :read, :value nil, :process 3, :time 54165035427, :index 21731}
+{:type :ok, :f :read, :value 5237, :process 3, :time 54165974495, :cas 1595795951336095744, :index 21734}
+{:persist-to 0, :index 22000, :value 5543, :time 54814128912, :process 2, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=39, bucket=default}]", :index 22002, :value 5543, :time 54815054375, :process 2, :replicate-to 0, :type :ok, :cas 1595795953934663680, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 22625, :value 5724, :time 56065868108, :process 0, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=40, bucket=default}]", :index 22626, :value 5724, :time 56066840789, :process 0, :replicate-to 0, :type :ok, :cas 1595795955186532352, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 23051, :value 5842, :time 56980128253, :process 0, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=41, bucket=default}]", :index 23054, :value 5842, :time 56981158507, :process 0, :replicate-to 0, :type :ok, :cas 1595795956100825088, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 23309, :value 5911, :time 57529449886, :process 5, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=42, bucket=default}]", :index 23310, :value 5911, :time 57530383086, :process 5, :replicate-to 0, :type :ok, :cas 1595795956650082304, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 23405, :value 5940, :time 57759436532, :process 0, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=43, bucket=default}]", :index 23406, :value 5940, :time 57760556591, :process 0, :replicate-to 0, :type :ok, :cas 1595795956880310272, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 0, :time 58183746178, :index 23594}
+{:type :ok, :f :read, :value 5940, :process 0, :time 58184570518, :cas 1595795956880310272, :index 23596}
+{:type :invoke, :f :read, :value nil, :process 4, :time 59109853643, :index 24067}
+{:type :ok, :f :read, :value 5940, :process 4, :time 59110821892, :cas 1595795956880310272, :index 24068}
+{:persist-to 0, :index 24069, :value 6116, :time 59114825888, :process 1, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=44, bucket=default}]", :index 24070, :value 6116, :time 59115801802, :process 1, :replicate-to 0, :type :ok, :cas 1595795958235529216, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 24166, :value 6140, :time 59343214572, :process 3, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=45, bucket=default}]", :index 24168, :value 6140, :time 59344208692, :process 3, :replicate-to 0, :type :ok, :cas 1595795958463856640, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 2, :time 60175336055, :index 24577}
+{:type :ok, :f :read, :value 6140, :process 2, :time 60177289326, :cas 1595795958463856640, :index 24578}
+{:type :invoke, :f :read, :value nil, :process 2, :time 60252606088, :index 24611}
+{:type :ok, :f :read, :value 6140, :process 2, :time 60260673934, :cas 1595795958463856640, :index 24620}
+{:persist-to 0, :index 24779, :value 6293, :time 60591959735, :process 2, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=46, bucket=default}]", :index 24780, :value 6293, :time 60592999980, :process 2, :replicate-to 0, :type :ok, :cas 1595795959712645120, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 0, :time 61909801863, :index 25377}
+{:type :ok, :f :read, :value 6293, :process 0, :time 61910786775, :cas 1595795959712645120, :index 25378}
+{:type :invoke, :f :read, :value nil, :process 5, :time 61935680323, :index 25397}
+{:type :ok, :f :read, :value 6293, :process 5, :time 61936428133, :cas 1595795959712645120, :index 25398}
+{:type :invoke, :f :read, :value nil, :process 2, :time 62770308194, :index 25782}
+{:type :ok, :f :read, :value 6293, :process 2, :time 62771279241, :cas 1595795959712645120, :index 25784}
+{:type :invoke, :f :read, :value nil, :process 1, :time 63004063651, :index 25901}
+{:type :ok, :f :read, :value 6293, :process 1, :time 63005004130, :cas 1595795959712645120, :index 25903}
+{:persist-to 0, :index 26219, :value 6674, :time 63608661349, :process 3, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=47, bucket=default}]", :index 26221, :value 6674, :time 63609831377, :process 3, :replicate-to 0, :type :ok, :cas 1595795962729463808, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 26527, :value 6754, :time 64220104282, :process 4, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=48, bucket=default}]", :index 26528, :value 6754, :time 64220950353, :process 4, :replicate-to 0, :type :ok, :cas 1595795963340718080, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 26913, :value 6862, :time 65002066483, :process 0, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=49, bucket=default}]", :index 26914, :value 6862, :time 65003042658, :process 0, :replicate-to 0, :type :ok, :cas 1595795964122693632, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 27025, :value 6891, :time 65247705490, :process 5, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 27030, :value 6893, :time 65255118890, :process 3, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=50, bucket=default}]", :index 27031, :value 6893, :time 65256366888, :process 3, :replicate-to 0, :type :ok, :cas 1595795964375990272, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=51, bucket=default}]", :index 27032, :value 6891, :time 65256790138, :process 5, :replicate-to 0, :type :ok, :cas 1595795964376580096, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 2, :time 65742568648, :index 27275}
+{:type :ok, :f :read, :value 6891, :process 2, :time 65743117238, :cas 1595795964376580096, :index 27276}
+{:type :invoke, :f :read, :value nil, :process 0, :time 66419270582, :index 27569}
+{:type :ok, :f :read, :value 6891, :process 0, :time 66420292026, :cas 1595795964376580096, :index 27570}
+{:type :invoke, :f :read, :value nil, :process 1, :time 66784300256, :index 27729}
+{:type :ok, :f :read, :value 6891, :process 1, :time 66785015734, :cas 1595795964376580096, :index 27730}
+{:persist-to 0, :index 28061, :value 7165, :time 67451071254, :process 5, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=52, bucket=default}]", :index 28062, :value 7165, :time 67451974227, :process 5, :replicate-to 0, :type :ok, :cas 1595795966571708416, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 28241, :value 7215, :time 67788195238, :process 4, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=53, bucket=default}]", :index 28244, :value 7215, :time 67788943896, :process 4, :replicate-to 0, :type :ok, :cas 1595795966908694528, :f :write, :json false, :durability-level 0}
+{:type :info, :f :recover, :recovery-type :delta, :process :nemesis, :time 67961837553, :value ("172.28.128.219"), :index 28315}
+{:type :invoke, :f :read, :value nil, :process 1, :time 68754334493, :index 28668}
+{:type :ok, :f :read, :value 7215, :process 1, :time 68755129338, :cas 1595795966908694528, :index 28669}
+{:persist-to 0, :index 28820, :value 7366, :time 69053478457, :process 5, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 2, :time 69054320835, :index 28821}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=54, bucket=default}]", :index 28822, :value 7366, :time 69054528193, :process 5, :replicate-to 0, :type :ok, :cas 1595795968174194688, :f :write, :json false, :durability-level 0}
+{:type :ok, :f :read, :value 7366, :process 2, :time 69055826777, :cas 1595795968174194688, :index 28823}
+{:type :invoke, :f :read, :value nil, :process 5, :time 69372915489, :index 28984}
+{:type :ok, :f :read, :value 7366, :process 5, :time 69373801176, :cas 1595795968174194688, :index 28985}
+{:persist-to 0, :index 29498, :value 7548, :time 70533072572, :process 5, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=55, bucket=default}]", :index 29499, :value 7548, :time 70534819226, :process 5, :replicate-to 0, :type :ok, :cas 1595795969654521856, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 3, :time 70579740755, :index 29512}
+{:type :ok, :f :read, :value 7548, :process 3, :time 70580789036, :cas 1595795969654521856, :index 29513}
+{:persist-to 0, :index 29536, :value 7558, :time 70624024828, :process 3, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=56, bucket=default}]", :index 29538, :value 7558, :time 70624918210, :process 3, :replicate-to 0, :type :ok, :cas 1595795969744633856, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 30084, :value 7691, :time 71731136305, :process 2, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=57, bucket=default}]", :index 30085, :value 7691, :time 71732140353, :process 2, :replicate-to 0, :type :ok, :cas 1595795970851864576, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 5, :time 72052090798, :index 30249}
+{:type :ok, :f :read, :value 7691, :process 5, :time 72052902693, :cas 1595795970851864576, :index 30251}
+{:persist-to 0, :index 30258, :value 7725, :time 72064680643, :process 0, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=58, bucket=default}]", :index 30259, :value 7725, :time 72066242753, :process 0, :replicate-to 0, :type :ok, :cas 1595795971185967104, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 3, :time 72546191731, :index 30462}
+{:type :ok, :f :read, :value 7725, :process 3, :time 72547004403, :cas 1595795971185967104, :index 30463}
+{:persist-to 0, :index 30528, :value 7798, :time 72706229771, :process 4, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=59, bucket=default}]", :index 30529, :value 7798, :time 72707101012, :process 4, :replicate-to 0, :type :ok, :cas 1595795971826909184, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 31192, :value 7964, :time 74082386777, :process 1, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=60, bucket=default}]", :index 31193, :value 7964, :time 74083235458, :process 1, :replicate-to 0, :type :ok, :cas 1595795973203034112, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 31210, :value 7970, :time 74116436056, :process 4, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=61, bucket=default}]", :index 31211, :value 7970, :time 74117329671, :process 4, :replicate-to 0, :type :ok, :cas 1595795973237047296, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 31732, :value 8095, :time 75137298307, :process 3, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=62, bucket=default}]", :index 31733, :value 8095, :time 75138121741, :process 3, :replicate-to 0, :type :ok, :cas 1595795974257901568, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 4, :time 75416528665, :index 31867}
+{:type :ok, :f :read, :value 8095, :process 4, :time 75417269518, :cas 1595795974257901568, :index 31869}
+{:type :invoke, :f :read, :value nil, :process 5, :time 76001138023, :index 32164}
+{:type :ok, :f :read, :value 8095, :process 5, :time 76001938248, :cas 1595795974257901568, :index 32165}
+{:persist-to 0, :index 32378, :value 8261, :time 76468382144, :process 2, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=63, bucket=default}]", :index 32379, :value 8261, :time 76469425330, :process 2, :replicate-to 0, :type :ok, :cas 1595795975589068800, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 1, :time 76780639415, :index 32538}
+{:type :ok, :f :read, :value 8261, :process 1, :time 76781484895, :cas 1595795975589068800, :index 32539}
+{:type :invoke, :f :read, :value nil, :process 1, :time 77088769931, :index 32670}
+{:type :ok, :f :read, :value 8261, :process 1, :time 77096701182, :cas 1595795975589068800, :index 32674}
+{:persist-to 0, :index 32902, :value 8386, :time 77638409434, :process 3, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=64, bucket=default}]", :index 32903, :value 8386, :time 77639462937, :process 3, :replicate-to 0, :type :ok, :cas 1595795976759148544, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 32978, :value 8411, :time 77767461454, :process 0, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=65, bucket=default}]", :index 32979, :value 8411, :time 77768197623, :process 0, :replicate-to 0, :type :ok, :cas 1595795976887926784, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 33224, :value 8475, :time 78256723839, :process 3, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=66, bucket=default}]", :index 33231, :value 8475, :time 78268636555, :process 3, :replicate-to 0, :type :ok, :cas 1595795977388359680, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 33310, :value 8497, :time 78468595814, :process 4, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=67, bucket=default}]", :index 33312, :value 8497, :time 78469436478, :process 4, :replicate-to 0, :type :ok, :cas 1595795977589161984, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 33423, :value 8530, :time 78767030259, :process 1, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=68, bucket=default}]", :index 33427, :value 8530, :time 78767798374, :process 1, :replicate-to 0, :type :ok, :cas 1595795977887547392, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 2, :time 79524672074, :index 33820}
+{:type :ok, :f :read, :value 8530, :process 2, :time 79525465675, :cas 1595795977887547392, :index 33822}
+{:persist-to 0, :index 34126, :value 8707, :time 80210439602, :process 0, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=69, bucket=default}]", :index 34128, :value 8707, :time 80211132664, :process 0, :replicate-to 0, :type :ok, :cas 1595795979330846720, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 5, :time 80573178906, :index 34284}
+{:type :ok, :f :read, :value 8707, :process 5, :time 80574455692, :cas 1595795979330846720, :index 34285}
+{:persist-to 0, :index 34490, :value 8788, :time 80971067540, :process 1, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=70, bucket=default}]", :index 34491, :value 8788, :time 80971958456, :process 1, :replicate-to 0, :type :ok, :cas 1595795980091785216, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 34708, :value 8844, :time 81467696285, :process 4, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=71, bucket=default}]", :index 34710, :value 8844, :time 81468545253, :process 4, :replicate-to 0, :type :ok, :cas 1595795980588285952, :f :write, :json false, :durability-level 0}
+{:type :invoke, :f :read, :value nil, :process 5, :time 82253746274, :index 35022}
+{:type :ok, :f :read, :value 8844, :process 5, :time 82264088136, :cas 1595795980588285952, :index 35032}
+{:persist-to 0, :index 35066, :value 8930, :time 82389346580, :process 0, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=72, bucket=default}]", :index 35067, :value 8930, :time 82390650462, :process 0, :replicate-to 0, :type :ok, :cas 1595795981510443008, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 35114, :value 8944, :time 82516689393, :process 2, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=73, bucket=default}]", :index 35115, :value 8944, :time 82517799830, :process 2, :replicate-to 0, :type :ok, :cas 1595795981637451776, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :index 35574, :value 9068, :time 84069892502, :process 3, :replicate-to 0, :type :invoke, :f :write, :json false, :durability-level 0}
+{:persist-to 0, :mutation-token "Optional[mt{vbID=399, vbUUID=194705859539194, seqno=74, bucket=default}]", :index 35575, :value 9068, :time 84070709169, :process 3, :replicate-to 0, :type :ok, :cas 1595795983190458368, :f :write, :json false, :durability-level 0}
