@@ -125,7 +125,7 @@ function download_build() {
 }
 
 function run_test_suite() {
-    GLOBAL_RUN_ARGS="enable-tcp-capture,hashdump,enable-memcached-debug-log-level,disable-out-of-order-execution"
+    GLOBAL_RUN_ARGS="enable-tcp-capture,hashdump,enable-memcached-debug-log-level"
     if [[ ${USE_VMS} != "true" ]]; then
         GLOBAL_RUN_ARGS="${GLOBAL_RUN_ARGS},net-interface=${NETWORK_INTERFACE}"
     fi
