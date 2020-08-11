@@ -14,8 +14,8 @@
                  [jepsen "0.1.19"]
                  [cheshire "5.10.0"]
                  [clj-http "3.10.1"]
-                 [com.couchbase.client/core-io "2.0.4"]
-                 [com.couchbase.client/java-client "3.0.3"]
+                 [com.couchbase.client/core-io "2.0.8"]
+                 [com.couchbase.client/java-client "3.0.7"]
                  [com.couchbase.client/couchbase-transactions "1.0.0-beta.3-SNAPSHOT"]]
   :resource-paths ["./lib/dcp-client-0.23.0-SHADEDCORE.jar"]
   :profiles {:dev {:resource-paths ["./test/couchbase/resources"]}}
