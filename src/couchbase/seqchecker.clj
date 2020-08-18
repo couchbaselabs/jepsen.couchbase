@@ -17,8 +17,8 @@
 (defn invoke-write?
   "Check if an operation is a write invocation"
   [op]
-  (and (= (:f op) :invoke)
-       (= (:type op) :info)))
+  (and (= (:f op) :write)
+       (= (:type op) :invoke)))
 
 (defn discardable?
   "Invocations, failures and nemesis actions are irrelevant for our checker"
@@ -62,7 +62,9 @@
                (if-not (discardable? op)
                  (conj! filtered-history op)
                  filtered-history)
-               (if (invoke-write? op) (conj! written-vals op) written-vals)))
+               (if (invoke-write? op)
+                 (conj! written-vals (:value op))
+                 written-vals)))
 
       (persistent! filtered-history))))
 

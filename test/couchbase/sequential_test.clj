@@ -153,6 +153,51 @@
                                         (string/split-lines)
                                         (map #(edn/read-string {:default (constantly nil)} %))
                                         (vec))
-                                   nil))))))
+                                   nil)))))
+
+  ;; Ensure an illegal history that contains client operations with an unknown
+  ;; type (i.e. other than :ok, :info, :invoke, or :fail) cause an exception to
+  ;; be thrown
+  (testing "illegal-op-type"
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (checker/check (seqchecker/sequential)
+                                nil
+                                [{:f :write :type :invoke :value 1 :process 1 :index 1}
+                                 {:f :write :type :something-strange :value 1 :process 1 :index 2}]
+                                nil))))
+
+  ;; Ensure an illegal history containg client operations other than reads or
+  ;; writes causes an exception to be thrown
+  (testing "illegal-op-function"
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (checker/check (seqchecker/sequential)
+                                nil
+                                [{:f :write :type :invoke :value 1 :process 1 :index 1}
+                                 {:f :write :type :ok :value 1 :process 1 :index 2}
+                                 {:f :cas :type :invoke :value [1 2] :process 1 :index 3}
+                                 {:f :cas :type :ok :value [1 2] :process 1 :index 4}]
+                                nil))))
+
+  ;; Ensure an illegal history containing indeterminate reads causes an
+  ;; exception to be thrown
+  (testing "illegal-op-indeterminate-read"
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (checker/check (seqchecker/sequential)
+                                nil
+                                [{:f :read :type :invoke :value nil :process 1 :index 1}
+                                 {:f :read :type :info :value nil :process 1 :index 2}]
+                                nil))))
+
+  ;; Ensure an illegal history containing multiple write invocations with the
+  ;; same value causes an exception to be thrown
+  (testing "illegal-non-unique-write-value"
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (checker/check (seqchecker/sequential)
+                                nil
+                                [{:f :write :type :invoke :value 1 :process 1 :index 1}
+                                 {:f :write :type :fail :value 1 :process 1 :index 2}
+                                 {:f :write :type :invoke :value 1 :process 1 :index 3}
+                                 {:f :write :type :ok :value 1 :process 1 :index 4}]
+                                nil)))))
 
 
