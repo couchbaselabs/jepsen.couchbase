@@ -1,7 +1,8 @@
 (ns couchbase.cbjcli
   (:require [clojure.tools.logging :refer [info warn error fatal]]
             [couchbase.util :as util]
-            [clojure.string :as str])
+            [clojure.string :as str]
+            [jepsen.cli :as jepsen.cli])
   (:import (java.time Duration)))
 
 ; GLOBALS
@@ -216,4 +217,10 @@
     :default false]
    [nil "--disable-out-of-order-execution"
     "Use to disable out of order execution by Couchbase server"
-    :default false]])
+    :default false]
+   (jepsen.cli/repeated-opt
+    nil
+    "--use-checker CHECKER"
+    "Select register workload checker; can be specified multiple times to run multiple checkers. Defaults to linearizable if not provided"
+    nil
+    {"linearizable" :linearizable "sequential" :sequential})])

@@ -89,7 +89,18 @@
   "Returns the base op generator for register workloads"
   [opts]
   (gen/mix
-   (cond (:cas opts)
+   (cond (some #{:sequential} (:use-checker opts))
+         [(gen/repeat {:f :read})
+          (map (fn [x] {:f :write
+                        :replicate-to (:replicate-to opts)
+                        :persist-to (:persist-to opts)
+                        :durability-level (util/random-durability-level
+                                           (:durability opts))
+                        :json (:use-jsoc-docs opts)
+                        :value x})
+               (range))]
+
+         (:cas opts)
          [(gen/repeat {:f :read})
           #(gen/once {:f :write
                       :replicate-to (:replicate-to opts)
@@ -130,7 +141,8 @@
   [checker-name]
   (case checker-name
     :linearizable (let [opts {:model (model/cas-register :nil)}]
-                    {:linear (checker/linearizable opts)})))
+                    {:linear (checker/linearizable opts)})
+    :sequential {:sequential (seqchecker/sequential)}))
 
 (defn register-common
   "Return a map of common parameters for register workloads"
@@ -143,7 +155,8 @@
                        (checker/compose
                         (apply merge
                                {:timeline (timeline/html)}
-                               (map get-register-checker [:linearizable]))))
+                               (map get-register-checker
+                                    (or (opts :use-checker) [:linearizable])))))
                :sanity (cbchecker/sanity-check)}
               (if (opts :perf-graphs)
                 {:perf (checker/perf)})))})

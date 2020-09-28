@@ -101,7 +101,11 @@
     (if (nil? (:process-to-suspend opts))
       (throw (RuntimeException. "For suspend-process scenario \"--process-to-suspend\" must be specified"))))
   (when (and (:doc-padding-size opts) (not (:use-json-docs opts)))
-    (throw (RuntimeException. "To use --doc-padding-size \"--use-json-docs\" must be specified"))))
+    (throw (RuntimeException. "To use --doc-padding-size \"--use-json-docs\" must be specified")))
+  (when (and (some? (:use-checker opts))
+             (not= :register
+                   (:workload-type ((workload/get-workload-opts (opts :workload)) opts))))
+    (throw (RuntimeException. "--use-checker option can only be used with register workloads"))))
 
 ;; The actual testcase, merge the user options, basic parameters and workload
 ;; parameters into something that can be passed into Jepsen to run
