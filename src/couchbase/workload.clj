@@ -3,6 +3,7 @@
             [clojure.tools.logging :refer [info warn error fatal]]
             [couchbase
              [checker :as cbchecker]
+             [cbclients :as cbclients]
              [clients :as clients]
              [seqchecker :as seqchecker]
              [util :as util]]
@@ -167,5 +168,28 @@
                                {:timeline (timeline/html)}
                                (map get-register-checker [:linearizable]))))
                :sanity (cbchecker/sanity-check)}
+              (if (opts :perf-graphs)
+                {:perf (checker/perf)})))})
+
+;; Set Workload Helpers
+
+(defn get-set-checker
+  "Return a set checker by name"
+  [checker-name]
+  (case checker-name
+    :basic {:set (checker/set)}
+    :extended {:set (cbchecker/extended-set-checker)}))
+
+(defn set-common
+  "Return a map of common parameters for set workloads"
+  [opts checker]
+  {:client (if (:dcp-set-read opts)
+             (clients/set-client (cbclients/dcp-client))
+             (clients/set-client nil))
+   :checker (checker/compose
+             (merge
+              {:timeline (timeline/html)
+               :sanity (cbchecker/sanity-check)}
+              (get-set-checker checker)
               (if (opts :perf-graphs)
                 {:perf (checker/perf)})))})

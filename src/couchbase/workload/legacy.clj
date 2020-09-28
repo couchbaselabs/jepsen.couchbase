@@ -76,49 +76,6 @@
 ;; Set Workloads
 ;; =============
 
-(defn Set-workload
-  "Generic set workload. We model the set with a bucket, adding an item to the
-  set corresponds to inserting a key. To read the set we use a dcp client to
-  stream all mutations, keeping track of which keys exist"
-  [opts]
-  (let-and-merge
-   opts
-   dcpclient     (if (:dcp-set-read opts)
-                   (cbclients/dcp-client))
-   cycles        (opts :cycles 1)
-   client        (clients/set-client dcpclient)
-   concurrency   250
-   pool-size     4
-   replicas      (opts :replicas 0)
-   replicate-to  (opts :replicate-to 0)
-   persist-to    (opts :persist-to 0)
-   autofailover  (opts :autofailover true)
-   autofailover-timeout  (opts :autofailover-timeout 6)
-   autofailover-maxcount (opts :autofailover-maxcount 3)
-
-   control-atom  (atom :continue)
-   checker       (checker/compose
-                  (merge
-                   {:timeline (timeline/html)
-                    :set (checker/set)
-                    :sanity (cbchecker/sanity-check)}
-                   (if (opts :perf-graphs)
-                     {:perf (checker/perf)})))
-   generator     (gen/phases
-                  (->> (range)
-                       (map (fn [x] {:type :invoke
-                                     :f :add
-                                     :value x
-                                     :replicate-to replicate-to
-                                     :persist-to persist-to
-                                     :durability-level (util/random-durability-level (:durability opts))
-                                     :json (:use-json-docs opts)}))
-                       (gen/seq)
-                       (do-n-nemesis-cycles cycles
-                                            [(gen/sleep 20)]))
-                  (gen/sleep 3)
-                  (gen/clients (gen/once {:type :invoke :f :read :value nil})))))
-
 (defn set-kill-workload
   "Set workload that repeatedly kills memcached while hammering inserts against
   the cluster"
