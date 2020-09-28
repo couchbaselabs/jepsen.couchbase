@@ -220,15 +220,6 @@
 ;; Register workloads
 ;; ==================
 
-(defn register-workload
-  "Basic register workload"
-  [opts]
-  (with-register-base opts
-    replicas      (opts :replicas 1)
-    nemesis       nemesis/noop
-    client-generator      (client-gen opts)
-    generator (do-n-nemesis-cycles cycles [(gen/sleep 20)] client-generator)))
-
 (defn partition-workload
   "Paritions the network by isolating nodes from each other, then will recover if autofailover
   happens"
