@@ -58,6 +58,27 @@
 
 ;; Generator Helpers
 
+(defrecord SetWorkloadGenWrapper [gen max_add]
+  gen/Generator
+  (op [this test ctx]
+    (when-let [[op gen'] (gen/op gen test ctx)]
+      (case (:f op)
+        :add [op (SetWorkloadGenWrapper. gen' (max max_add (:value op)))]
+        :read [(assoc op :value max_add)
+               (SetWorkloadGenWrapper. gen' max_add)]
+        [op (SetWorkloadGenWrapper. gen' max_add)])))
+
+  (update [this test ctx event] this))
+
+(defn wrap-set-generator
+  "Wrap a set workload generator to track the largest attempted add value, then
+  automatically insert that value into any read requests. This is required to
+  ensure the set client knows which keys to probe, as the op history is no
+  longer accessbile to clients when using pure generators. Note that for
+  performance reasons the wrapped generator does not propagate updates."
+  [gen]
+  (SetWorkloadGenWrapper. gen 0))
+
 (defrecord Stopable [gen]
   gen/Generator
   (op [this test ctx]
