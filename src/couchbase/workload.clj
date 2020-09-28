@@ -1,7 +1,19 @@
 (ns couchbase.workload
   (:require [clojure.string :refer [lower-case]]
             [clojure.tools.logging :refer [info warn error fatal]]
-            [couchbase.workload.legacy :as legacy]))
+            [couchbase
+             [checker :as cbchecker]
+             [clients :as clients]
+             [seqchecker :as seqchecker]
+             [util :as util]]
+            [couchbase.workload.legacy :as legacy]
+            [jepsen
+             [checker :as checker]
+             [independent :as independent]
+             [nemesis :as nemesis]]
+            [jepsen.checker.timeline :as timeline]
+            [jepsen.generator.pure :as gen]
+            [knossos.model :as model]))
 
 ;; Workload loading helpers
 
@@ -43,3 +55,96 @@
     (if (get-workload-fn wl-name)
       (constantly {:workload-type :legacy})
       (throw (RuntimeException. (format "Workload %s not found" wl-name))))))
+
+;; Generator Helpers
+
+(defrecord Stopable [gen]
+  gen/Generator
+  (op [this test ctx]
+    (when-let [[op gen'] (gen/op gen test ctx)]
+      (if (= (:type op) :stop-test)
+        (gen/op (gen/log "Stopping test") test ctx)
+        [op (Stopable. gen')])))
+  (update [this test ctx event]
+    (if (and (= :nemesis (:process event))
+             (contains? event :exception))
+      (gen/log "Aborting test due to nemesis failure.")
+      this)))
+
+(defn wrap-generators
+  "Wrap nemesis and client generators into a combined generator. Add handling
+  code to allow aborting test. Note that updates are not propagated down for
+  performance reasons."
+  [client-gen nemesis-gen]
+  (Stopable. (gen/any (gen/nemesis nemesis-gen client-gen)))) ;; TODO: Add timeout
+
+;; Register Workload Helpers
+
+(defn- register-op-gen
+  "Returns the base op generator for register workloads"
+  [opts]
+  (gen/mix
+   (cond (:cas opts)
+         [(gen/repeat {:f :read})
+          #(gen/once {:f :write
+                      :replicate-to (:replicate-to opts)
+                      :persist-to (:persist-to opts)
+                      :durability-level (util/random-durability-level
+                                         (:durability opts))
+                      :json (:use-json-docs opts)
+                      :value (rand-int 5)})
+          #(gen/once {:f :cas
+                      :replicate-to (:replicate-to opts)
+                      :persist-to (:persist-to opts)
+                      :durability-level (util/random-durability-level
+                                         (:durability opts))
+                      :json (:use-json-docs opts)
+                      :value [(rand-int 5) (rand-int 5)]})]
+
+         :else
+         [(gen/repeat {:f :read})
+          #(gen/once {:f :write
+                      :replicate-to (:replicate-to opts)
+                      :persist-to (:persist-to opts)
+                      :durability-level (util/random-durability-level
+                                         (:durability opts))
+                      :value (rand-int 50)})])))
+
+(defn register-client-gen
+  "Return a wrapped generator for register workloads"
+  [opts]
+  (independent/pure-concurrent-generator
+   (:doc-threads opts)
+   (range)
+   (fn [_]
+     ;; On Jepsen 0.1.19 we need to apply stagger on each thread seperately,
+     ;; else unfair scheduling causes only a subset of the threads to ever
+     ;; actually run, breaking our test cases. This can be cleaned up once
+     ;; we've moved to Jepsen 0.2.0 where the unfair scheduling issue has been
+     ;; fixed
+     (gen/each-thread
+      (cond->> (register-op-gen opts)
+        (pos? (:rate opts 0)) (gen/stagger (/ (:rate opts))))))))
+
+(defn get-register-checker
+  "Return a checker by name"
+  [checker-name]
+  (case checker-name
+    :linearizable (let [opts {:model (model/cas-register :nil)}]
+                    {:linear (checker/linearizable opts)})))
+
+(defn register-common
+  "Return a map of common parameters for register workloads"
+  [opts]
+  {:concurrency (* (:doc-threads opts) (:doc-count opts))
+   :client (clients/register-client)
+   :checker (checker/compose
+             (merge
+              {:indep (independent/checker
+                       (checker/compose
+                        (apply merge
+                               {:timeline (timeline/html)}
+                               (map get-register-checker [:linearizable]))))
+               :sanity (cbchecker/sanity-check)}
+              (if (opts :perf-graphs)
+                {:perf (checker/perf)})))})
