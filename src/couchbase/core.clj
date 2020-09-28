@@ -2,8 +2,8 @@
   (:require [clojure.tools.logging :refer [info warn error fatal]]
             [couchbase
              [util     :as util]
-             [cbjcli :as cbjcli]
-             workload]
+             [cbjcli :as cbjcli]]
+            [couchbase.workload.legacy]
             [dom-top.core :as domTop]
             [jepsen
              [cli :as cli]
@@ -136,7 +136,7 @@
     (merge opts
            (try
              (as-> (opts :workload) %
-               (format "couchbase.workload/%s-workload" %)
+               (format "couchbase.workload.legacy/%s-workload" %)
                (resolve (symbol %))
                (% opts))
              (catch NullPointerException _

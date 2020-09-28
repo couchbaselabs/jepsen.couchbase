@@ -1,4 +1,4 @@
-(ns couchbase.workload
+(ns couchbase.workload.legacy
   (:require [clojure.set :as set]
             [clojure.tools.logging :refer [info warn error fatal]]
             [couchbase [checker   :as cbchecker]
