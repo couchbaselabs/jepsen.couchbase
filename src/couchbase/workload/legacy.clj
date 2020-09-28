@@ -220,34 +220,6 @@
 ;; Register workloads
 ;; ==================
 
-(defn failover-workload
-  "Failover and recover"
-  [opts]
-  (with-register-base opts
-    replicas      (opts :replicas 1)
-    recovery-type (opts :recovery-type :delta)
-    failover-type (opts :failover-type :hard)
-    disrupt-count (opts :disrupt-count 1)
-    sg-enabled     (opts :server-groups-enabled)
-    server-group-count (if sg-enabled (opts :server-group-count))
-    target-server-groups      (if (opts :target-server-groups) (do (assert sg-enabled) true) false)
-    random-server-group (if sg-enabled (util/random-server-group server-group-count))
-    nemesis   (cbnemesis/couchbase)
-    client-generator (client-gen opts)
-    generator (do-n-nemesis-cycles cycles
-                                   [(gen/sleep 5)
-                                    {:type :info
-                                     :f    :failover
-                                     :failover-type failover-type
-                                     :targeter cbnemesis/basic-nodes-targeter
-                                     :target-count disrupt-count}
-                                    (gen/sleep 10)
-                                    {:type :info
-                                     :f    :recover
-                                     :recovery-type recovery-type}
-                                    (gen/sleep 5)]
-                                   client-generator)))
-
 (defn kill-workload
   "Register workload that repeatedly kills either memcached, ns_server, or babysitter processes
   while hammering inserts against the cluster"
