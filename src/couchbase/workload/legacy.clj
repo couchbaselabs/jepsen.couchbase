@@ -300,24 +300,6 @@
                                       client-gen))
                (gen/clients (gen/once {:type :invoke :f :read :value nil :check :upsert-set-checker})))))
 
-;; ==================
-;; Counter workloads
-;; ==================
-
-; Functions to return default op for the counter workload
-(def counter-add {:type :invoke :f :add :value 1})
-(def counter-sub {:type :invoke :f :add :value -1})
-(def counter-read {:type :invoke :f :read})
-
-(defn set-durability-level
-  "Helper function to add durability settings to each op"
-  [options gen]
-  (gen/map (fn [op]
-             (assoc op :replicate-to (:replicate-to options)
-                    :persist-to (:persist-to options)
-                    :durability-level (util/random-durability-level (:durability options))))
-           gen))
-
 (defn WhiteRabbit-workload
   "Trigger lost inserts due to one of several white-rabbit variants"
   [opts]
