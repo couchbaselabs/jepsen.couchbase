@@ -318,34 +318,6 @@
                     :durability-level (util/random-durability-level (:durability options))))
            gen))
 
-(defn counter-add-workload
-  "Workload that treats one document as a counter and performs
-  increments to it while also performing reads"
-  [opts]
-  (let-and-merge
-   opts
-   cycles        (opts :cycles 1)
-   client        (clients/counter-client)
-   concurrency   250
-   pool-size     4
-   replicas      (opts :replicas 0)
-   replicate-to  (opts :replicate-to 0)
-   persist-to    (opts :persist-to 0)
-   autofailover  (opts :autofailover true)
-   autofailover-timeout  (opts :autofailover-timeout 6)
-   autofailover-maxcount (opts :autofailover-maxcount 3)
-   init-counter-value (opts :init-counter-value 0)
-   control-atom  (atom :continue)
-   checker   (checker/compose
-              {:timeline (timeline/html)
-               :counter  (checker/counter)})
-   client-generator  (->> (repeat 10 counter-add)
-                          (cons counter-read)
-                          gen/mix
-                          (gen/delay 1/50)
-                          (set-durability-level opts))
-   generator (do-n-nemesis-cycles cycles [(gen/sleep 5)] client-generator)))
-
 (defn counter-workload
   "Workload that treats one key as a counter which starts at a value x which
   is modified using increments or decrements"
