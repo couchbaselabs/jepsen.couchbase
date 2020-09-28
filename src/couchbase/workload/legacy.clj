@@ -220,57 +220,6 @@
 ;; Register workloads
 ;; ==================
 
-(defn partition-failover-workload
-  "Trigger non-linearizable behaviour where successful mutations with replicate-to=1
-  are lost due to promotion of the 'wrong' replica upon failover of the active"
-  [opts]
-  (with-register-base opts
-    replicas       (opts :replicas 1)
-    autofailover   (opts :autofailover false)
-    server-group-autofailover (opts :server-group-autofailover false)
-    disrupt-time   (opts :disrupt-time 20)
-    recovery-type (opts :recovery-type :delta)
-    failover-type (opts :failover-type :hard)
-    disrupt-count  (opts :disrupt-count 1)
-    sg-enabled     (opts :server-groups-enabled)
-    server-group-count (if sg-enabled (opts :server-group-count))
-    target-server-groups      (if (opts :target-server-groups) (do (assert sg-enabled) true) false)
-    random-server-group (if sg-enabled (util/random-server-group server-group-count))
-    complementary-server-group (if sg-enabled (util/complementary-server-group server-group-count random-server-group))
-    nemesis        (cbnemesis/couchbase)
-    client-generator (client-gen opts)
-    partition-nodes (atom nil)
-    partition-targeter (fn partition-targeter
-                         [testData op]
-                         (let [target (->> testData :nodes shuffle (take 2))]
-                           (reset! partition-nodes target)
-                           target))
-    failover-targeter (fn failover-targeter
-                        [testData op]
-                        (->> @partition-nodes shuffle (take 1)))
-    failover-call-node (fn failover-call-nodes
-                         [testData target]
-                         (rand-nth (seq (set/difference (set (:nodes testData))
-                                                        (set @partition-nodes)))))
-    generator (do-n-nemesis-cycles cycles
-                                   [(gen/sleep 5)
-                                    {:type :info
-                                     :f :isolate-two-nodes-from-each-other
-                                     :targeter partition-targeter}
-                                    (gen/sleep 5)
-                                    {:type :info
-                                     :f :failover
-                                     :targeter failover-targeter
-                                     :call-node failover-call-node
-                                     :failover-type failover-type}
-                                    (gen/sleep disrupt-time)
-                                    {:type :info :f :heal-network}
-                                    (gen/sleep 10)
-                                    {:type :info
-                                     :f :recover
-                                     :recovery-type recovery-type}]
-                                   client-generator)))
-
 ;; =============
 ;; Set Workloads
 ;; =============
