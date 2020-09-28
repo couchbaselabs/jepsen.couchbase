@@ -1,16 +1,18 @@
 (ns couchbase.core
   (:require [clojure.tools.logging :refer [info warn error fatal]]
             [couchbase
-             [util     :as util]
-             [cbjcli :as cbjcli]]
-            [couchbase.workload.legacy]
+             [util :as util]
+             [cbjcli :as cbjcli]
+             [workload :as workload]]
             [dom-top.core :as domTop]
             [jepsen
              [cli :as cli]
              [control :as c]
              [db :as db]
+             [nemesis :as nemesis]
              [os :as os]
-             [tests :as tests]])
+             [tests :as tests]]
+            [jepsen.nemesis.time])
   (:gen-class))
 
 (defn couchbase-remote
@@ -133,16 +135,8 @@
       (update-in opts [:package :package] util/tar-build)
       opts)
     ;; Construct the test case by merging workload parameters with options
-    (merge opts
-           (try
-             (as-> (opts :workload) %
-               (format "couchbase.workload.legacy/%s-workload" %)
-               (resolve (symbol %))
-               (% opts))
-             (catch NullPointerException _
-               (let [msg (format "Workload %s does not exist" (opts :workload))]
-                 (fatal msg)
-                 (throw (RuntimeException. msg))))))))
+    (merge opts ((workload/get-workload-opts (opts :workload)) opts))
+    (merge opts ((workload/get-workload-fn (opts :workload)) opts))))
 
 (defn -main
   "Run the test specified by the cli arguments"
