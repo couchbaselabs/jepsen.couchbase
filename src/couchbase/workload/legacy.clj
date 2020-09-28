@@ -220,39 +220,6 @@
 ;; Register workloads
 ;; ==================
 
-(defn partition-workload
-  "Paritions the network by isolating nodes from each other, then will recover if autofailover
-  happens"
-  [opts]
-  (with-register-base opts
-    replicas       (opts :replicas 1)
-    autofailover   (opts :autofailover false)
-    server-group-autofailover (opts :server-group-autofailover false)
-    disrupt-time   (opts :disrupt-time 20)
-    recovery-type  (opts :recovery-type :delta)
-    disrupt-count  (opts :disrupt-count 1)
-    sg-enabled     (opts :server-groups-enabled)
-    server-group-count (if sg-enabled (opts :server-group-count))
-    target-server-groups      (if (opts :target-server-groups) (do (assert sg-enabled) true) false)
-    random-server-group (if sg-enabled (util/random-server-group server-group-count))
-    complementary-server-group (if sg-enabled (util/complementary-server-group server-group-count random-server-group))
-    nemesis        (cbnemesis/couchbase)
-    client-generator (client-gen opts)
-    generator       (do-n-nemesis-cycles
-                     cycles
-                     [(gen/sleep 5)
-                      {:type :info
-                       :f :isolate-completely
-                       :targeter cbnemesis/basic-nodes-targeter
-                       :target-count disrupt-count}
-                      (gen/sleep disrupt-time)
-                      {:type :info :f :heal-network}
-                      {:type :info
-                       :f :recover
-                       :recovery-type recovery-type}
-                      (gen/sleep 10)]
-                     client-generator)))
-
 (defn rebalance-workload
   "Rebalance scenarios:
   Sequential Rebalance In/Out - rebalance out a single node at a time until disrupt-count nodes have
