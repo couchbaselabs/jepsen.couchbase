@@ -37,6 +37,7 @@
     :default false]
    [nil "--replicas REPLICAS"
     "Number of replicas"
+    :default 1
     :parse-fn parse-int]
    [nil "--replicate-to REPLICATE-TO"
     "Observe based durability replicate-to value"
@@ -50,6 +51,11 @@
     "Rate of operations. A rate of 0 disables rate limiting"
     :parse-fn read-string
     :validate [#(and (number? %) (not (neg? %))) "Must be a non-negative number"]]
+   [nil "--pool-size POOL-SIZE"
+    "Number of Couchbase SDK client connection pools to create"
+    :default 6
+    :parse-fn parse-int
+    :validate [pos? "Must be a positive number"]]
    [nil "--[no-]autofailover"
     "Enable autofailover?"]
    [nil "--[no-]server-group-autofailover"
@@ -82,9 +88,11 @@
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
    [nil "--doc-threads DOC-THREADS"
     "Number of threads per document"
+    :default 3
     :parse-fn parse-int
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
    [nil "--recovery-type RECOVERY-TYPE"
+    :default :delta
     :parse-fn #(cond (= % "delta") :delta (= % "full") :full :else :invalid)
     :validate [#(not= :invalid %) "Must be delta or full"]]
    [nil "--failover-type FAILOVER-TYPE"
@@ -92,6 +100,7 @@
     :validate [#(not= :invalid %) "Must be hard or graceful"]]
    [nil "--disrupt-count COUNT"
     "Number of nodes to disrupt"
+    :default 1
     :parse-fn parse-int
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
    [nil "--skip-teardown"
@@ -110,6 +119,7 @@
     :default false]
    [nil "--cycles CYCLES"
     "Number of nemesis cycles to run"
+    :default 1
     :parse-fn parse-int
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
    [nil "--disrupt-time DISRUPTION-TIME"
