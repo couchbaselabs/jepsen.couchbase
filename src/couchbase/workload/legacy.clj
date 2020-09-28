@@ -300,60 +300,6 @@
                                       client-gen))
                (gen/clients (gen/once {:type :invoke :f :read :value nil :check :upsert-set-checker})))))
 
-(defn set-delete-workload
-  "Generic set delete workload. We model the set with a bucket, adding(or deleting) an item to the
-  set corresponds to inserting(or deleting) a key . To read the set we use a dcp client to
-  stream all mutations, keeping track of which keys exist"
-  [opts]
-  (let-and-merge
-   opts
-   dcpclient     (if (:dcp-set-read opts)
-                   (cbclients/dcp-client))
-   cycles        (opts :cycles 1)
-   client        (clients/set-client dcpclient)
-   concurrency   250
-   pool-size     4
-   replicas      (opts :replicas 0)
-   replicate-to  (opts :replicate-to 0)
-   persist-to    (opts :persist-to 0)
-   autofailover  (opts :autofailover true)
-   autofailover-timeout  (opts :autofailover-timeout 6)
-   autofailover-maxcount (opts :autofailover-maxcount 3)
-
-   control-atom  (atom :continue)
-   checker       (checker/compose
-                  (merge
-                   {:timeline (timeline/html)
-                    :set (cbchecker/extended-set-checker)
-                    :sanity (cbchecker/sanity-check)}
-                   (if (opts :perf-graphs)
-                     {:perf (checker/perf)})))
-   client-gen-cycle (fn [offset]
-                      (concat
-                       (map (fn [x] {:type :invoke
-                                     :f :add
-                                     :value x
-                                     :replicate-to replicate-to
-                                     :persist-to persist-to
-                                     :durability-level (util/random-durability-level
-                                                        (opts :durability))
-                                     :json (opts :use-json-docs)})
-                            (range (* 10000 offset)
-                                   (+ (* 10000 offset) 10000)))
-                       (map (fn [x] {:type :invoke
-                                     :f :del
-                                     :value x
-                                     :replicate-to replicate-to
-                                     :persist-to persist-to
-                                     :durability (util/random-durability-level
-                                                  (opts :durability))})
-                            (range (* 10000 offset)
-                                   (+ (* 10000 offset) 5000)))))
-   client-gen    (gen/seq (flatten (map client-gen-cycle (range))))
-   generator     (gen/phases
-                  (do-n-nemesis-cycles (:cycles opts) [] client-gen)
-                  (gen/clients (gen/once {:type :invoke :f :read :value nil})))))
-
 (defn set-delete-kill-workload
   "Set delete workload that repeatedly kills memcached while hammering inserts and deletes against
   the cluster"
