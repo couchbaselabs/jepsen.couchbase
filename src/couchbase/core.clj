@@ -172,17 +172,19 @@
    (var jepsen.nemesis/invoke-compat!)
    (fn [invoke-compat!]
      (fn [nemesis testData op]
-       (try
-         (invoke-compat! nemesis testData op)
-         (catch Exception e
-           (if (:control-atom testData)
-             (do
-               (compare-and-set! (:control-atom testData) :continue :abort)
-               (error "Caught exception in nemesis, aborting test.")
-               (throw e))
-             (do
-               (error "Caught exception in nemesis and couldn't abort test, will hard exit.")
-               (System/exit 1))))))))
+       (if (= (:workload-type testData) :legacy)
+         (try
+           (invoke-compat! nemesis testData op)
+           (catch Exception e
+             (if (:control-atom testData)
+               (do
+                 (compare-and-set! (:control-atom testData) :continue :abort)
+                 (error "Caught exception in nemesis, aborting test.")
+                 (throw e))
+               (do
+                 (error "Caught exception in nemesis and couldn't abort test, will hard exit.")
+                 (System/exit 1)))))
+         (invoke-compat! nemesis testData op)))))
 
   ;; The default resolution of the perf graphs is tiny, so render something
   ;; bigger to show more detail
