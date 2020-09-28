@@ -318,33 +318,6 @@
                     :durability-level (util/random-durability-level (:durability options))))
            gen))
 
-(defn counter-workload
-  "Workload that treats one key as a counter which starts at a value x which
-  is modified using increments or decrements"
-  [opts]
-  (let-and-merge
-   opts
-   cycles        (opts :cycles 1)
-   client        (clients/counter-client)
-   concurrency   250
-   pool-size     4
-   replicas      (opts :replicas 0)
-   replicate-to  (opts :replicate-to 0)
-   persist-to    (opts :persist-to 0)
-   autofailover  (opts :autofailover true)
-   autofailover-timeout  (opts :autofailover-timeout 6)
-   autofailover-maxcount (opts :autofailover-maxcount 3)
-   init-counter-value (opts :init-counter-value 1000000)
-   control-atom  (atom :continue)
-   checker   (checker/compose
-              {:timeline (timeline/html)
-               :counter  (cbchecker/sanity-counter)})
-   client-generator (->> (take 100 (cycle [counter-add counter-sub]))
-                         (cons counter-read)
-                         gen/mix
-                         (set-durability-level opts))
-   generator (do-n-nemesis-cycles cycles [(gen/sleep 10)] client-generator)))
-
 (defn WhiteRabbit-workload
   "Trigger lost inserts due to one of several white-rabbit variants"
   [opts]
