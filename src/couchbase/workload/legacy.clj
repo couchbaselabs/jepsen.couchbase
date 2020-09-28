@@ -220,30 +220,6 @@
 ;; Register workloads
 ;; ==================
 
-(defn disk-failure-workload
-  "Simulate a disk failure. This workload will not function correctly with docker containers."
-  [opts]
-  (with-register-base opts
-    replicas      (opts :replicas 1)
-    disrupt-count (opts :disrupt-count 1)
-    disrupt-time   (opts :disrupt-time 20)
-    sg-enabled     (opts :server-groups-enabled)
-    server-group-count (if sg-enabled (opts :server-group-count))
-    target-server-groups      (if (opts :target-server-groups) (do (assert sg-enabled) true) false)
-    autofailover  (opts :autofailover true)
-    server-group-autofailover (opts :server-group-autofailover false)
-    nemesis   (cbnemesis/couchbase)
-    client-generator (client-gen opts)
-    generator       (do-n-nemesis-cycles
-                     cycles
-                     [(gen/sleep 10)
-                      {:type :info
-                       :f :fail-disk
-                       :targeter cbnemesis/basic-nodes-targeter
-                       :target-count disrupt-count}
-                      (gen/sleep disrupt-time)]
-                     client-generator)))
-
 (defn partition-failover-workload
   "Trigger non-linearizable behaviour where successful mutations with replicate-to=1
   are lost due to promotion of the 'wrong' replica upon failover of the active"
