@@ -328,7 +328,28 @@
                     :sanity (cbchecker/sanity-check)}
                    (if (opts :perf-graphs)
                      {:perf (checker/perf)})))
-   client-gen    (gen/seq (concat (set-add-gen opts) (set-delete-gen opts)))
+   client-gen-cycle (fn [offset]
+                      (concat
+                       (map (fn [x] {:type :invoke
+                                     :f :add
+                                     :value x
+                                     :replicate-to replicate-to
+                                     :persist-to persist-to
+                                     :durability-level (util/random-durability-level
+                                                        (opts :durability))
+                                     :json (opts :use-json-docs)})
+                            (range (* 10000 offset)
+                                   (+ (* 10000 offset) 10000)))
+                       (map (fn [x] {:type :invoke
+                                     :f :del
+                                     :value x
+                                     :replicate-to replicate-to
+                                     :persist-to persist-to
+                                     :durability (util/random-durability-level
+                                                  (opts :durability))})
+                            (range (* 10000 offset)
+                                   (+ (* 10000 offset) 5000)))))
+   client-gen    (gen/seq (flatten (map client-gen-cycle (range))))
    generator     (gen/phases
                   (do-n-nemesis-cycles (:cycles opts) [] client-gen)
                   (gen/clients (gen/once {:type :invoke :f :read :value nil})))))
@@ -367,7 +388,28 @@
                             :sanity (cbchecker/sanity-check)}
                            (if (opts :perf-graphs)
                              {:perf (checker/perf)})))
-   client-gen (gen/seq (concat (set-add-gen opts) (set-delete-gen opts)))
+   client-gen-cycle (fn [offset]
+                      (concat
+                       (map (fn [x] {:type :invoke
+                                     :f :add
+                                     :value x
+                                     :replicate-to replicate-to
+                                     :persist-to persist-to
+                                     :durability-level (util/random-durability-level
+                                                        (opts :durability))
+                                     :json (opts :use-json-docs)})
+                            (range (* 10000 offset)
+                                   (+ (* 10000 offset) 10000)))
+                       (map (fn [x] {:type :invoke
+                                     :f :del
+                                     :value x
+                                     :replicate-to replicate-to
+                                     :persist-to persist-to
+                                     :durability (util/random-durability-level
+                                                  (opts :durability))})
+                            (range (* 10000 offset)
+                                   (+ (* 10000 offset) 5000)))))
+   client-gen (gen/seq (flatten (map client-gen-cycle (range))))
    generator  (gen/phases
                (case scenario
                  :kill-memcached-on-slow-disk
