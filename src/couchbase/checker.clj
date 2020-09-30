@@ -20,12 +20,10 @@
                                      (->> history
                                           (filter #(and (= (:f %) ftype) (= (:type %) :ok)))
                                           (count))))
-            aborted (= @(:control-atom testData (atom nil)) :abort)
             nemcrash (some #(and (->> % :process (= :nemesis))
                                  (contains? % :exception))
                            history)]
         (cond
-          aborted {:valid? :unknown :error "Test aborted"}
           nemcrash {:valid? :unknown :error "Test aborted due to nemesis exception"}
           (all-fail? :read) {:valid? :unknown :error "Insufficient read ops returned :ok"}
           (all-fail? :write) {:valid? :unknown :error "Insufficient write ops returned :ok"}

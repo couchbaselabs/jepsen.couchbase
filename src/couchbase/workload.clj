@@ -7,7 +7,6 @@
              [clients :as clients]
              [seqchecker :as seqchecker]
              [util :as util]]
-            [couchbase.workload.legacy :as legacy]
             [jepsen
              [checker :as checker]
              [independent :as independent]
@@ -29,33 +28,17 @@
     ;; Return nil if the workload does not exist
     (catch java.io.FileNotFoundException _)))
 
-(defn- get-legacy-workload
-  "Get a legacy workload by name"
-  [wl-name]
-  (-> "couchbase.workload.legacy/%s-workload"
-      (format wl-name)
-      (symbol)
-      (resolve)))
-
 (defn get-workload-fn
   "Given a workload name return the corresponding workload creation function"
   [wl-name]
   (or (get-namespaced-workload wl-name :fn)
-      (get-legacy-workload wl-name)
       (throw (RuntimeException. (format "Workload %s not found" wl-name)))))
 
 (defn get-workload-opts
   "Given a workload name return the corresponding default options map"
   [wl-name]
-  (if-let [workload-opts (get-namespaced-workload wl-name :opts)]
-    workload-opts
-    ;; If we can't find a namespace with the request workload, attempt to
-    ;; resolve a legacy workload. If a legacy workload with the requested name
-    ;; exists, return a dummy options function, since legacy workloads don't
-    ;; have such a function
-    (if (get-workload-fn wl-name)
-      (constantly {:workload-type :legacy})
-      (throw (RuntimeException. (format "Workload %s not found" wl-name))))))
+  (or (get-namespaced-workload wl-name :opts)
+      (throw (RuntimeException. (format "Workload %s not found" wl-name)))))
 
 ;; Generator Helpers
 
