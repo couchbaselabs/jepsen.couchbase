@@ -6,7 +6,7 @@
              [checker :as checker]
              [independent :as independent]
              [nemesis :as nemesis]]
-            [jepsen.generator.pure :as gen]
+            [jepsen.generator :as gen]
             [knossos.model :as model]))
 
 (defn nemesis-gen

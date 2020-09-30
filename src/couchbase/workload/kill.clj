@@ -2,7 +2,7 @@
   (:require [couchbase
              [nemesis :as nemesis]
              [workload :as workload]]
-            [jepsen.generator.pure :as gen]))
+            [jepsen.generator :as gen]))
 
 ;; Action Helpers
 

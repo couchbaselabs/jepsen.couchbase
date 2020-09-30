@@ -4,7 +4,7 @@
              [nemesis :as nemesis]
              [util :as util]
              [workload :as workload]]
-            [jepsen.generator.pure :as gen]))
+            [jepsen.generator :as gen]))
 
 ;; Action Helpers
 

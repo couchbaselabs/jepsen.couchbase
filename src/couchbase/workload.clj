@@ -12,7 +12,7 @@
              [independent :as independent]
              [nemesis :as nemesis]]
             [jepsen.checker.timeline :as timeline]
-            [jepsen.generator.pure :as gen]
+            [jepsen.generator :as gen]
             [knossos.model :as model]))
 
 ;; Workload loading helpers
@@ -118,18 +118,12 @@
 (defn register-client-gen
   "Return a wrapped generator for register workloads"
   [opts]
-  (independent/pure-concurrent-generator
+  (independent/concurrent-generator
    (:doc-threads opts)
    (range)
    (fn [_]
-     ;; On Jepsen 0.1.19 we need to apply stagger on each thread seperately,
-     ;; else unfair scheduling causes only a subset of the threads to ever
-     ;; actually run, breaking our test cases. This can be cleaned up once
-     ;; we've moved to Jepsen 0.2.0 where the unfair scheduling issue has been
-     ;; fixed
-     (gen/each-thread
-      (cond->> (register-op-gen opts)
-        (pos? (:rate opts 0)) (gen/stagger (/ (:rate opts))))))))
+     (cond->> (register-op-gen opts)
+       (pos? (:rate opts 0)) (gen/stagger (/ (:rate opts)))))))
 
 (defn get-register-checker
   "Return a checker by name"

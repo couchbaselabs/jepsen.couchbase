@@ -7,7 +7,7 @@
              [checker :as checker]
              [nemesis :as nemesis]]
             [jepsen.checker.timeline :as timeline]
-            [jepsen.generator.pure :as gen]))
+            [jepsen.generator :as gen]))
 
 (defn counter-add [test ctx]
   {:f :add

@@ -5,7 +5,7 @@
              [workload :as workload]]
             [jepsen
              [nemesis :as nemesis]]
-            [jepsen.generator.pure :as gen]))
+            [jepsen.generator :as gen]))
 
 (defn client-gen-cycle
   [opts offset]
