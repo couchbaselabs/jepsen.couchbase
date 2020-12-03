@@ -63,12 +63,15 @@ case "$TYPE" in
                 fi
 
                 if [[ -z "$VM_OS" ]]; then
-                    echo "--vm-os not provided, defaulting to ubuntu1604"
-                    VM_OS="ubuntu1604"
+                    echo "--vm-os not provided, defaulting to ubuntu2004"
+                    VM_OS="ubuntu2004"
                 else
                     case "$VM_OS" in
                     "ubuntu1604")
                     VM_OS="ubuntu1604"
+                    ;;
+                    "ubuntu2004")
+                    VM_OS="ubuntu2004"
                     ;;
                     "centos7")
                     VM_OS="centos7"
@@ -103,6 +106,13 @@ case "$TYPE" in
                 fi
                 for (( i=1; i<=$(ls -1U ./resources/.vagrant/machines/ | wc -l); i++ ))
                 do
+                    if [[ "$VM_OS" = "ubuntu2004" ]]; then
+                        if [[ i -eq 1 ]]; then
+                            NODES=$(ls -1U ./resources/.vagrant/machines/ | wc -l) vagrant ssh node${i} -c "ifconfig eth1" | grep -o -E "inet addr:[0-9]+(\.[0-9]+){3}" | cut -d ":" -f 2- >  ./nodes
+                        else
+                            NODES=$(ls -1U ./resources/.vagrant/machines/ | wc -l) vagrant ssh node${i} -c "ifconfig eth1" | grep -o -E "inet addr:[0-9]+(\.[0-9]+){3}" | cut -d ":" -f 2- >>  ./nodes
+                        fi
+                    fi
                     if [[ "$VM_OS" = "ubuntu1604" ]]; then
                         if [[ i -eq 1 ]]; then
                             NODES=$(ls -1U ./resources/.vagrant/machines/ | wc -l) vagrant ssh node${i} -c "ifconfig eth1" | grep -o -E "inet addr:[0-9]+(\.[0-9]+){3}" | cut -d ":" -f 2- >  ./nodes
