@@ -451,13 +451,13 @@
                        (info "moving package back to /root")
                        (c/su (c/exec :mv (str "/tmp/" package-name) "/root/")))))
     :deb (do
-           (c/su (c/upload (:package package) "couchbase.deb"))
-           (c/su (c/exec :apt :install :-y :--allow-downgrades "~/couchbase.deb"))
-           (c/su (c/exec :rm "~/couchbase.deb")))
+           (c/su (c/upload (:package package) "/tmp/couchbase.deb"))
+           (c/su (c/exec :apt :install :-y :--allow-downgrades "/tmp/couchbase.deb"))
+           (c/su (c/exec :rm "/tmp/couchbase.deb")))
     :tar (do
-           (c/su (c/upload (:package package) "couchbase.tar"))
-           (c/su (c/exec :tar :-Pxf "~/couchbase.tar"))
-           (c/su (c/exec :rm "~/couchbase.tar")))))
+           (c/su (c/upload (:package package) "/tmp/couchbase.tar"))
+           (c/su (c/exec :tar :-Pxf "/tmp/couchbase.tar"))
+           (c/su (c/exec :rm "/tmp/couchbase.tar")))))
 
 (defn wait-for-daemon
   "Wait until couchbase server daemon has started"
