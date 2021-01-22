@@ -517,9 +517,10 @@
     (c/su (c/exec :chmod :-R "a+rwx" install-path))
     (info "Starting daemon")
     (try
-      (c/su (c/exec :systemctl :start :couchbase-server))
+      (c/su (c/exec :systemctl :set-environment "CB_MAXIMIZE_LOGGER_CYCLE_SIZE=1"))
+      (c/su (c/exec :systemctl :restart :couchbase-server))
       (catch RuntimeException e
-        (c/ssh* {:cmd (str "nohup " server-path " -- -noinput >> /dev/null 2>&1 &")})))
+        (c/ssh* {:cmd (str "CB_MAXIMIZE_LOGGER_CYCLE_SIZE=1 nohup " server-path " -- -noinput >> /dev/null 2>&1 &")})))
     (wait-for-daemon)
     (info "Daemon started")
     (if (and (and (:enable-tcp-capture testData) (:net-interface testData)) (not (:cluster-run testData)))
