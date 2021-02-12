@@ -21,6 +21,11 @@
        (shuffle)
        (take (:target-count op 1))))
 
+(defn target-first-node
+  "A basic deterministic targeter that just targets the first node in the list"
+  [testData op]
+  (take 1 (:nodes testData)))
+
 (defn target-all-test-nodes
   "A targeter that always targets all the nodes in the test"
   [testData op]
