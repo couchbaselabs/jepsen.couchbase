@@ -12,18 +12,18 @@
   ;; We only support a single-cycle, this is enforced by validate-opts
   ;; but assert here again in case that check is ever broken
   (assert (= 1 (:cycles opts)))
-  [(gen/sleep 5)
+  [(gen/sleep 10)
    {:type :info
     :f :fail-disk
     :targeter nemesis/target-first-node
     :target-count (:disrupt-count opts)}
-   (gen/sleep 5)
+   (gen/sleep 2)
    {:type :info
     :f :kill-process
     :kill-process :memcached
     :targeter nemesis/target-first-node
     :target-count (opts :disrupt-count)}
-   (gen/sleep 35)
+   (gen/sleep 15)
    {:type :stop-test}])
 
 (defn workload-opts [opts]
