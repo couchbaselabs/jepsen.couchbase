@@ -162,11 +162,11 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
         EXITCODE=$?
     fi
     if [[ "$PROVISIONER" == "cluster-run" ]]; then
-	command="lein trampoline run test --cluster-run $packageParam $testParams &> jepsen-output-$test_num.log"
-	echo "Test command: $command"
-	echo ""
-	eval ${command}
-	EXITCODE=$?
+        command="lein trampoline run test --cluster-run $packageParam $testParams &> jepsen-output-$test_num.log"
+        echo "Test command: $command"
+        echo ""
+        eval ${command}
+        EXITCODE=$?
     fi
 
     LAST_RUN=$(cd ./store/latest; pwd -P)
@@ -174,13 +174,20 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
         current_dir=$(pwd)
         cd ${LAST_RUN}
         find . -name "memcached.log*" -exec grep --with-filename --binary-files=text " ERROR \| CRITICAL " {} \; > error_msg_from_memcached.log
-        if [[ $(wc -l < error_msg_from_memcached.log) -gt 0 ]]; then
-            echo "Critical or Error log messages where found in memcached.log's"
-            echo "******************* memcached errors ************************"
-            cat error_msg_from_memcached.log
-            echo "*************************************************************"
-            memcached_failure=$(($memcached_failure+1))
-            memcached_array+=("#$test_num :: $testParams")
+        grep -v "CouchKVStore::initialize: openDB error:error" error_msg_from_memcached.log > error_msg_from_memcached_couchkv_init.log
+
+        errorFileToUse="error_msg_from_memcached.log"
+        if [[ "$(echo $testParams | cut -d' ' -f2)" == "--workload=kill-n-disk-failure" ]]; then
+          errorFileToUse="error_msg_from_memcached_couchkv_init.log"
+        fi
+        echo "file to use $errorFileToUse"
+        if [[ $(wc -l < $errorFileToUse) -gt 0 ]]; then
+          echo "Critical or Error log messages where found in memcached.log's"
+          echo "******************* memcached errors ************************"
+          cat error_msg_from_memcached.log
+          echo "*************************************************************"
+          memcached_failure=$(($memcached_failure+1))
+          memcached_array+=("#$test_num :: $testParams")
         fi
         cd ${current_dir}
     fi
