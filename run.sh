@@ -174,11 +174,11 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
         current_dir=$(pwd)
         cd ${LAST_RUN}
         find . -name "memcached.log*" -exec grep --with-filename --binary-files=text " ERROR \| CRITICAL " {} \; > error_msg_from_memcached.log
-        grep -v "CouchKVStore::initialize: openDB error:error" error_msg_from_memcached.log > error_msg_from_memcached_couchkv_init.log
+        grep -v "CouchKVStore::initialize: openDB error:error\|Failed to create bucket\|Failed to start Prometheus exposer on family:inet port:11280\|Failed to start Prometheus Exposer: null context when constructing CivetServer. Possible problem binding to port." error_msg_from_memcached.log > error_msg_from_memcached_filtered.log
 
         errorFileToUse="error_msg_from_memcached.log"
         if [[ "$(echo $testParams | cut -d' ' -f2)" == "--workload=kill-n-disk-failure" ]]; then
-          errorFileToUse="error_msg_from_memcached_couchkv_init.log"
+          errorFileToUse="error_msg_from_memcached_filtered.log"
         fi
         echo "file to use $errorFileToUse"
         if [[ $(wc -l < $errorFileToUse) -gt 0 ]]; then
