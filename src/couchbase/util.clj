@@ -140,26 +140,10 @@
                                 :port "SAME"})
     (rest-call "/pools/default" {:memoryQuota "256"})))
 
-(defn get-group-uuid
-  "Get id of group based on group name"
-  [group-name]
-  (let [server-group-info (rest-call "/pools/default/serverGroups" nil)
-        server-group-json (json/parse-string server-group-info true)
-        server-groups (:groups server-group-json)]
-    (loop [groups server-groups]
-      (if (empty? groups) (throw (RuntimeException. (str group-name " not found in list of groups"))))
-      (if (= (:name (first groups)) group-name)
-        (last (str/split (:uri (first groups)) #"/"))
-        (recur (rest groups))))))
-
 (defn add-nodes
   "Add nodes to the cluster"
-  ([nodes-to-add] (add-nodes nodes-to-add nil))
-  ([nodes-to-add add-opts]
-   (let [endpoint (if (empty? (:group-name add-opts))
-                    "/controller/addNode"
-                    (format "/pools/default/serverGroups/%s/addNode"
-                            (get-group-uuid (:group-name add-opts))))]
+  ([nodes-to-add]
+   (let [endpoint "/controller/addNode"]
      (doseq [node nodes-to-add]
        (info "Adding node" node "to cluster")
        (rest-call endpoint {:hostname (str "http://" node)
@@ -259,7 +243,6 @@
   "Apply autofailover settings to cluster"
   [testData]
   (let [enabled (boolean (:autofailover testData))
-        sg-enabled (boolean (:server-group-autofailover testData))
         disk-enabled (boolean (:disk-autofailover testData))
         timeout (or (:autofailover-timeout testData) 6)
         disk-timeout (or (:disk-autofailover-timeout testData) 6)
@@ -268,7 +251,6 @@
                {:enabled enabled
                 :timeout timeout
                 :maxCount maxcount
-                :failoverServerGroup sg-enabled
                 "failoverOnDataDiskIssues[enabled]" disk-enabled
                 "failoverOnDataDiskIssues[timePeriod]" disk-timeout})))
 
@@ -308,77 +290,6 @@
   (info "Waiting for memcached to restart")
   (wait-for-warmup))
 
-(defn create-server-groups
-  [server-group-count]
-  (let [server-group-nums (vec (range 1 (inc server-group-count)))]
-    (doseq [server-group-num server-group-nums]
-      (if (not= server-group-num 1)
-        (rest-call "/pools/default/serverGroups" {:name (str "Group " server-group-num)})))))
-
-(defn populate-server-groups
-  "This function will deterministically add nodes to server groups"
-  [testData]
-  (let [server-group-info (rest-call "/pools/default/serverGroups" nil)
-        server-group-json (json/parse-string server-group-info true)
-        revision-uri (:uri server-group-json)
-        server-groups (:groups server-group-json)
-        nodes (atom #{}) ; this will be used to build up and store the set of nodes in the cluster
-        groups (atom []) ; this will be used to build up and store the vector of group json
-        endpoint (str "http://" (first (:nodes testData)) ":8091" revision-uri)]
-    ; accumulate nodes and groups into respective atoms
-    (doseq [group server-groups]
-      (reset! nodes (set/union @nodes (set (:nodes group))))
-      (reset! groups (conj @groups (assoc group :nodes []))))
-    ; sort groups for deterministic population
-    (reset! groups (vec (sort-by :name @groups)))
-    ; for each node we calculate the group it should belong to and
-    ; add it to the nodes field in the group json in groups atom
-    (doseq [index (range 0 (count @nodes))]
-      (let [group-count (count @groups)
-            group-index (mod index group-count)
-            node-index (quot index group-count)
-            node-to-add (first @nodes)
-            current-group-nodes (vec (get-in @groups [group-index :nodes]))
-            updated-group-nodes (vec (assoc current-group-nodes node-index node-to-add))
-            updated-groups (assoc-in @groups [group-index :nodes] updated-group-nodes)]
-        ; after adding the node to corresponding group, we remove the node from nodes atom
-        (reset! nodes (set (remove #{node-to-add} @nodes)))
-        (reset! groups updated-groups)))
-    (client/put endpoint
-                {:basic-auth ["Administrator" "abc123"]
-                 :body (json/generate-string {:groups @groups})
-                 :headers {"X-Api-Version" "2"}
-                 :content-type :json
-                 :socket-timeout 1000
-                 :conn-timeout 1000
-                 :accept :json})))
-
-(defn get-node-group
-  "Get the group name for a given node"
-  [node]
-  (let [server-group-info (rest-call node "/pools/default/serverGroups" nil)
-        server-group-json (json/parse-string server-group-info true)
-        server-groups (:groups server-group-json)]
-    (loop [groups server-groups]
-      (info "checking node group for " (str node))
-      (if (empty? groups) (throw (RuntimeException. (str node " not found in list of groups")))
-          (let [group-name (:name (first groups))
-                group-nodes (:nodes (first groups))
-                node-found (atom false)]
-            (loop [nodes group-nodes]
-              (if (not-empty nodes)
-                (if (str/includes? (:hostname (first nodes)) node)
-                  (reset! node-found true)
-                  (recur (rest nodes)))))
-            (if @node-found group-name (recur (rest groups))))))))
-
-(defn setup-server-groups
-  [testData]
-  (let [server-group-count (:server-group-count testData)
-        nodes (:nodes testData)]
-    (create-server-groups server-group-count)
-    (populate-server-groups testData)))
-
 (defn set-debug-log-level
   "Set log level of memcached to debug (1)"
   []
@@ -416,8 +327,6 @@
     (wait-for-warmup)
     (if (:custom-cursor-drop-marks testData)
       (set-custom-cursor-drop-marks testData))
-    (if (:server-groups-enabled testData)
-      (setup-server-groups testData))
     (if (:enable-memcached-debug-log-level testData)
       (set-debug-log-level))
     (if (:disable-auto-compaction testData)
@@ -754,22 +663,6 @@
     (->> (reductions + durability)
          (keep-indexed #(if (<= rand-seed %2) %1))
          (first))))
-
-(defn random-server-group
-  "Get a random server group name string given a server group count"
-  [server-group-count]
-  (str "Group " (str (inc (rand-int server-group-count)))))
-
-(defn complementary-server-group
-  "Get a random server group name string given a server group count"
-  [server-group-count exclude-group-name]
-  (if (zero? server-group-count)
-    "Group 0"
-    (loop [group-name (random-server-group server-group-count)]
-      (info group-name)
-      (if (= group-name exclude-group-name)
-        (recur (random-server-group server-group-count))
-        group-name))))
 
 (defn start-cluster-run
   "Start a cluster-run for this test, destroying any currently existing runs"

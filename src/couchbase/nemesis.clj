@@ -219,11 +219,10 @@
   [testData op]
   (assert (= (:f op) :rebalance-in))
   (let [add-nodes ((:targeter op) testData op)
-        add-options (:add-opts op)
         cluster-nodes (util/get-cluster-nodes testData)
         new-cluster-nodes (set/union (set cluster-nodes) (set add-nodes))]
     (c/on (first cluster-nodes)
-          (util/add-nodes add-nodes add-options)
+          (util/add-nodes add-nodes)
           (util/rebalance new-cluster-nodes))
     (assoc op :value add-nodes)))
 
@@ -233,11 +232,10 @@
   (assert (= (:f op) :swap-rebalance))
   (let [[add-nodes remove-nodes] ((:targeter op) testData op)
         add-count (count add-nodes)
-        add-options (:add-opts op)
         cluster-nodes (util/get-cluster-nodes testData)
         static-nodes (set/difference (set cluster-nodes) (set remove-nodes))]
     (c/on (first static-nodes)
-          (util/add-nodes add-nodes add-options)
+          (util/add-nodes add-nodes)
           (util/rebalance (set/union add-nodes cluster-nodes)
                           remove-nodes))
     (assoc op :value {:in add-nodes :out remove-nodes})))

@@ -59,8 +59,6 @@
     :validate [pos? "Must be a positive number"]]
    [nil "--[no-]autofailover"
     "Enable autofailover?"]
-   [nil "--[no-]server-group-autofailover"
-    "Enable server group autofailover"]
    [nil "--[no-]disk-autofailover"
     "Enable disk autofailover?"]
    [nil "--autofailover-timeout AUTOFAILOVER-TIMEOUT"
@@ -112,12 +110,6 @@
     :parse-fn {"persistent" :couchbase "ephemeral" :ephemeral}
     :validate [some? "Bucket type must be 'persistent' or 'ephemeral'"]
     :default :couchbase]
-   [nil "--server-groups-enabled"
-    "Turn on server groups"
-    :default false]
-   [nil "--target-server-groups"
-    "Nemesis will target server groups"
-    :default false]
    [nil "--cycles CYCLES"
     "Number of nemesis cycles to run"
     :default 1
@@ -138,11 +130,6 @@
     :default (Duration/ofSeconds 2.5)]
    [nil "--node-count NODE-COUNT"
     "Number of nodes to use for this test"
-    :parse-fn parse-int
-    :validate [#(and (number? %) (pos? %)) "Must be a number"]]
-   [nil "--server-group-count SERVER-GROUP-COUNT"
-    "Number of nodes to use for this test"
-    :default 1
     :parse-fn parse-int
     :validate [#(and (number? %) (pos? %)) "Must be a number"]]
    [nil "--scenario SCENARIO"
