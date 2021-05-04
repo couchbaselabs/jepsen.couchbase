@@ -34,12 +34,6 @@
            (com.couchbase.client.java Collection
                                       BinaryCollection)
            (java.util NoSuchElementException)
-           (com.couchbase.transactions TransactionDurabilityLevel
-                                       Transactions
-                                       AttemptContext)
-           (java.util.function Consumer)
-           (com.couchbase.transactions.config PerTransactionConfigBuilder)
-           (com.couchbase.transactions.error TransactionFailed)
            (com.couchbase.client.core.msg.kv MutationToken))
   (:gen-class))
 
@@ -176,72 +170,7 @@
       (catch CouchbaseException e
         (assoc op :type :info, :error e)))))
 
-(defn per-txn-config [op]
-  (if-let [durability-level (case (int (op :durability-level 0))
-                              0 nil
-                              1 TransactionDurabilityLevel/MAJORITY
-                              2 TransactionDurabilityLevel/MAJORITY_AND_PERSIST_ON_MASTER
-                              3 TransactionDurabilityLevel/PERSIST_TO_MAJORITY)]
-    (-> (PerTransactionConfigBuilder/create)
-        (.durabilityLevel durability-level)
-        (.build))
-    (.build (PerTransactionConfigBuilder/create))))
-
-;"Converts a function to java.util.function.Consumer."
-(defn ^Consumer f-to-consumer [f]
-  (reify Consumer
-    (accept [this arg] (f arg))))
-
-(defn do-register-txn [collection txn op]
-  (assert (= (:f op) :txn))
-  (try
-    (let [coll (atom collection)
-          coll-index (first (:value op))
-          op-attempt-history (atom [])
-          opVals (atom (second (:value op)))]
-      (.run
-       ^Transactions txn
-       (f-to-consumer
-        (fn [^AttemptContext ctx]
-          (doseq [op @opVals]
-            (let [[opType rawKey opVal] op
-                  docKey (format "jepsen%04d" rawKey)]
-              (case opType
-                :read
-                (let [get-result ^GetResult (.get ctx @coll docKey)
-                      get-value (if (nil? get-result) :nil (int get-result))]
-                  (reset! op-attempt-history (conj @op-attempt-history [opType rawKey get-value])))
-                :write
-                (let [get-result (.get ctx @coll docKey)]
-                  (if (nil? get-result)
-                    (.insert ctx @coll docKey opVal)
-                    (.replace ctx get-result opVal))
-                  (reset! op-attempt-history (conj @op-attempt-history [opType rawKey opVal])))))))) (per-txn-config op))
-      (assoc op :type :ok,
-             :value (independent/tuple coll-index (take-last (count @opVals) @op-attempt-history))
-             :attempt-history @op-attempt-history))
-      ;; Certain failures - we know the operations did not take effect
-    (catch TransactionFailed e
-      (assoc op :type :fail, :error (str e), :msg (str e)))
-    (catch DurabilityImpossibleException e
-      (assoc op :type :fail, :error :DurabilityImpossible :msg (.getMessage e)))
-    (catch DurabilityLevelNotAvailableException e
-      (assoc op :type :fail, :error :DurabilityLevelNotAvailable :msg (.getMessage e)))
-    (catch DurableWriteInProgressException e
-      (assoc op :type :fail, :error :SyncWriteInProgress :msg (.getMessage e)))
-    (catch TemporaryFailureException e
-      (assoc op :type :fail, :error :Etmpfail :msg (.getMessage e)))
-    (catch ServerOutOfMemoryException _
-      (assoc op :type :fail :error :ServerOutOfMemoryException))
-    ;; Ambiguous result - operation may or may not take effect
-    (catch DurabilityAmbiguousException e
-      (assoc op :type :info, :error :SyncWriteAmbiguous :msg (.getMessage e)))
-    (catch AmbiguousTimeoutException e
-      (assoc op :type :info, :error :AmbiguousTimeoutException :msg (.getMessage e)))
-    (catch CouchbaseException e
-      (assoc op :type :info, :error e))))
-
-(defrecord NewRegisterClient [cluster bucket collection env txn]
+(defrecord NewRegisterClient [cluster bucket collection env]
   client/Client
   (open! [this testData node]
     (merge this (cbclients/get-client-from-pool testData)))
@@ -251,8 +180,7 @@
     (case (:f op)
       :read (do-register-read collection op)
       :write (do-register-write collection op)
-      :cas (do-register-cas collection op)
-      :txn (do-register-txn collection txn op)))
+      :cas (do-register-cas collection op)))
 
   (close! [_ _])
 
@@ -261,7 +189,7 @@
 
 ;; Wrapper as records aren't externally visible
 (defn register-client []
-  (NewRegisterClient. nil nil nil nil nil))
+  (NewRegisterClient. nil nil nil nil))
 
 ;; ==========
 ;; Set Client

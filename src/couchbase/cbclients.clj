@@ -13,8 +13,6 @@
    (java.time Duration)
    (com.couchbase.client.java.env ClusterEnvironment)
    (com.couchbase.client.java ClusterOptions Cluster)
-   (com.couchbase.transactions.config TransactionConfigBuilder)
-   (com.couchbase.transactions Transactions)
    (com.couchbase.client.dcp ControlEventHandler
                              Client
                              DataEventHandler
@@ -47,13 +45,9 @@
                     env)
         cluster    (Cluster/connect (str node) clusterOps)
         bucket     (.bucket cluster "default")
-        collection (.defaultCollection bucket)
-        txn-config (if (:transactions testData)
-                     (.build (TransactionConfigBuilder/create)))
-        txn        (if (:transactions testData)
-                     (Transactions/create cluster txn-config))]
+        collection (.defaultCollection bucket)]
     (info "Checking value of 'com.couchbase.unorderedExecutionEnabled' :" (System/getProperty "com.couchbase.unorderedExecutionEnabled"))
-    {:cluster cluster :bucket bucket :collection collection :env env :txn txn}))
+    {:cluster cluster :bucket bucket :collection collection :env env}))
 
 ;; We want to operate with a large amount of jepsen clients in order to test
 ;; lots of keys simultaneously. However, couchbase server connections are
@@ -79,12 +73,6 @@
   [testData]
   (locking client-pool
     (when client-pool
-      (doseq [client (take (:pool-size testData) @client-pool)]
-        (if (or (:transactions testData) (:mixed-txns testData))
-          (try
-            (.close ^Transactions (:txn client))
-            (catch Exception e
-              (warn "Ignored exception while closing transactions:" e)))))
       (doseq [client (take (:pool-size testData) @client-pool)]
         (try
           (.disconnect ^Cluster (:cluster client))

@@ -16,8 +16,7 @@
                  [clj-http "3.11.0"]
                  [com.couchbase.client/core-io "2.1.2"]
                  [com.couchbase.client/java-client "3.1.2"]
-                 [com.couchbase.client/dcp-client "0.32.0"]
-                 [com.couchbase.client/couchbase-transactions "1.0.0-beta.3-SNAPSHOT"]]
+                 [com.couchbase.client/dcp-client "0.32.0"]]
   :profiles {:dev {:resource-paths ["./test/couchbase/resources"]}
              :uberjar {:aot :all}}
   :repositories [["couchbase-snapshot" {:url      "https://oss.sonatype.org/content/repositories/snapshots"

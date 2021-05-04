@@ -130,7 +130,7 @@
      jsonDoc)))
 
 (defn get-int-from-get-result
-  "Function to get the int value from the val key stored in a TransactionGetResult"
+  "Function to get the int value from the val key stored in a GetResult"
   [getResult]
   (let [jsonObj (.contentAsObject ^GetResult getResult)]
     (.getInt ^JsonObject jsonObj (str "val"))))

@@ -153,12 +153,6 @@
    [nil "--manipulate-disks"
     "Turn on the ability to inject disk failures"
     :default false]
-   [nil "--transactions"
-    "Turn on the multi-document transactions"
-    :default false]
-   [nil "--mixed-txns"
-    "Allow individual transactions to contain both reads and write"
-    :default false]
    [nil "--enable-memcached-debug-log-level"
     "Set memcached log level to debug on all nodes"
     :default false]
