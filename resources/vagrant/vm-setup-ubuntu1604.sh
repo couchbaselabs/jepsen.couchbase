@@ -18,3 +18,5 @@ echo "kernel.core_pattern=/tmp/core.%e.%p.%h.%t" >> /etc/sysctl.conf
 sysctl -p
 echo "Setting default systemd daemon core limit to Infinity"
 echo "DefaultLimitCORE=infinity" >> /etc/systemd/system.conf
+# Change root user credentials
+echo "root:root" | chpasswd

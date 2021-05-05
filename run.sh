@@ -70,7 +70,7 @@ case ${PACKAGE} in
 esac
 
 vagrantBaseCommand="lein trampoline run test"
-vagrantParams="--nodes-file ./nodes --username vagrant --ssh-private-key ./resources/vagrantkey"
+vagrantParams="--nodes-file ./nodes"
 dockerBaseCommand="docker exec -it -w '/jepsen' jepsen-control lein trampoline run test"
 dockerParams="--nodes-file ./nodes"
 vmpoolBaseCommand="lein trampoline run test"
