@@ -140,6 +140,20 @@
                                 :port "SAME"})
     (rest-call "/pools/default" {:memoryQuota "256"})))
 
+(defmacro retry-with-exp-backoff
+  "Evals body retrying after an exponential backoff period if an
+   exception was raised. The body must be idempotent on failure."
+  [dt rate retries & body]
+  `(domTop/with-retry [dt#      ~dt
+                       retries# ~retries]
+     (try
+       ~@body
+       (catch Throwable e#
+         (when (zero? retries#)
+           (throw e#))
+         (Thread/sleep dt#)
+         (~'retry (* dt# ~rate) (dec retries#))))))
+
 (defn add-nodes
   "Add nodes to the cluster"
   ([nodes-to-add]

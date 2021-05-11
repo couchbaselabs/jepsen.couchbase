@@ -222,7 +222,7 @@
         cluster-nodes (util/get-cluster-nodes testData)
         new-cluster-nodes (set/union (set cluster-nodes) (set add-nodes))]
     (c/on (first cluster-nodes)
-          (util/add-nodes add-nodes)
+          (util/retry-with-exp-backoff 3000 1.3 5 (util/add-nodes add-nodes))
           (util/rebalance new-cluster-nodes))
     (assoc op :value add-nodes)))
 
@@ -235,7 +235,7 @@
         cluster-nodes (util/get-cluster-nodes testData)
         static-nodes (set/difference (set cluster-nodes) (set remove-nodes))]
     (c/on (first static-nodes)
-          (util/add-nodes add-nodes)
+          (util/retry-with-exp-backoff 3000 1.3 5 (util/add-nodes add-nodes))
           (util/rebalance (set/union add-nodes cluster-nodes)
                           remove-nodes))
     (assoc op :value {:in add-nodes :out remove-nodes})))
