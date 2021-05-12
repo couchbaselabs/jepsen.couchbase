@@ -347,40 +347,56 @@
       (disable-auto-compaction))
     (info "Setup complete")))
 
+(defmacro swallow-exceptions
+  "On success returns the evaled body, otherwise returns nil."
+  [& body]
+  `(try ~@body
+        (catch Exception e#)))
+
+(defn upload-location
+  "Returns the upload location for a given package type."
+  [pkg]
+  (str "/tmp/couchbase." (name (:type pkg))))
+
+(defn install
+  "Installs a package."
+  [pkg]
+  (case (:type pkg)
+    :deb (c/su (c/exec :apt :install :-y :--allow-downgrades (upload-location pkg)))
+    :rpm (c/su (c/exec :yum :install :-y (upload-location pkg)))))
+
+(defn uninstall
+  "Removes an existing installation."
+  [pkg]
+  (case (:type pkg)
+    :deb (c/su (c/exec :apt :remove :-y :--purge :couchbase-server))
+    :rpm (c/su (c/exec :yum :remove :-y :couchbase-server))))
+
+(defn reinstall
+  "Reinstalls a package. Does not error if the uninstall fails."
+  [pkg]
+  (swallow-exceptions (uninstall pkg))
+  (install pkg))
+
+(defn install-tar
+  "Handles the installation of tarball archives."
+  [pkg]
+  (c/su (c/exec :tar :-Pxf (upload-location pkg))))
+
+(defn install-pkg
+  "Handles the installation of deb or rpm packages."
+  [pkg]
+  (when-not (swallow-exceptions (install pkg))
+    (reinstall pkg)))
+
 (defn install-package
-  "Install the given package on the nodes"
-  [package]
-  (case (:type package)
-    :rpm (let [package-name (.getName ^File (:package package))]
-           (try (do (info "checking if couchbase-server already installed...")
-                    (c/su (c/exec (str "/opt/couchbase" "/bin/couchbase-server") :-v))
-                    (info "couchbase-server is installed, removing...")
-                    (c/su (c/exec :yum :remove :-y "couchbase-server"))
-                    (throw (Exception. "removed server")))
-                (catch Exception e (let [root-files (c/su (c/exec :ls "/root"))]
-                                     (info "checking if package exists in /root...")
-                                     (when-not (str/includes? root-files package-name)
-                                       (info "package does not exist in /root, uploading...")
-                                       (c/su (c/upload (:package package) package-name))))
-                       (try (info "checking if this is a centos vagrant run...")
-                            (c/su (c/exec :mv (str "/home/vagrant/" package-name) "/root/"))
-                            (catch Exception e (info "no package to move from /home/vagrant to /root")))
-                       (info "running yum install -y " (str "/root/" package-name))
-                       (c/su (c/exec :yum :install :-y (str "/root/" package-name)))
-                       (info "moving package to tmp")
-                       (c/su (c/exec :mv (str "/root/" package-name) "/tmp/"))
-                       (info "cleaning up /root")
-                       (c/su (c/exec :rm :-rf "/root/*"))
-                       (info "moving package back to /root")
-                       (c/su (c/exec :mv (str "/tmp/" package-name) "/root/")))))
-    :deb (do
-           (c/su (c/upload (:package package) "/tmp/couchbase.deb"))
-           (c/su (c/exec :apt :install :-y :--allow-downgrades "/tmp/couchbase.deb"))
-           (c/su (c/exec :rm "/tmp/couchbase.deb")))
-    :tar (do
-           (c/su (c/upload (:package package) "/tmp/couchbase.tar"))
-           (c/su (c/exec :tar :-Pxf "/tmp/couchbase.tar"))
-           (c/su (c/exec :rm "/tmp/couchbase.tar")))))
+  "Installs a package."
+  [pkg]
+  (c/su (c/upload (:package pkg) (upload-location pkg)))
+  (if (= (:type pkg) :tar)
+    (install-tar pkg)
+    (install-pkg pkg))
+  (c/su (c/exec :rm (upload-location pkg))))
 
 (defn wait-for-daemon
   "Wait until couchbase server daemon has started"
