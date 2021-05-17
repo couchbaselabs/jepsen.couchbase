@@ -37,6 +37,50 @@
            (com.couchbase.client.core.msg.kv MutationToken))
   (:gen-class))
 
+(defmacro try-read-with-exception->op
+  [op & body]
+  `(try
+     ~@body
+     (catch UnambiguousTimeoutException e#
+       (assoc ~op :type :fail, :error :UnambiguousTimeoutException :msg (.getMessage e#)))
+     (catch TemporaryFailureException e#
+       (assoc ~op :type :fail, :error :Etmpfail :msg (.getMessage e#)))
+     (catch ServerOutOfMemoryException e#
+       (assoc ~op :type :fail :error :ServerOutOfMemoryException))
+     (catch CouchbaseException e#
+       (assoc ~op :type :fail, :error e#))))
+
+(defmacro try-write-with-exception->op
+  [op & body]
+  `(try
+     ~@body
+      ;; Certain failures - we know the operations did not take effect
+     (catch DurabilityImpossibleException e#
+       (assoc ~op :type :fail, :error :DurabilityImpossible :msg (.getMessage e#)))
+     (catch DurabilityLevelNotAvailableException e#
+       (assoc ~op :type :fail, :error :DurabilityLevelNotAvailable :msg (.getMessage e#)))
+     (catch DurableWriteInProgressException e#
+       (assoc ~op :type :fail, :error :SyncWriteInProgress :msg (.getMessage e#)))
+     (catch TemporaryFailureException e#
+       (assoc ~op :type :fail, :error :Etmpfail :msg (.getMessage e#)))
+     (catch ServerOutOfMemoryException e#
+       (assoc ~op :type :fail :error :ServerOutOfMemoryException))
+     (catch DocumentExistsException e#
+       (assoc ~op :type :fail :error :DocumentExistsException))
+     (catch CasMismatchException e#
+       (assoc ~op :type :fail, :error :CASMismatchException))
+     (catch UnambiguousTimeoutException e#
+       (assoc ~op :type :fail, :error :UnambiguousTimeoutException :msg (.getMessage e#)))
+      ;; Ambiguous result - operation may or may not take effect
+     (catch RequestCanceledException e#
+       (assoc ~op :type :info :error :RequestCanceledException :msg (.getMessage e#)))
+     (catch DurabilityAmbiguousException e#
+       (assoc ~op :type :info, :error :SyncWriteAmbiguous :msg (.getMessage e#)))
+     (catch TimeoutException e#
+       (assoc ~op :type :info, :error :RequestTimeoutException :msg (.getMessage e#)))
+     (catch CouchbaseException e#
+       (assoc ~op :type :info, :error e#))))
+
 ;; ===============
 ;; Register Client
 ;; ===============
@@ -45,130 +89,78 @@
   (assert (= (:f op) :read))
   (let [[rawKey _] (:value op)
         docKey (format "jepsen%04d" rawKey)]
-    (try
-      (let [get-obj (if-not cbjcli/*use-subdoc*
-                      (.get ^Collection collection docKey)
-                      (clientUtils/perform-subdoc-get collection docKey))]
-        (if-not cbjcli/*use-subdoc*
-          (assoc op
-                 :type :ok
-                 :cas (.cas ^GetResult get-obj)
-                 :value (independent/tuple rawKey ^Integer (clientUtils/get-int-from-get-result get-obj)))
-          (assoc op
-                 :type :ok
-                 :cas (.cas ^LookupInResult get-obj)
-                 :value (independent/tuple rawKey ^Integer (clientUtils/get-int-from-look-up-obj get-obj)))))
-      (catch DocumentNotFoundException _
-        (assoc op :type :ok :value (independent/tuple rawKey :nil)))
-      ;; Reads are idempotent, so it's ok to just :fail on any exception. Note
-      ;; that we don't :fail on a DocumentNotFoundException, since translating between
-      ;; the Couchbase and Jepsen models we know the read succeeded, but it wouldn't
-      ;; strictly be wrong if we did return it as a failure (i.e it wouldn't cause
-      ;; false-positive linearizability errors to be detected; it might increase the
-      ;; probability of a linearizability error going undetected, but Jepsen can't
-      ;; prove correctness anyway.
-      (catch UnambiguousTimeoutException e
-        (assoc op :type :fail, :error :UnambiguousTimeoutException :msg (.getMessage e)))
-      (catch TemporaryFailureException e
-        (assoc op :type :fail, :error :Etmpfail :msg (.getMessage e)))
-      (catch ServerOutOfMemoryException _
-        (assoc op :type :fail :error :ServerOutOfMemoryException))
-      (catch CouchbaseException e
-        (assoc op :type :fail, :error e)))))
+    (try-read-with-exception->op
+     op
+     (let [get-obj (if-not cbjcli/*use-subdoc*
+                     (.get ^Collection collection docKey)
+                     (clientUtils/perform-subdoc-get collection docKey))]
+       (if-not cbjcli/*use-subdoc*
+         (assoc op
+                :type :ok
+                :cas (.cas ^GetResult get-obj)
+                :value (independent/tuple rawKey ^Integer (clientUtils/get-int-from-get-result get-obj)))
+         (assoc op
+                :type :ok
+                :cas (.cas ^LookupInResult get-obj)
+                :value (independent/tuple rawKey ^Integer (clientUtils/get-int-from-look-up-obj get-obj)))))
+      ;; Note we don't :fail on a DocumentNotFoundException, since translating
+      ;; between the Couchbase and Jepsen models we know the read succeeded,
+      ;; but it wouldn't strictly be wrong if we did return it as a failure
+      ;; (i.e it wouldn't cause false-positive linearizability errors to be
+      ;; detected; it might increase the probability of a linearizability error
+      ;; going undetected, but Jepsen can't prove correctness anyway.
+     (catch DocumentNotFoundException _
+       (assoc op :type :ok :value (independent/tuple rawKey :nil))))))
 
 (defn do-register-write [collection op]
   (assert (= (:f op) :write))
   (let [[rawKey opVal] (:value op)
         docKey (format "jepsen%04d" rawKey)]
-    (try
-      (let [mutation-option (select-keys op [:durability-level :replicate-to :persist-to])
-            upsert-result (if-not cbjcli/*use-subdoc*
-                            (.upsert ^Collection collection
-                                     docKey
-                                     (clientUtils/create-int-json-obj opVal)
-                                     (clientUtils/get-upsert-ops op))
-                            (clientUtils/perform-subdoc-upsert ^Collection collection
-                                                               docKey
-                                                               opVal
-                                                               mutation-option))]
-        (if-not cbjcli/*use-subdoc*
-          (assoc op
-                 :type :ok
-                 :cas (.cas ^MutationResult upsert-result)
-                 :mutation-token (str (.mutationToken ^MutationResult upsert-result)))
-          (assoc op
-                 :type :ok
-                 :cas (.cas ^MutateInResult upsert-result))))
-      ;; Certain failures - we know the operations did not take effect
-      (catch DurabilityImpossibleException e
-        (assoc op :type :fail, :error :DurabilityImpossible :msg (.getMessage e)))
-      (catch DurabilityLevelNotAvailableException e
-        (assoc op :type :fail, :error :DurabilityLevelNotAvailable :msg (.getMessage e)))
-      (catch DurableWriteInProgressException e
-        (assoc op :type :fail, :error :SyncWriteInProgress :msg (.getMessage e)))
-      (catch TemporaryFailureException e
-        (assoc op :type :fail, :error :Etmpfail :msg (.getMessage e)))
-      (catch ServerOutOfMemoryException _
-        (assoc op :type :fail :error :ServerOutOfMemoryException))
-      (catch DocumentExistsException _
-        (assoc op :type :fail :error :DocumentExistsException))
-      ;; Ambiguous result - operation may or may not take effect
-      (catch RequestCanceledException e
-        (assoc op :type :info :error :RequestCanceledException :msg (.getMessage e)))
-      (catch DurabilityAmbiguousException e
-        (assoc op :type :info, :error :SyncWriteAmbiguous :msg (.getMessage e)))
-      (catch TimeoutException e
-        (assoc op :type :info, :error :RequestTimeoutException :msg (.getMessage e)))
-      (catch CouchbaseException e
-        (assoc op :type :info, :error e)))))
+    (try-write-with-exception->op
+     op
+     (let [mutation-option (select-keys op [:durability-level :replicate-to :persist-to])
+           upsert-result (if-not cbjcli/*use-subdoc*
+                           (.upsert ^Collection collection
+                                    docKey
+                                    (clientUtils/create-int-json-obj opVal)
+                                    (clientUtils/get-upsert-ops op))
+                           (clientUtils/perform-subdoc-upsert ^Collection collection
+                                                              docKey
+                                                              opVal
+                                                              mutation-option))]
+       (if-not cbjcli/*use-subdoc*
+         (assoc op
+                :type :ok
+                :cas (.cas ^MutationResult upsert-result)
+                :mutation-token (str (.mutationToken ^MutationResult upsert-result)))
+         (assoc op
+                :type :ok
+                :cas (.cas ^MutateInResult upsert-result)))))))
 
 (defn do-register-cas [collection op]
   (assert (= (:f op) :cas))
   (let [[rawkey [swap-from swap-to]] (:value op)
         docKey (format "jepsen%04d" rawkey)]
-    (try
-      (let [get-current ^GetResult (.get ^Collection collection docKey)
-            current-value (clientUtils/get-int-from-get-result get-current)
-            current-cas (.cas get-current)]
-        (if (= current-value swap-from)
-          (let [replace-result (.replace ^Collection collection
-                                         ^String docKey
-                                         (clientUtils/create-int-json-obj swap-to)
-                                         ^ReplaceOptions (clientUtils/get-replace-ops op current-cas))
-                mutation-token (.mutationToken ^MutationResult replace-result)]
-            (assoc op
-                   :type :ok
-                   :cas (.cas replace-result)
-                   :mutation-token (str mutation-token)))
-          (assoc op :type :fail :error :ValueNotSwapFrom :curr-cas current-cas :curr-value current-value)))
-      ;; Certain failures - we know the operations did not take effect
-      (catch NoSuchElementException e
-        (assoc op :type :fail, :error :GetFailed :msg (.getMessage e)))
-      (catch DocumentNotFoundException _
-        (assoc op :type :fail :error :DocumentNotFoundException))
-      (catch CasMismatchException _
-        (assoc op :type :fail, :error :CASMismatchException))
-      (catch DurabilityImpossibleException e
-        (assoc op :type :fail, :error :DurabilityImpossible :msg (.getMessage e)))
-      (catch DurabilityLevelNotAvailableException e
-        (assoc op :type :fail, :error :DurabilityLevelNotAvailable :msg (.getMessage e)))
-      (catch DurableWriteInProgressException e
-        (assoc op :type :fail, :error :SyncWriteInProgress :msg (.getMessage e)))
-      (catch TemporaryFailureException e
-        (assoc op :type :fail, :error :Etmpfail :msg (.getMessage e)))
-      (catch ServerOutOfMemoryException _
-        (assoc op :type :fail :error :ServerOutOfMemoryException))
-      (catch UnambiguousTimeoutException e
-        (assoc op :type :fail :error :UnambiguousTimeoutException :msg (.getMessage e)))
-      ;; Ambiguous result - operation may or may not take effect
-      (catch RequestCanceledException e
-        (assoc op :type :info :error :RequestCanceledException :msg (.getMessage e)))
-      (catch DurabilityAmbiguousException e
-        (assoc op :type :info, :error :SyncWriteAmbiguous :msg (.getMessage e)))
-      (catch AmbiguousTimeoutException e
-        (assoc op :type :info, :error :AmbiguousTimeoutException :msg (.getMessage e)))
-      (catch CouchbaseException e
-        (assoc op :type :info, :error e)))))
+    (try-write-with-exception->op
+     op
+     (let [get-current ^GetResult (.get ^Collection collection docKey)
+           current-value (clientUtils/get-int-from-get-result get-current)
+           current-cas (.cas get-current)]
+       (if (= current-value swap-from)
+         (let [replace-result (.replace ^Collection collection
+                                        ^String docKey
+                                        (clientUtils/create-int-json-obj swap-to)
+                                        ^ReplaceOptions (clientUtils/get-replace-ops op current-cas))
+               mutation-token (.mutationToken ^MutationResult replace-result)]
+           (assoc op
+                  :type :ok
+                  :cas (.cas replace-result)
+                  :mutation-token (str mutation-token)))
+         (assoc op :type :fail :error :ValueNotSwapFrom :curr-cas current-cas :curr-value current-value)))
+     (catch NoSuchElementException e
+       (assoc op :type :fail, :error :GetFailed :msg (.getMessage e)))
+     (catch DocumentNotFoundException _
+       (assoc op :type :fail :error :DocumentNotFoundException)))))
 
 (defrecord NewRegisterClient [cluster bucket collection env]
   client/Client
@@ -196,65 +188,29 @@
 ;; ==========
 
 (defn do-set-add [collection op]
-  (try
-    (let [docKey (format "jepsen%010d" (:value op))
-          result (.insert ^Collection collection
-                          ^String docKey
-                          (clientUtils/create-int-json-obj (:value op))
-                          ^InsertOptions (clientUtils/get-insert-ops op))
-          token  (.orElse (.mutationToken ^MutationResult result) nil)]
-      (assoc op
-             :type :ok
-             :mutation-token (str token)))
-    ;; Certain failures - we know the operations did not take effect
-    (catch DurabilityImpossibleException e
-      (assoc op :type :fail, :error :DurabilityImpossible :msg (.getMessage e)))
-    (catch DurabilityLevelNotAvailableException e
-      (assoc op :type :fail, :error :DurabilityLevelNotAvailable :msg (.getMessage e)))
-    (catch DurableWriteInProgressException e
-      (assoc op :type :fail, :error :SyncWriteInProgress :msg (.getMessage e)))
-    (catch TemporaryFailureException e
-      (assoc op :type :fail :error :Etmpfail :msg (.getMessage e)))
-    (catch ServerOutOfMemoryException _
-      (assoc op :type :fail :error :ServerOutOfMemoryException))
-    ;; Ambiguous result - operation may or may not take effect
-    (catch RequestCanceledException e
-      (assoc op :type :info :error :RequestCanceledException :msg (.getMessage e)))
-    (catch DurabilityAmbiguousException e
-      (assoc op :type :info, :error :SyncWriteAmbiguous :msg (.getMessage e)))
-    (catch AmbiguousTimeoutException e
-      (assoc op :type :info, :error :AmbiguousTimeoutException :msg (.getMessage e)))
-    (catch CouchbaseException e
-      (assoc op :type :info, :error e))))
+  (try-write-with-exception->op
+   op
+   (let [docKey (format "jepsen%010d" (:value op))
+         result (.insert ^Collection collection
+                         ^String docKey
+                         (clientUtils/create-int-json-obj (:value op))
+                         ^InsertOptions (clientUtils/get-insert-ops op))
+         token  (.orElse (.mutationToken ^MutationResult result) nil)]
+     (assoc op
+            :type :ok
+            :mutation-token (str token)))))
 
 (defn do-set-del [collection op]
-  (try
-    (let [docKey (format "jepsen%010d" (:value op))
-          result (.remove ^Collection collection
-                          ^String docKey
-                          ^RemoveOptions (clientUtils/get-remove-ops op))
-          token  (.mutationToken ^MutationResult result)]
-      (assoc op
-             :type :ok
-             :mutation-token (str ^MutationToken token)))
-     ;; Certain failures - we know the operations did not take effect
-    (catch DurabilityImpossibleException e
-      (assoc op :type :fail, :error :DurabilityImpossible :msg (.getMessage e)))
-    (catch DurabilityLevelNotAvailableException e
-      (assoc op :type :fail, :error :DurabilityLevelNotAvailableException :msg (.getMessage e)))
-    (catch DurableWriteInProgressException e
-      (assoc op :type :fail, :error :SyncWriteInProgress :msg (.getMessage e)))
-    (catch TemporaryFailureException e
-      (assoc op :type :fail, :error :Etmpfail :msg (.getMessage e)))
-    (catch ServerOutOfMemoryException _
-      (assoc op :type :fail :error :ServerOutOfMemoryException))
-    ;; Ambiguous result - operation may or may not take effect
-    (catch DurabilityAmbiguousException e
-      (assoc op :type :info, :error :SyncWriteAmbiguous :msg (.getMessage e)))
-    (catch AmbiguousTimeoutException e
-      (assoc op :type :info, :error :AmbiguousTimeoutException :msg (.getMessage e)))
-    (catch CouchbaseException e
-      (assoc op :type :info, :error e))))
+  (try-write-with-exception->op
+   op
+   (let [docKey (format "jepsen%010d" (:value op))
+         result (.remove ^Collection collection
+                         ^String docKey
+                         ^RemoveOptions (clientUtils/get-remove-ops op))
+         token  (.mutationToken ^MutationResult result)]
+     (assoc op
+            :type :ok
+            :mutation-token (str ^MutationToken token)))))
 
 (defn check-if-exists [collection rawKey]
   (domTop/with-retry [attempts 120]
@@ -295,74 +251,41 @@
         (assoc op :type :fail, :error e)))))
 
 (defn do-counter-add [collection op]
-  (try
-    (let [docKey (str "jepsen")
-          binaryCollection ^BinaryCollection (.binary collection)
-          result  (if (pos? (:value op))
-                    (.increment ^BinaryCollection binaryCollection
-                                ^String docKey
-                                ^IncrementOptions (clientUtils/get-increment-ops op))
-                    (.decrement ^BinaryCollection binaryCollection
-                                ^String docKey
-                                ^DecrementOptions (clientUtils/get-decrement-ops op)))
+  (try-write-with-exception->op
+   op
+   (let [docKey (str "jepsen")
+         binaryCollection ^BinaryCollection (.binary collection)
+         result  (if (pos? (:value op))
+                   (.increment ^BinaryCollection binaryCollection
+                               ^String docKey
+                               ^IncrementOptions (clientUtils/get-increment-ops op))
+                   (.decrement ^BinaryCollection binaryCollection
+                               ^String docKey
+                               ^DecrementOptions (clientUtils/get-decrement-ops op)))
 
-          token  (.orElse (.mutationToken ^CounterResult result) nil)]
-      (assoc op
-             :type :ok
-             :cas (.cas ^CounterResult result)
-             :mutation-token (str ^MutationToken token)
-             :current-value (.content result)))
-    ;; Certain failures - we know the operations did not take effect
-    (catch DurabilityImpossibleException _
-      (assoc op :type :fail, :error :DurabilityImpossible))
-    (catch DurabilityLevelNotAvailableException _
-      (assoc op :type :fail, :error :DurabilityLevelNotAvailable))
-    (catch DurableWriteInProgressException _
-      (assoc op :type :fail, :error :SyncWriteInProgress))
-    (catch TemporaryFailureException _
-      (assoc op :type :fail :error :Etmpfail))
-    ;; Ambiguous result - operation may or may not take effect
-    (catch RequestCanceledException _
-      (assoc op :type :info :error :RequestCanceledException))
-    (catch DurabilityAmbiguousException _
-      (assoc op :type :info, :error :SyncWriteAmbiguous))
-    (catch AmbiguousTimeoutException _
-      (assoc op :type :info, :error :AmbiguousTimeoutException))
-    (catch CouchbaseException e
-      (assoc op :type :info, :error e))
-    (catch RuntimeException e
-      (assoc op :type :info, :error e))))
+         token  (.orElse (.mutationToken ^CounterResult result) nil)]
+     (assoc op
+            :type :ok
+            :cas (.cas ^CounterResult result)
+            :mutation-token (str ^MutationToken token)
+            :current-value (.content result)))))
 
 (defn do-counter-read [collection op]
   (assert (= (:f op) :read))
   (let [docKey (str "jepsen")]
-    (try
-      (let [get-obj (.increment ^BinaryCollection (.binary collection)
-                                ^String docKey
-                                (.delta ^IncrementOptions (clientUtils/get-increment-ops op) 0))
-            token  (.orElse (.mutationToken ^CounterResult get-obj) nil)]
-        (assoc op
-               :type :ok
-               :cas (.cas ^CounterResult get-obj)
-               :mutation-token (str ^MutationToken token)
-               :value ^Integer (.content ^CounterResult get-obj)))
-      (catch DocumentNotFoundException _
-        (assoc op :type :ok :value :nil))
-      ;; Reads are idempotent, so it's ok to just :fail on any exception. Note
-      ;; that we don't :fail on a DocumentNotFoundException, since translating between
-      ;; the Couchbase and Jepsen models we know the read succeeded, but it wouldn't
-      ;; strictly be wrong if we did return it as a failure (i.e it wouldn't cause
-      ;; false-positive linearizability errors to be detected; it might increase the
-      ;; probability of a linearizability error going undetected, but Jepsen can't
-      ;; prove correctness anyway.
-      (catch UnambiguousTimeoutException e
-        (assoc op :type :fail, :error :UnambiguousTimeoutException :msg (.getMessage e)))
-      (catch TemporaryFailureException e
-        (assoc op :type :fail, :error :Etmpfail :msg (.getMessage e)))
-      (catch ServerOutOfMemoryException _
-        (assoc op :type :fail :error :ServerOutOfMemoryException))
-      (catch CouchbaseException e
-        (assoc op :type :fail, :error e)))))
+    (try-read-with-exception->op
+     op
+     (let [get-obj (.increment ^BinaryCollection (.binary collection)
+                               ^String docKey
+                               (.delta ^IncrementOptions (clientUtils/get-increment-ops op) 0))
+           token  (.orElse (.mutationToken ^CounterResult get-obj) nil)]
+       (assoc op
+              :type :ok
+              :cas (.cas ^CounterResult get-obj)
+              :mutation-token (str ^MutationToken token)
+              :value ^Integer (.content ^CounterResult get-obj)))
+     (catch DocumentNotFoundException _
+       (assoc op :type :ok :value :nil)))))
 
 (defrecord NewSetClient [cluster bucket collection dcpClient]
   client/Client
