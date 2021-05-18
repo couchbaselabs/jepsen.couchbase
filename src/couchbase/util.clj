@@ -604,7 +604,7 @@
       (c/su (c/exec* (str "zip /tmp/jepsen-logs/core-files.zip /tmp/core.* || [[ $? == 12 ]]"))))
     (when (:enable-tcp-capture testData)
       (info "Collecting tcp packet capture")
-      (c/su (c/exec* (str "if [[ -f \"/var/run/daemonlogger.pid\" ]]; then kill -s TERM $(cat /var/run/daemonlogger.pid); fi"))
+      (c/su (c/exec* (str "if [[ -f \"/var/run/daemonlogger.pid\" ]]; then kill -s TERM $(cat /var/run/daemonlogger.pid) || true; fi"))
             ;; clean up old gz files, if any
             (c/exec* (str "rm -f /packet-capture/*.gz*"))
             (c/exec* (str "gzip -f /packet-capture/*.pcap*"))
