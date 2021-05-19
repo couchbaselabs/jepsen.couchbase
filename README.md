@@ -11,17 +11,16 @@ installed. Gnuplot is required for the plot performance graphs option. Basic
 utilities like bc, curl, grep are expected to be present. Clojure and Java
 dependencies will be auto-fetched on first run. You need some Couchbase Server
 nodes to run Couchbase Server. We provide the provision.sh script that starts
-suitable nodes using vagrant VMs or docker containers. We also provide the
-ability to run Jepsen using cluster-run type nodes from a local build. Note that
-some workloads are incompatible with docker or cluster-run nodes.
+suitable nodes using vagrant VMs. We also provide the ability to run Jepsen
+using cluster-run type nodes from a local build. Note that some workloads are
+incompatible with cluster-run nodes.
 
-### Setup for vagrant / docker nodes
+### Setup for vagrant nodes
 
 Jepsen requires a cluster of nodes to run Couchbase Server on. If you already
 have nodes available you need to manually create a nodes file with the IP
 addresses. Otherwise you can use the script provision.sh that automatically
-start suitable vagrants (or docker containers) and create the corresponding
-file.
+start suitable vagrants and create the corresponding file.
 
 #### Getting started / Running a simple test
 
