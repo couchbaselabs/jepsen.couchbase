@@ -15,35 +15,23 @@ suitable nodes using vagrant VMs or docker containers. We also provide the
 ability to run Jepsen using cluster-run type nodes from a local build. Note that
 some workloads are incompatible with docker or cluster-run nodes.
 
-### Getting started with cluster-run
-
-Using cluster-run style nodes provides a simple way to start running tests. The
-only required setup is to download and build the Couchbase Server source.
-*Note* that Jepsen will automatically start the required cluster-run nodes. No
-other cluster-run nodes should be running on the machine, and any leftover data
-from previous cluster-run nodes will be deleted. Currently, due to an issue
-(JDCP-81) with the Java DCP client used by Jepsen, set workloads crash if the
-server reports version 0.0.0, as is the default for custom builds. This can be
-worked around by setting a product version when building, for example with
-`EXTRA_CMAKE_OPTIONS='-DPRODUCT_VERSION="9.9.9-9999"'`
-
-```
-lein run test --cluster-run --node-count 3 --workload register --package ~/dev/source/install
-```
-
 ### Setup for vagrant / docker nodes
 
-If not using cluster-run, Jepsen requires a cluster of nodes to run Couchbase
-Server on. If you already have nodes available you need to manually create a
-nodes file with the IP addresses. Otherwise you can use the script provision.sh
-that automatically start suitable vagrants (or docker containers) and create the
-corresponding file.
+Jepsen requires a cluster of nodes to run Couchbase Server on. If you already
+have nodes available you need to manually create a nodes file with the IP
+addresses. Otherwise you can use the script provision.sh that automatically
+start suitable vagrants (or docker containers) and create the corresponding
+file.
 
 #### Getting started / Running a simple test
 
 The provision script can be used to automatically start suitable VMs.
 ```
 ./provision.sh --type=vagrant --vm-os=ubuntu1604 --action=create --nodes=3
+```
+
+A copy of Couchbase Server is required:
+```
 wget http://packages.couchbase.com/releases/6.0.0/couchbase-server-enterprise_6.0.0-ubuntu16.04_amd64.deb
 ```
 
@@ -80,11 +68,30 @@ credentials for the node).
 ./run.sh --provisioner=vmpool --package=./some-package.deb --suite=./some-suite.conf --global=username:user,password:pass
 ```
 
-### Running against a build directory
+#### Running against a build directory
 If the host has a directory containing a build suitable for running the nodes,
 you can supply the install directory to jepsen instead of a deb/rpm package.
 ```
 ./run.sh ... --package ~/dev/source/install
+```
+
+### Setup for cluster-run
+
+If downloading and building from source, cluster-run is supported providing a
+simple way to start running tests.
+
+*Note* that Jepsen will automatically start the required cluster-run nodes. No
+other cluster-run nodes should be running on the machine, and any leftover data
+from previous cluster-run nodes will be deleted.
+
+Currently, due to an issue (JDCP-81) with the Java DCP client used by Jepsen,
+set workloads crash if the server reports version 0.0.0, as is the default for
+custom builds. This can be worked around by setting a product version when
+building, for example with:
+`EXTRA_CMAKE_OPTIONS='-DPRODUCT_VERSION="9.9.9-9999"'`
+
+```
+lein run test --cluster-run --node-count 3 --workload register --package ~/dev/source/install
 ```
 
 ### Displaying results
