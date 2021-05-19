@@ -112,3 +112,46 @@ chmod +x cv-checks.sh
 This will run the same checks that are used on our Jenkins commit validation
 job. Its also important if adding or editing a workload/nemesis that they are
 tested, as the commit validator is unable to do this.
+
+## FAQ
+### What does Jepsen testing involve?
+Jepsen testing involves launching client operations to a database across a set
+of logically single-threaded processes and recording the operation history while
+introducing faults such as network partitions into the system via a special
+nemesis process.
+
+The history is then analysed through a checker for correctness against a
+[consistency model](https://jepsen.io/consistency). A consistency model defines
+the set of legal histories that can be observed when the system conforms to the
+consistency model specification.
+
+The checker detects consistency errors by identifying histories that do not
+conform to the consistency model when faults are introduced into the system.
+
+For more details see [Jepsen](https://jepsen.io/), [Jepsen project](
+https://github.com/jepsen-io/jepsen) and [Jepsen testing at Couchbase](
+https://blog.couchbase.com/introduction-to-jepsen-testing-at-couchbase/).
+
+### What checkers are used in testing?
+For the register style workloads we model Couchbase Server as independent
+compare-and-swap registers using a combination of the following checkers given
+key-value read and write operations:
+
+* [Knossos](https://github.com/jepsen-io/knossos) a linearizability checker.
+* [Seqchecker](sequential_checker.md) a per register sequential consistency
+  checker.
+
+The extended set workloads model Couchbase Server as a set in which a key is a
+member of the set if it has a corresponding value. The extended set checker
+checks the intended items are present in the set following add and delete
+operations.
+
+The counter workloads model Couchbase Server as a counter variable. The sanity
+counter checker checks if the counter holds the correct summation following
+increment and decrement operations.
+
+### Have we passed Jepsen?
+Jepsen testing is not a proof of correctness, but instead detects errors in a
+subset of the possible histories produced by the implementation. Our project
+requires independent verification and perhaps additional tests before we can
+sufficiently make such a claim.
