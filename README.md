@@ -100,6 +100,15 @@ interface.
 lein trampoline run serve
 ```
 
+### Obtaining help
+
+Workloads can be configured with various command line options. To display the
+help text run the following command:
+
+```
+lein run test --help
+```
+
 ## Development
 ### Checking your commit
 Before push your code for review its important to check that the patch will pass
@@ -130,6 +139,11 @@ conform to the consistency model when faults are introduced into the system.
 For more details see [Jepsen](https://jepsen.io/), [Jepsen project](
 https://github.com/jepsen-io/jepsen) and [Jepsen testing at Couchbase](
 https://blog.couchbase.com/introduction-to-jepsen-testing-at-couchbase/).
+
+### What is a workload?
+A workload is a template of how to perform a test with specified nemeses and
+operations. A test is an instantiation of a workload with defined parameters.
+The workloads can be found in [this](src/couchbase/workload) directory.
 
 ### What checkers are used in testing?
 For the register style workloads we model Couchbase Server as independent
