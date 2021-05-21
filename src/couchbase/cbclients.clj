@@ -22,7 +22,20 @@
    (java.util List)
    (rx Completable)))
 
+(defn col-seq-entry->new-collection
+  "Transforms an entry [s1 c1] to a new instance of collection"
+  [bucket [scope-name collection-name]]
+  (-> bucket
+      (.scope scope-name)
+      (.collection collection-name)))
+
 ;; Couchbase Java SDK setup
+(defn new-collection
+  "Yields new collection instance(s) given testData and a bucket"
+  [testData bucket]
+  (if-not (util/testData->collection-aware? testData)
+    (.defaultCollection bucket)
+    (doall (map (partial col-seq-entry->new-collection bucket) (util/testdata->seq-of-collections testData)))))
 
 (defn new-client
   "Open a new connection to the cluster, returning a map with the cluster,
@@ -45,7 +58,7 @@
                     env)
         cluster    (Cluster/connect (str node) clusterOps)
         bucket     (.bucket cluster "default")
-        collection (.defaultCollection bucket)]
+        collection (new-collection testData bucket)]
     (info "Checking value of 'com.couchbase.unorderedExecutionEnabled' :" (System/getProperty "com.couchbase.unorderedExecutionEnabled"))
     {:cluster cluster :bucket bucket :collection collection :env env}))
 

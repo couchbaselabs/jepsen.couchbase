@@ -3,6 +3,7 @@
             [couchbase.cbclients :as cbclients]
             [couchbase.clients-utils :as clientUtils]
             [couchbase.cbjcli :as cbjcli]
+            [couchbase.util :as util]
             [dom-top.core :as domTop]
             [jepsen.client :as client]
             [jepsen.independent :as independent]
@@ -162,6 +163,25 @@
      (catch DocumentNotFoundException _
        (assoc op :type :fail :error :DocumentNotFoundException)))))
 
+(defn op->rawkey
+  "Gets the rawkey for an op"
+  [op]
+  (first (:value op)))
+
+(defn multiplex-collections
+  "Returns a collection object for this operation's key"
+  [collections op]
+  (let [index (mod (op->rawkey op) (count collections))]
+    (nth collections index)))
+
+(defn get-collection
+  "If this is a collection aware test, multiplexes collections otherwise
+   simply yields the single default collection."
+  [testData collections op]
+  (if-not (util/testData->collection-aware? testData)
+    collections
+    (multiplex-collections collections op)))
+
 (defrecord NewRegisterClient [cluster bucket collection env]
   client/Client
   (open! [this testData node]
@@ -169,10 +189,11 @@
 
   (setup! [_ _])
   (invoke! [_ testData op]
-    (case (:f op)
-      :read (do-register-read collection op)
-      :write (do-register-write collection op)
-      :cas (do-register-cas collection op)))
+    (let [coll (get-collection testData collection op)]
+      (case (:f op)
+        :read (do-register-read coll op)
+        :write (do-register-write coll op)
+        :cas (do-register-cas coll op))))
 
   (close! [_ _])
 

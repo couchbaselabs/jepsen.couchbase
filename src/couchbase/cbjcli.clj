@@ -199,6 +199,16 @@
    [nil "--disable-out-of-order-execution"
     "Use to disable out of order execution by Couchbase server"
     :default false]
+   [nil "--scopes SCOPES"
+    "The number of scopes."
+    :parse-fn parse-int
+    :default nil
+    :validate [pos? "Must be a positive integer."]]
+   [nil "--collections COLLECTIONS"
+    "The number of collections per scope."
+    :parse-fn parse-int
+    :default nil
+    :validate [pos? "Must be a positive integer."]]
    (jepsen.cli/repeated-opt
     nil
     "--use-checker CHECKER"

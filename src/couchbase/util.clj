@@ -7,6 +7,7 @@
             [dom-top.core :as domTop]
             [clj-http.client :as client]
             [cheshire.core :as json]
+            [couchbase.collections-manifest :as manifest]
             [jepsen
              [control :as c]
              [net :as net]
@@ -340,6 +341,42 @@
              {:params {"databaseFramgentationThreshold[size]" "undefined"
                        "parallelDBAndViewCompaction" false}}))
 
+(defn upload-collections-manifest
+  "Uploads the collections manifest."
+  [collections-manifest]
+  (let [response (rest-call :put "/pools/default/buckets/default/collections"
+                            {:params collections-manifest
+                             :options {:content-type :json}})
+        jsonresp (json/parse-string response true)
+        endpoint (str "/pools/default/buckets/default/scopes/@ensureManifest/" (:uid jsonresp))]
+    (retry-with-exp-backoff 3000 1.2 5
+                            (rest-call :post endpoint))))
+
+(defn testData->collection-aware?
+  "Returns true if this is a collection aware test."
+  [testData]
+  (and (:collections testData) (:scopes testData)))
+
+(defn testdata->manifest-map
+  "Creates a manifest given test data."
+  [testData]
+  (manifest/build-manifest-map (:scopes testData) (:collections testData)))
+
+(def testdata->seq-of-collections
+  "Yields a seq of pairs of scope and collection names given testData
+   caching the result to avoid recomputing it."
+  (memoize
+   (fn
+     [testData]
+     (manifest/manifest-map-seq (testdata->manifest-map testData)))))
+
+(defn create-collections
+  "Creates collections given test data."
+  [testData]
+  (-> (testdata->manifest-map testData)
+      (manifest/manifest-map->collections-manifest)
+      (upload-collections-manifest)))
+
 (defn setup-cluster
   "Setup couchbase cluster"
   [testData node]
@@ -361,6 +398,8 @@
     (create-bucket bucket-type num-replicas eviction-policy)
     (info "Waiting for bucket warmup to complete...")
     (wait-for-warmup)
+    (when (testData->collection-aware? testData)
+      (create-collections testData))
     (if (:custom-cursor-drop-marks testData)
       (set-custom-cursor-drop-marks testData))
     (if (:enable-memcached-debug-log-level testData)
