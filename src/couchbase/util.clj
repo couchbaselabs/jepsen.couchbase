@@ -90,25 +90,31 @@
 
 (defn rest-call
   "Perform a rest api call"
-  ([endpoint params] (rest-call c/*host* endpoint params))
-  ([target endpoint params]
+  ([method endpoint] (rest-call method endpoint {}))
+  ([method endpoint
+    {:keys [target params options]
+     :or   {target c/*host*}
+     :as    kwargs}]
    (let [uri (if (re-matches #".*:[0-9]+" target)
                (str "http://" target endpoint)
-               (str "http://" target ":8091" endpoint))]
+               (str "http://" target ":8091" endpoint))
+         common {:basic-auth ["Administrator" "abc123"]
+                 :throw-entire-message true}
+         options (merge common options)
+         options (conj options (when params [:form-params params]))]
      (try
-       (if (empty? params)
-         (:body (client/get uri {:basic-auth ["Administrator" "abc123"]
-                                 :throw-entire-message true}))
-         (:body (client/post uri {:form-params params
-                                  :basic-auth ["Administrator" "abc123"]
-                                  :throw-entire-message true})))
+       (:body
+        (case method
+          :get  (client/get uri options)
+          :put  (client/put uri options)
+          :post (client/post uri options)))
        ;; Catch any exception and rethrow any exception so that we can log
        ;; the call which caused the exception.
        (catch ExceptionInfo e
          (warn "Rest call to" uri "with params" params "threw exception.")
          (if (= (int 503) (int (:status (ex-data e))))      ; See if there was a http 503 error
            (do (Thread/sleep 5000)                          ; Sleep for 5 sec then re-try
-               (rest-call target endpoint params))
+               (rest-call method endpoint kwargs))
            (throw e)))))))
 
 ;; On recent version versions of Couchbase Server /diag/eval is only accessible
@@ -132,13 +138,17 @@
   (let [base-path (:install-path test)
         data-path (str base-path "/var/lib/couchbase/data")
         index-path (str base-path "/var/lib/couchbase/data")]
-    (rest-call "/nodes/self/controller/settings" {:data_path data-path
-                                                  :index_path index-path})
-    (rest-call "/node/controller/setupServices" {:services "kv"})
-    (rest-call "/settings/web" {:username "Administrator"
-                                :password "abc123"
-                                :port "SAME"})
-    (rest-call "/pools/default" {:memoryQuota "256"})))
+    (rest-call :post "/nodes/self/controller/settings"
+               {:params {:data_path data-path
+                         :index_path index-path}})
+    (rest-call :post "/node/controller/setupServices"
+               {:params {:services "kv"}})
+    (rest-call :post "/settings/web"
+               {:params {:username "Administrator"
+                         :password "abc123"
+                         :port "SAME"}})
+    (rest-call :post "/pools/default"
+               {:params {:memoryQuota "256"}})))
 
 (defmacro retry-with-exp-backoff
   "Evals body retrying after an exponential backoff period if an
@@ -157,13 +167,13 @@
 (defn add-nodes
   "Add nodes to the cluster"
   ([nodes-to-add]
-   (let [endpoint "/controller/addNode"]
-     (doseq [node nodes-to-add]
-       (info "Adding node" node "to cluster")
-       (rest-call endpoint {:hostname (str "http://" node)
-                            :user "Administrator"
-                            :password "abc123"
-                            :services "kv"})))))
+   (doseq [node nodes-to-add]
+     (info "Adding node" node "to cluster")
+     (rest-call :post "/controller/addNode"
+                {:params {:hostname (str "http://" node)
+                          :user "Administrator"
+                          :password "abc123"
+                          :services "kv"}}))))
 
 (defn wait-for
   ([call-function desired-state] (wait-for call-function desired-state 60))
@@ -179,7 +189,7 @@
 
 (defn get-rebalance-status
   [target]
-  (let [rebalance-info (rest-call target "/pools/default/rebalanceProgress" nil)
+  (let [rebalance-info (rest-call :get "/pools/default/rebalanceProgress" {:target target})
         rebalance-info-map (json/parse-string rebalance-info true)]
     rebalance-info-map))
 
@@ -228,23 +238,25 @@
                                                                                         :knownNodes known-nodes-str})))
      (if eject-nodes
        (info "Rebalancing nodes" eject-nodes "out of cluster"))
-     (rest-call rest-target "/controller/rebalance" {:ejectedNodes eject-nodes-str
-                                                     :knownNodes known-nodes-str})
+     (rest-call :post "/controller/rebalance"
+                {:target rest-target
+                 :params {:ejectedNodes eject-nodes-str
+                          :knownNodes known-nodes-str}})
      (wait-for-rebalance-complete rest-target)
      (info "Rebalance complete"))))
 
 (defn create-bucket
   "Create the default bucket"
   [bucket-type replicas eviction]
-  (rest-call "/pools/default/buckets"
-             {:flushEnabled 1
-              :replicaNumber replicas
-              :evictionPolicy (name eviction)
-              :ramQuotaMB 100
-              :bucketType (name bucket-type)
-              :name "default"
-              :authType "sasl"
-              :saslPassword ""}))
+  (rest-call :post "/pools/default/buckets"
+             {:params {:flushEnabled 1
+                       :replicaNumber replicas
+                       :evictionPolicy (name eviction)
+                       :ramQuotaMB 100
+                       :bucketType (name bucket-type)
+                       :name "default"
+                       :authType "sasl"
+                       :saslPassword ""}}))
 
 (defn set-vbucket-count
   "Set the number of vbuckets for new buckets"
@@ -261,25 +273,25 @@
         timeout (or (:autofailover-timeout testData) 6)
         disk-timeout (or (:disk-autofailover-timeout testData) 6)
         maxcount (or (:autofailover-maxcount testData) 3)]
-    (rest-call "/settings/autoFailover"
-               {:enabled enabled
-                :timeout timeout
-                :maxCount maxcount
-                "failoverOnDataDiskIssues[enabled]" disk-enabled
-                "failoverOnDataDiskIssues[timePeriod]" disk-timeout})))
+    (rest-call :post "/settings/autoFailover"
+               {:params {:enabled enabled
+                         :timeout timeout
+                         :maxCount maxcount
+                         "failoverOnDataDiskIssues[enabled]" disk-enabled
+                         "failoverOnDataDiskIssues[timePeriod]" disk-timeout}})))
 
 (defn set-autoreprovision
   "Apply ephemeral autoreprovision settings to cluster"
   [testData]
-  (rest-call "/settings/autoReprovision"
-             {:enabled (:autoreprovision testData)
-              :maxNodes (:autoreprovision-maxnodes testData)}))
+  (rest-call :post "/settings/autoReprovision"
+             {:params {:enabled (:autoreprovision testData)
+                       :maxNodes (:autoreprovision-maxnodes testData)}}))
 
 (defn wait-for-warmup
   "Wait for warmup to complete"
   []
   (let [retry-count (atom 0)]
-    (while (re-find #"\"status\":\"warmup\"" (rest-call "/pools/default" nil))
+    (while (re-find #"\"status\":\"warmup\"" (rest-call :get "/pools/default"))
       (if (> @retry-count 60)
         (throw (Exception. "bucket failed to warmup")))
       (swap! retry-count inc)
@@ -308,15 +320,16 @@
   "Set log level of memcached to debug (1)"
   []
   (info "Setting memcached log level to debug")
-  (rest-call "/pools/default/settings/memcached/global" {:verbosity 1}))
+  (rest-call :post "/pools/default/settings/memcached/global"
+             {:params {:verbosity 1}}))
 
 (defn disable-auto-compaction
   "Disables auto-compaction"
   []
   (info "Disabling auto-compaction")
-  (rest-call "/controller/setAutoCompaction"
-             {"databaseFramgentationThreshold[size]" "undefined"
-              "parallelDBAndViewCompaction" false}))
+  (rest-call :post "/controller/setAutoCompaction"
+             {:params {"databaseFramgentationThreshold[size]" "undefined"
+                       "parallelDBAndViewCompaction" false}}))
 
 (defn setup-cluster
   "Setup couchbase cluster"
@@ -402,7 +415,7 @@
   "Wait until couchbase server daemon has started"
   []
   (domTop/with-retry [retry-count 30]
-    (rest-call "/pools/" nil)
+    (rest-call :get "/pools/")
     (catch Exception _
       (Thread/sleep 2000)
       (if (pos? retry-count)
@@ -517,7 +530,7 @@
 (defn get-version
   "Get the couchbase version running on the cluster"
   [node]
-  (->> (rest-call node "/pools/" nil)
+  (->> (rest-call :get "/pools/" {:target node})
        (re-find #"(?<=\"implementationVersion\":\")([0-9])\.([0-9])\.([0-9])")
        (rest)
        (map #(Integer/parseInt %))))
@@ -632,14 +645,14 @@
 
 (defn get-autofailover-info
   [target field]
-  (let [autofailover-info (rest-call target "/settings/autoFailover" nil)
+  (let [autofailover-info (rest-call :get "/settings/autoFailover" {:target target})
         json-val (json/parse-string autofailover-info true)
         field-val (json-val (keyword field))]
     field-val))
 
 (defn get-cluster-info
   [target]
-  (let [rest-call (rest-call target "/pools/default" nil)
+  (let [rest-call (rest-call :get "/pools/default" {:target target})
         json-val (json/parse-string rest-call true)]
     json-val))
 

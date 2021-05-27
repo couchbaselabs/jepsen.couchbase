@@ -84,7 +84,9 @@
     (doseq [target target-nodes]
       (let [call-node ((:call-node op (fn [_ t] t)) testData target)]
         (info "Failing over node" target "with rest-call to" call-node)
-        (util/rest-call call-node endpoint {:otpNode (util/get-node-name target)}))
+        (util/rest-call :post endpoint
+                        {:target call-node
+                         :params {:otpNode (util/get-node-name target)}}))
       (if (= fail-type :graceful) (util/wait-for-rebalance-complete target)))
     (assoc op :value target-nodes)))
 
@@ -143,10 +145,11 @@
         (do
           (info "Following nodes will be recovered:" recovery-nodes)
           (doseq [target recovery-nodes]
-            (util/rest-call healthy-node
+            (util/rest-call :post
                             "/controller/setRecoveryType"
-                            {:otpNode (util/get-node-name target)
-                             :recoveryType (name (:recovery-type op))}))
+                            {:target healthy-node
+                             :params {:otpNode (util/get-node-name target)
+                                      :recoveryType (name (:recovery-type op))}}))
           (c/on healthy-node
                 (util/rebalance nodes-in-cluster nil)))
         (info "No recovery necessary"))
@@ -346,9 +349,9 @@
   [testData op]
   (assert (= (:f op) :trigger-compaction))
   (let [cluster-nodes (util/get-cluster-nodes testData)]
-    (util/rest-call (rand-nth cluster-nodes)
+    (util/rest-call :post
                     "/pools/default/buckets/default/controller/compactBucket"
-                    "")))
+                    {:target (rand-nth cluster-nodes)})))
 
 (defn fail-disk
   "Simulate a disk failure on the targeted nodes"
