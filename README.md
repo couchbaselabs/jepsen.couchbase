@@ -168,3 +168,84 @@ Jepsen testing is not a proof of correctness, but instead detects errors in a
 subset of the possible histories produced by the implementation. Our project
 requires independent verification and perhaps additional tests before we can
 sufficiently make such a claim.
+
+### A test failed, what does this mean?
+It's important to determine if a test is failing due to a flaw in test code or
+a consistency error as the former does not indicate a flaw in Couchbase Server.
+In the case of consistency errors, a bug report would be greatly appreciated.
+
+#### Test code errors
+
+A result of a flaw in test code looks like the following:
+
+```
+Errors occurred during analysis, but no anomalies found. ಠ~ಠ
+```
+
+Test code flaws often manifest themselves as Jepsen's nemesis process crashing.
+These are primarily a result of errors in test code or insufficient hardware
+specifications for the selected configuration of Couchbase Server. Note that
+the vagrant configuration is below the minimum memory and cpu requirements
+required to run Couchbase Server.
+
+#### Consistency errors
+
+A consistency error looks like the following:
+
+```
+Analysis invalid! (ﾉಥ益ಥ）ﾉ ┻━┻
+```
+
+Under some circumstances the linearizability checker may fail. Couchbase Server
+does not claim to be linearizable but instead offers [sequential
+consistency](https://jepsen.io/consistency/models/sequential). It's recommended
+to check if the failure occurs using the seqchecker by re-running the test with
+`--use-checker sequential` as the linearizability checker is used by default.
+
+Operations must be configured with the correct durability requirements to offer
+sequential consistency and a suitable number of replicas to tolerate a certain
+number of failures.
+
+### How do I configure durability?
+
+The `--durability L0:L1:L2:L3` options configures the probability of operations
+at each level.
+
+Operations can have the following durability level:
+
+| Level | Description                                 |
+|-------|---------------------------------------------|
+| L0    | No Synchronous Replication                  |
+| L1    | Replicate to Majority                       |
+| L2    | Replicate to Majority and Persist to Active |
+| L3    | Persist to Majority                         |
+
+For instance, supplying `--durability 0:100:0:0` would generate all operations
+with L1 (Replicate to Majority). Similarly, `--durability 0:0:0:100` would
+generate all operations with L2 (Persist to Majority). Not supplying this option
+produces all operations with L0 (No Sync Replication). Please ensure that the
+durability level is configured to a minimum of L1 to enable sync replication.
+
+See [documentation](
+https://docs.couchbase.com/server/7.0/learn/data/durability.html#durability-requirements)
+
+### How many replicas do I need?
+
+Replicas can be configured using `--replicas REPLICAS` with a supported maximum
+of 2 for synchronous replication.
+
+Under synchronous replication, the following number of failures can be tolerated
+given a specific number of replicas:
+
+| Replicas | Majority | Failures |
+|----------|----------|----------|
+| 0        | 1        | 0        |
+| 1        | 2        | 1        |
+| 2        | 2        | 1        |
+
+An important distinction to make is that in the case of a single failure there
+will be no data loss with replicas=1 and replicas=2 but the latter will be write
+available while the former will not.
+
+See [documentation](
+https://docs.couchbase.com/server/7.0/learn/data/durability.html#majority)
