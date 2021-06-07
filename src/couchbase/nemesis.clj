@@ -77,16 +77,13 @@
   [testData op]
   (assert (= (:f op) :failover))
   (let [fail-type (:failover-type op)
-        target-nodes ((:targeter op) testData op)
-        endpoint (case fail-type
-                   :hard "/controller/failOver"
-                   :graceful "/controller/startGracefulFailover")]
+        target-nodes ((:targeter op) testData op)]
     (doseq [target target-nodes]
       (let [call-node ((:call-node op (fn [_ t] t)) testData target)]
         (info "Failing over node" target "with rest-call to" call-node)
-        (util/rest-call :post endpoint
-                        {:target call-node
-                         :params {:otpNode (util/get-node-name target)}}))
+        (util/retry-with-exp-backoff
+         3000 1.3 5
+         (util/failover fail-type call-node target)))
       (if (= fail-type :graceful) (util/wait-for-rebalance-complete target)))
     (assoc op :value target-nodes)))
 

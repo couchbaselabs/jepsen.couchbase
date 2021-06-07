@@ -245,6 +245,15 @@
      (wait-for-rebalance-complete rest-target)
      (info "Rebalance complete"))))
 
+(defn failover
+  "Failover a node using the specified fail-type."
+  [fail-type call-node target]
+  (let [endpoint (case fail-type
+                   :hard "/controller/failOver"
+                   :graceful "/controller/startGracefulFailover")]
+    (rest-call :post endpoint {:target call-node
+                               :params {:otpNode (get-node-name target)}})))
+
 (defn create-bucket
   "Create the default bucket"
   [bucket-type replicas eviction]
