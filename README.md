@@ -36,7 +36,7 @@ wget http://packages.couchbase.com/releases/6.0.0/couchbase-server-enterprise_6.
 
 You can then invoke leiningen to run a test:
 ```
-lein run test --nodes-file=./nodes --package=./couchbase-server-enterprise_6.0.0-ubuntu16.04_amd64.deb --workload=register
+lein run test --nodes-file=./nodes --package=./couchbase-server-enterprise_6.0.0-ubuntu16.04_amd64.deb --workload=register --ssh-private-key=./resources/my.key
 ```
 
 After the test are completed the vagrants the VMs can be torn down with:

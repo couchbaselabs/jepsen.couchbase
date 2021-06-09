@@ -11,7 +11,7 @@
              "-XX:+UseG1GC"] ; Use Garbage First (G1) Collector, this should reduce pause time over reducing memory
   :dependencies [[org.clojure/clojure "1.10.1"]
                  [org.clojure/tools.cli "1.0.194"]
-                 [jepsen "0.2.3"]
+                 [jepsen "0.2.4"]
                  [cheshire "5.10.0"]
                  [clj-http "3.11.0"]
                  [com.couchbase.client/core-io "2.1.2"]

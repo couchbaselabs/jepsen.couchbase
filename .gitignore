@@ -2,6 +2,8 @@
 /store
 /resources/.vagrant
 /resources/Vagrantfile
+/resources/my.key
+/resources/my.key.pub
 /resources/docker/docker-compose.yml
 /resources/docker/control/jepsen
 

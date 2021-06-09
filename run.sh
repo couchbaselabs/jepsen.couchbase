@@ -33,6 +33,9 @@ case $i in
     --kv-cv-jenkins-run )
     KV_CV_RUN=true
     ;;
+    --setup-keys)
+    SETUP_KEYS=true
+    ;;
     -h|--help)
     print_usage
     exit 0
@@ -70,11 +73,11 @@ case ${PACKAGE} in
 esac
 
 vagrantBaseCommand="lein trampoline run test"
-vagrantParams="--nodes-file ./nodes"
+vagrantParams="--nodes-file ./nodes --username root --ssh-private-key=./resources/my.key"
 dockerBaseCommand="docker exec -it -w '/jepsen' jepsen-control lein trampoline run test"
 dockerParams="--nodes-file ./nodes"
 vmpoolBaseCommand="lein trampoline run test"
-vmpoolParams="--nodes-file ./nodes --username root --password couchbase"
+vmpoolParams="--nodes-file ./nodes --username root --ssh-private-key=./resources/my.key"
 packageParam="--package $PACKAGE"
 pass=0
 fail=0
@@ -105,6 +108,11 @@ fi
 
 if [[ ${KV_CV_RUN} ]]; then
     rm -f ./jepsen-output-*.log
+fi
+
+if [ "$SETUP_KEYS" = "true" ]; then
+   ./ssh_keys.sh --action=create_keys
+   ./ssh_keys.sh --action=publish_public_key --username=root --password=couchbase
 fi
 
 while IFS='' read -r line || [[ -n "$line" ]]; do

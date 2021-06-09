@@ -128,6 +128,10 @@ case "$TYPE" in
                         fi
                     fi
                 done
+
+                ./ssh_keys.sh --action=create_keys
+                ./ssh_keys.sh --action=publish_public_key --username=root --password=root
+
                 # We now need to check if we need to pin vcpus
                 if [[ ${HANDLE_NUMA_CV} ]]; then
                         #NUMA node layout for our KV-Engine Jepsen host
