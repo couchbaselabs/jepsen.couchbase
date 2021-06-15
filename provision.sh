@@ -130,6 +130,7 @@ case "$TYPE" in
                 done
 
                 ./ssh_keys.sh --action=create_keys
+                ./ssh_keys.sh --action=cleanup_known_hosts
                 ./ssh_keys.sh --action=publish_public_key --username=root --password=root
 
                 # We now need to check if we need to pin vcpus

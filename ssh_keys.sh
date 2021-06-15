@@ -45,6 +45,9 @@ print_usage() {
       --action=STRING        Action to take:
                              *          create_keys - Creates and places key pair
                                                       in the ./resources folder.
+                             *  cleanup_known_hosts - Removes entries in ~/.ssh/
+                                                      known_hosts for all nodes
+                                                      in ./nodes.
                              *  publish_public_keys - Publishes public keys for
                                                       all nodes in ./nodes.
       --username=STRING      The common ssh username for all of the nodes.
@@ -68,6 +71,13 @@ create_key_pair() {
     else
         echo "Key pair already exists."
     fi
+}
+
+# Removes existing entries in the ~/.ssh/known_hosts for all nodes.
+delete_all_nodes_from_known_hosts() {
+    while read node; do
+        ssh-keygen -R "$node"
+    done <./nodes
 }
 
 for i in "$@"
@@ -98,6 +108,10 @@ case "$ACTION" in
     "create_keys")
         echo "Creating key-pair ./resources/my.key and ./resources/my.key.pub."
         create_key_pair
+    ;;
+    "cleanup_known_hosts")
+        echo "Removing node entries from ~/.ssh/known_hosts."
+        delete_all_nodes_from_known_hosts
     ;;
     "publish_public_key")
         if [[ -z "$USERNAME" ]] || [[ -z "$PASSWORD" ]] ; then

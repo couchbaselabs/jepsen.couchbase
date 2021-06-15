@@ -112,6 +112,7 @@ fi
 
 if [ "$SETUP_KEYS" = "true" ]; then
    ./ssh_keys.sh --action=create_keys
+   ./ssh_keys.sh --action=cleanup_known_hosts
    ./ssh_keys.sh --action=publish_public_key --username=root --password=couchbase
 fi
 
