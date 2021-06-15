@@ -3,6 +3,7 @@ echo "Setting up Jepsen Test Server"
 apt update
 apt install -y unzip
 apt install -y zip
+apt install -y expect
 
 curl -s "https://get.sdkman.io" | bash
 source "$HOME/.sdkman/bin/sdkman-init.sh"
