@@ -6,14 +6,19 @@ Jepsen testing for Couchbase.
 
 ### Requirements
 
-A JVM and the [Leiningen](https://leiningen.org/) build tool need to be
-installed. Gnuplot is required for the plot performance graphs option. Basic
-utilities like bc, curl, grep are expected to be present. Clojure and Java
-dependencies will be auto-fetched on first run. You need some Couchbase Server
-nodes to run Couchbase Server. We provide the provision.sh script that starts
-suitable nodes using vagrant VMs. We also provide the ability to run Jepsen
-using cluster-run type nodes from a local build. Note that some workloads are
-incompatible with cluster-run nodes.
+* OpenJDK 11.
+* The [Leiningen](https://leiningen.org/) build tool.
+* Gnuplot and Graphviz to plot performance graphs and render anomalies.
+* A Couchbase package as a deb, rpm or a build directory.
+* [Vagrant](https://www.vagrantup.com/) and a virtualisation software package
+(e.g. VirtualBox).
+* The OpenSSH package.
+* Utilities such as bc, curl, grep, zip, unzip and expect. A more comprehensive
+list can be found [here](cv-job-scripts/cv-test-server-setup).
+
+Note: The provision.sh script starts suitable node virtual-machines using
+Vagrant and also supports cluster-run style nodes from a local build. Some
+workloads may be incompatible with cluster-run style nodes.
 
 ### Setup for vagrant nodes
 
