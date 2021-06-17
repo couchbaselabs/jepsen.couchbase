@@ -22,6 +22,13 @@ have nodes available you need to manually create a nodes file with the IP
 addresses. Otherwise you can use the script provision.sh that automatically
 start suitable vagrants and create the corresponding file.
 
+#### Configuring memory
+
+The JVM starting heap size and maximum heap size is set to 32GB by default to
+prevent garbage collection pauses, this can be configured in project.clj based
+on available memory on the given system. Note that a test run may crash if the
+memory requirements of a particular test exceeds the maximum heap size.
+
 #### Getting started / Running a simple test
 
 The provision script can be used to automatically start suitable VMs.
