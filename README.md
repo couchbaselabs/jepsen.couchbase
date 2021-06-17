@@ -249,3 +249,13 @@ available while the former will not.
 
 See [documentation](
 https://docs.couchbase.com/server/7.0/learn/data/durability.html#majority)
+
+### Why do some tests take a long time to run?
+
+In some cases the linearizability checker, Knossos, may take a long time to
+complete and may even run out of memory. This is expected behaviour and is
+dependent on the generated history as the search is exponential in terms of
+concurrency and linear in terms of history length.
+
+See [documentation](
+https://github.com/jepsen-io/jepsen/blob/main/doc/tutorial/06-refining.md)
