@@ -39,7 +39,7 @@ You can then invoke leiningen to run a test:
 lein run test --nodes-file=./nodes --package=./couchbase-server-enterprise_6.0.0-ubuntu16.04_amd64.deb --workload=register --ssh-private-key=./resources/my.key
 ```
 
-After the test are completed the vagrants the VMs can be torn down with:
+After the tests are complete, the vagrants VMs can be torn down with:
 ```
 ./provision.sh --type=vagrant --action=destroy-all
 ```
@@ -111,8 +111,8 @@ lein run test --help
 
 ## Development
 ### Checking your commit
-Before push your code for review its important to check that the patch will pass
-our commit validation. To do this use:
+Before pushing your code for review it is important to check that the patch
+will pass our commit validation. To do this use:
 ```bash
 chmod +x cv-checks.sh
 ./cv-checks.sh
