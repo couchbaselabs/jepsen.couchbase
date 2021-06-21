@@ -72,11 +72,25 @@ The run.sh script can also be used with cluster-run nodes:
 
 #### Using other nodes
 
-To use other nodes provide the file ./nodes with one node IP per line. Test can
-then be run with the following command (replacing user/pass with suitable ssh
-credentials for the node).
+Populate the ./nodes file with one node IP per line.
+
+Generate SSH keys using PEM as the key format.
+
 ```
-./run.sh --provisioner=vmpool --package=./some-package.deb --suite=./some-suite.conf --global=username:user,password:pass
+ssh-keygen -t rsa -N "" -f ~/my.key -m PEM
+```
+
+Copy the public key to each node using:
+
+```
+ssh-copy-id -i ~/my.key user@host
+```
+
+Tests can then be run with the following command (replacing user with the
+suitable ssh username for the nodes):
+
+```
+./run.sh --provisioner=vmpool --package=./some-package.deb --suite=./some-suite.conf --global=username:user,ssh-private-key=~/my.key
 ```
 
 #### Running against a build directory
