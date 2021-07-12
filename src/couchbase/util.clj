@@ -344,7 +344,7 @@
 (defn upload-collections-manifest
   "Uploads the collections manifest."
   [collections-manifest]
-  (let [response (rest-call :put "/pools/default/buckets/default/collections"
+  (let [response (rest-call :put "/pools/default/buckets/default/scopes"
                             {:params collections-manifest
                              :options {:content-type :json}})
         jsonresp (json/parse-string response true)
