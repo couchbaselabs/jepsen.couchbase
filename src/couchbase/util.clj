@@ -259,8 +259,10 @@
   (let [endpoint (case fail-type
                    :hard "/controller/failOver"
                    :graceful "/controller/startGracefulFailover")]
-    (rest-call :post endpoint {:target call-node
-                               :params {:otpNode (get-node-name target)}})))
+    (retry-with-exp-backoff
+     3000 1.3 5
+     (rest-call :post endpoint {:target call-node
+                                :params {:otpNode (get-node-name target)}}))))
 
 (defn create-bucket
   "Create the default bucket"

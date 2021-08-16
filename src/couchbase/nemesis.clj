@@ -81,9 +81,7 @@
     (doseq [target target-nodes]
       (let [call-node ((:call-node op (fn [_ t] t)) testData target)]
         (info "Failing over node" target "with rest-call to" call-node)
-        (util/retry-with-exp-backoff
-         3000 1.3 5
-         (util/failover fail-type call-node target)))
+        (util/failover fail-type call-node target))
       (if (= fail-type :graceful) (util/wait-for-rebalance-complete target)))
     (assoc op :value target-nodes)))
 
