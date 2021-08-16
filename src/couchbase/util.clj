@@ -165,16 +165,23 @@
          (Thread/sleep dt#)
          (~'retry (* dt# ~rate) (dec retries#))))))
 
+(defn add-node
+  "Add node to the cluster"
+  [node]
+  (info "Adding node " node "to cluster")
+  (retry-with-exp-backoff
+   3000 1.3 5
+   (rest-call :post "/controller/addNode"
+              {:params {:hostname (str "http://" node)
+                        :user "Administrator"
+                        :password "abc123"
+                        :services "kv"}})))
+
 (defn add-nodes
   "Add nodes to the cluster"
-  ([nodes-to-add]
-   (doseq [node nodes-to-add]
-     (info "Adding node" node "to cluster")
-     (rest-call :post "/controller/addNode"
-                {:params {:hostname (str "http://" node)
-                          :user "Administrator"
-                          :password "abc123"
-                          :services "kv"}}))))
+  [nodes-to-add]
+  (doseq [node nodes-to-add]
+    (add-node node)))
 
 (defn wait-for
   ([call-function desired-state] (wait-for call-function desired-state 60))
