@@ -7,7 +7,18 @@ Options:
   --suite=STRING                 Path to suite file
   --provisioner=STRING           Type of nodes to run the suite against: vagrant or docker
   --package=STRING               Path to the Couchbase Server package
+  --purge-logs-on-success        If set, the run script will remove all log files apart from results.edn
 " >&2
+}
+
+function remove_superfluous_log_files () {
+  # Remove all directories as this data won't be used
+  # This includes PCAPs and cbcollects
+  rm -rf "${LAST_RUN:?}"/*/
+  # Remove log files
+  rm -f "$LAST_RUN"/*.log
+  # Remove all the remaining Jepsen produced log files apart from results.edn which is needed for the web server
+  rm -rf "$LAST_RUN/history.txt" "$LAST_RUN/history.edn" "$LAST_RUN/timeline.html"
 }
 
 # read in parameters
@@ -35,6 +46,9 @@ case $i in
     ;;
     --setup-keys)
     SETUP_KEYS=true
+    ;;
+    --purge-logs-on-success)
+    PURGE_LOGS_ON_SUCCESS=true
     ;;
     -h|--help)
     print_usage
@@ -224,6 +238,9 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
                 lastRunDir=$(ls ./store/Couchbase/ | grep -v 'latest' | grep -v 'pass' | tail -1)
                 mv ./store/Couchbase/${lastRunDir} ./store/Couchbase/pass
                 ln -s ./store/Couchbase/pass/${lastRunDir} ./store/latest
+            fi
+            if [[ "$PURGE_LOGS_ON_SUCCESS" = true ]]; then
+                remove_superfluous_log_files
             fi
         elif tail -n 1 ${LAST_RUN}/results.edn | grep -q ":valid? :unknown" ; then
             unknown=$(($unknown+1))

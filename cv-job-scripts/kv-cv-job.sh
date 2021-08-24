@@ -133,7 +133,7 @@ function run_test_suite() {
     echo "Running test suit: ${TEST_SUIT}"
     cat ${TEST_SUIT}
     echo "################################################################"
-    ./run.sh --suite=${TEST_SUIT} --provisioner=${PROVISIONER} --package=${PACKAGE_NAME} --kv-cv-jenkins-run --setup-keys --global="${GLOBAL_RUN_ARGS}"
+    ./run.sh --suite=${TEST_SUIT} --provisioner=${PROVISIONER} --package=${PACKAGE_NAME} --kv-cv-jenkins-run --setup-keys --purge-logs-on-success --global="${GLOBAL_RUN_ARGS}"
     EXIT_CODE=$?
 }
 
