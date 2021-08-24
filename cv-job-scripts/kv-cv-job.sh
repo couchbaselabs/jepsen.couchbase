@@ -197,6 +197,8 @@ function process_exit_code() {
 }
 
 echo "------    Testing Jepsen changes against latest build    ------"
+# clean up any old data files so there's enough disk space for this Job
+${GIT_ROOT_TEST}/cv-job-scripts/purge-old-test-data.sh
 download_build;
 if [[ ${USE_VMS} == "true" ]]; then
     provision_vms;
