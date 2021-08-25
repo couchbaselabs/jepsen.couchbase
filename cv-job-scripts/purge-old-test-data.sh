@@ -11,9 +11,9 @@ function remove_superfluous_log_files () {
 }
 
 # Purge all Job data in the store older than 30 days
-find ./store -type d -depth 1 -mtime +30 -exec rm -rf {} \;
+find ./store -mindepth 1 -maxdepth 1 -mtime +30 -exec rm -rf {} \;
 # Purge the logs for any tests that crash more than a week ago
-REMAING_TEST_LOGS=$(find ./store -type d -depth 2 -mtime +7)
+REMAING_TEST_LOGS=$(find ./store -mindepth 2 -maxdepth 2 -mtime +7 -type d)
 for d in $REMAING_TEST_LOGS; do
   if [[ $(grep -c -E ':valid\? (:unknown|true)}' $d/results.edn) -gt 0 ]]; then
     remove_superfluous_log_files $d
