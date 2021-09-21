@@ -110,6 +110,11 @@
     :parse-fn {"persistent" :couchbase "ephemeral" :ephemeral}
     :validate [some? "Bucket type must be 'persistent' or 'ephemeral'"]
     :default :couchbase]
+   [nil "--storage-backend BACKEND"
+    "The storage backend (couchstore or magma)"
+    :parse-fn {"couchstore" :couchstore "magma" :magma}
+    :validate [some? "The storage backend must be 'couchstore' or 'magma'"]
+    :default :couchstore]
    [nil "--cycles CYCLES"
     "Number of nemesis cycles to run"
     :default 1

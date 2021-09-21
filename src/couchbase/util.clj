@@ -264,18 +264,34 @@
      (rest-call :post endpoint {:target call-node
                                 :params {:otpNode (get-node-name target)}}))))
 
+(defn testData->bucket-params
+  "Returns the bucket params given the testData"
+  [testData]
+  (let [storage-backend (:storage-backend testData)
+        replica-number  (:replicas testData)
+        bucket-type     (:bucket-type testData)
+        ram-quota       (case storage-backend
+                          :magma 256
+                          :couchstore 100)]
+    (merge
+     {:flushEnabled 1
+      :replicaNumber replica-number
+      :ramQuotaMB ram-quota
+      :bucketType (name bucket-type)
+      :name "default"
+      :authType "sasl"
+      :saslPassword ""}
+     ;; Only configure eviction policy when bucket-type is Couchbase.
+     (when (= bucket-type :couchbase)
+       {:evictionPolicy (name (:eviction-policy testData))})
+     ;; Only configure storage backend when Magma is specified.
+     (when (= storage-backend :magma)
+       {:storageBackend "magma"}))))
+
 (defn create-bucket
   "Create the default bucket"
-  [bucket-type replicas eviction]
-  (rest-call :post "/pools/default/buckets"
-             {:params {:flushEnabled 1
-                       :replicaNumber replicas
-                       :evictionPolicy (name eviction)
-                       :ramQuotaMB 100
-                       :bucketType (name bucket-type)
-                       :name "default"
-                       :authType "sasl"
-                       :saslPassword ""}}))
+  [testData]
+  (rest-call :post "/pools/default/buckets" {:params (testData->bucket-params testData)}))
 
 (defn set-vbucket-count
   "Set the number of vbuckets for new buckets"
@@ -391,12 +407,7 @@
   [testData node]
   (info "Creating couchbase cluster from" node)
   (let [nodes (:nodes testData)
-        other-nodes (remove #(= node %) nodes)
-        bucket-type (:bucket-type testData)
-        num-replicas (:replicas testData)
-        eviction-policy (if (= bucket-type :couchbase)
-                          (:eviction-policy testData)
-                          :noEviction)]
+        other-nodes (remove #(= node %) nodes)]
     (initialise testData)
     (add-nodes other-nodes)
     (set-vbucket-count testData)
@@ -404,7 +415,7 @@
       (rebalance nodes))
     (set-autofailover testData)
     (set-autoreprovision testData)
-    (create-bucket bucket-type num-replicas eviction-policy)
+    (create-bucket testData)
     (info "Waiting for bucket warmup to complete...")
     (wait-for-warmup)
     (when (testData->collection-aware? testData)
