@@ -48,7 +48,7 @@ print_usage() {
                              *  cleanup_known_hosts - Removes entries in ~/.ssh/
                                                       known_hosts for all nodes
                                                       in ./nodes.
-                             *  publish_public_keys - Publishes public keys for
+                             *   publish_public_key - Publishes public key to
                                                       all nodes in ./nodes.
       --username=STRING      The common ssh username for all of the nodes.
       --password=STRING      The common ssh password for all of the nodes.
