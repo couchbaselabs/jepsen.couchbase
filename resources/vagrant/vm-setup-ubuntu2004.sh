@@ -7,7 +7,7 @@ echo "Installing required packages"
 add-apt-repository -y ppa:ubuntu-toolchain-r/test
 apt update
 apt upgrade
-apt install -y ntpdate daemonlogger net-tools
+apt install -y ntpdate daemonlogger net-tools libtinfo5
 
 # enabling core dumps to be written to the vagrants shared directory
 echo "Setting up core dumps"
