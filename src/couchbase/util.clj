@@ -172,7 +172,7 @@
   (retry-with-exp-backoff
    3000 1.3 5
    (rest-call :post "/controller/addNode"
-              {:params {:hostname (str "http://" node)
+              {:params {:hostname (str "https://" node)
                         :user "Administrator"
                         :password "abc123"
                         :services "kv"}})))
