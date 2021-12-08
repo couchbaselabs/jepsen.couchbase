@@ -14,8 +14,8 @@
                  [jepsen "0.2.4"]
                  [cheshire "5.10.0"]
                  [clj-http "3.11.0"]
-                 [com.couchbase.client/core-io "2.1.2"]
-                 [com.couchbase.client/java-client "3.1.2"]
+                 [com.couchbase.client/core-io "2.2.3"]
+                 [com.couchbase.client/java-client "3.2.3"]
                  [com.couchbase.client/dcp-client "0.32.0"]]
   :profiles {:dev {:resource-paths ["./test/couchbase/resources"]}
              :uberjar {:aot :all}}
