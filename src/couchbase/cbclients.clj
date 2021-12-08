@@ -2,7 +2,6 @@
   (:require [clojure.tools.logging :refer [info warn error fatal]]
             [couchbase.util :as util])
   (:import
-   (rx.functions Action0 Action1)
    (com.couchbase.client.dcp.message MessageUtil
                                      RollbackMessage
                                      DcpSnapshotMarkerRequest
@@ -19,8 +18,8 @@
                              StreamFrom
                              StreamTo)
    (com.couchbase.client.dcp.config DcpControl$Names)
-   (java.util List)
-   (rx Completable)))
+   (java.util List Collection)
+   (reactor.core.publisher Mono)))
 
 (defn col-seq-entry->new-collection
   "Transforms an entry [s1 c1] to a new instance of collection"
@@ -103,17 +102,11 @@
 (defn dcpRollbackHandler [{:keys [client store]} event]
   (let [descr (RollbackMessage/toString event)
         vbid  (RollbackMessage/vbucket event)
-        seqno (RollbackMessage/seqno   event)
-        okSub     (reify Action0
-                    (call [_] (info descr "completed ok")))
-        errorSub  (reify Action1
-                    (call [_ e]
-                      (reset! store :INVALID)
-                      (throw e)))]
+        seqno (RollbackMessage/seqno   event)]
     (assert (not= @store :INVALID) "Store invalid")
     (info "DCPControlEventHandler got:" descr)
     (swap! store (partial remove #(and (= (:vbucket %) vbid) (> (:seqno %) seqno))))
-    (.subscribe ^Completable (.rollbackAndRestartStream ^Client @client vbid seqno) okSub errorSub)))
+    (.subscribe ^Mono (.rollbackAndRestartStream ^Client @client vbid seqno))))
 
 (defn dcpControlEventHandler [{:keys [client store idle] :as client-record}]
   (reify ControlEventHandler
@@ -169,9 +162,9 @@
     (reset! client (.build client-builder))
     (.controlEventHandler ^Client @client (dcpControlEventHandler client-record))
     (.dataEventHandler ^Client @client (dcpDataEventHandler client-record))
-    (-> ^Client @client (.connect) (.await))
-    (-> ^Client @client (.initializeState StreamFrom/BEGINNING StreamTo/INFINITY) (.await))
-    (-> ^Client @client (.startStreaming (make-array Short 0)) (.await))))
+    (-> ^Client @client (.connect) (.block))
+    (-> ^Client @client (.initializeState StreamFrom/BEGINNING StreamTo/INFINITY) (.block))
+    (-> ^Client @client (.startStreaming ^Collection (make-array Short 0)) (.await))))
 
 (defn get-all-keys [{:keys [client store slow idle] :as client-record} test]
   (if-not @client
