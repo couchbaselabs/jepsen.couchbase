@@ -9,11 +9,11 @@
              "-Xmx32G"       ; have to re-size the heap which causes the GC to be used. If we go above 32GB we will
                              ; crash but we shouldn't be using that much memory in a normal situation anyway
              "-XX:+UseG1GC"] ; Use Garbage First (G1) Collector, this should reduce pause time over reducing memory
-  :dependencies [[org.clojure/clojure "1.10.1"]
-                 [org.clojure/tools.cli "1.0.194"]
-                 [jepsen "0.2.4"]
-                 [cheshire "5.10.0"]
-                 [clj-http "3.11.0"]
+  :dependencies [[org.clojure/clojure "1.10.3"]
+                 [org.clojure/tools.cli "1.0.206"]
+                 [jepsen "0.2.5"]
+                 [cheshire "5.10.1"]
+                 [clj-http "3.12.3"]
                  [com.couchbase.client/core-io "2.2.3"]
                  [com.couchbase.client/java-client "3.2.3"]
                  [com.couchbase.client/dcp-client "0.32.0"]]
