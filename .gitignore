@@ -1,22 +1,31 @@
-/nodes*
-/store
-/resources/.vagrant
-/resources/Vagrantfile
-/resources/my.key
-/resources/my.key.pub
-/resources/docker/docker-compose.yml
-/resources/docker/control/jepsen
+# File extentions
+*.class
+*.deb
+*.dot
+*.log
+*.rpm
+*.svg
+*.txt
 
-/target
-/classes
-/checkouts
+# Files
+.DS_Store
+.eastwood
+.lein-*
+couchbase.iml
+nodes
 pom.xml
 pom.xml.asc
-*.class
-/.lein-*
-/.nrepl-port
-.DS_Store
+resources/.vagrant
+resources/Vagrantfile
+resources/docker/control/jepsen
+resources/docker/docker-compose.yml
+resources/my.key
+resources/my.key.pub
+
+# Directories
 .idea/
-couchbase.iml
-couchbase-server*.*
-.eastwood
+checkouts/
+classes/
+resources/dumps
+store/
+target/
