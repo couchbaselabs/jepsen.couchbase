@@ -167,6 +167,11 @@
    [nil "--net-interface INTERFACE"
     "Name of the interface to perform packet capture on by default this is eth1"
     :default "eth1"]
+   [nil "--max-pcap-size SIZE-IN-BYTES"
+    "The maximum file size that a pcap can be before rolling over the log file"
+    :default 2147483648                                     ; Allow the max PCAP size to be 2GB
+    :parse-fn parse-int
+    :validate [#(and (number? %) (pos? %)) "Must be a number"]]
    [nil "--cluster-run"
     "Start a cluster-run of the provided package on the host rather than using provided nodes"
     :default false]

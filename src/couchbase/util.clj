@@ -506,11 +506,12 @@
   [testData node]
   (let [packet-capture-dir (str "/packet-capture")
         pack-dump-file (str (:name testData) "-" node ".pcap")
-        tcp-dump-interface (:net-interface testData)]
+        tcp-dump-interface (:net-interface testData)
+        max-pcap-size (:max-pcap-size  testData)]
     (c/su (c/exec :mkdir :-p packet-capture-dir))
     (info (str "packet dump file name " pack-dump-file))
     (c/su (c/exec :rm :-f "/var/run/daemonlogger.pid"))
-    (c/ssh* {:cmd  (str "nohup sudo daemonlogger -d -l \"" packet-capture-dir "\" -n \"" pack-dump-file "\" -i " tcp-dump-interface " -S 262144 tcp > nohup-daemonlogger.log ")})))
+    (c/ssh* {:cmd  (str "nohup sudo daemonlogger -d -l \"" packet-capture-dir "\" -n \"" pack-dump-file "\" -i " tcp-dump-interface " -s " max-pcap-size " -S 262144 tcp > nohup-daemonlogger.log ")})))
 
 (defn setup-node
   "Start Couchbase Server on a node"
@@ -676,7 +677,8 @@
             ;; clean up old gz files, if any
             (c/exec* (str "rm -f /packet-capture/*.gz*"))
             (c/exec* (str "gzip -f /packet-capture/*.pcap*"))
-            (c/exec* (str "mv /packet-capture/*.gz* /tmp/jepsen-logs/"))))
+            (c/exec* (str "mv /packet-capture/*.gz* /tmp/jepsen-logs/"))
+            (c/exec* (str "rm -f /packet-capture/*.pcap*"))))
     (c/su (c/exec :chmod :a+r :-R "/tmp/jepsen-logs"))
     (str/split-lines (c/exec :find "/tmp/jepsen-logs" :-type :f))))
 
